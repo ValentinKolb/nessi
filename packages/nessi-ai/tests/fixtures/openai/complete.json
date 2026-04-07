@@ -1,0 +1,15 @@
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "hello"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1,
+    "completion_tokens": 2
+  }
+}

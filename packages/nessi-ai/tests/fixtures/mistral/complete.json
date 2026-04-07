@@ -1,0 +1,25 @@
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "D681PevKs",
+            "type": "function",
+            "function": {
+              "name": "retrieve_payment_status",
+              "arguments": "{\"transaction_id\":\"T1001\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1,
+    "completion_tokens": 2
+  }
+}

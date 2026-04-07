@@ -1,0 +1,32 @@
+{
+  "name": "nessi-ai",
+  "version": "0.1.0",
+  "description": "Small provider adapter layer for nessi with complete() and stream().",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./providers/openai-compatible": "./src/providers/openai-compatible.ts",
+    "./providers/openai": "./src/providers/openai.ts",
+    "./providers/openrouter": "./src/providers/openrouter.ts",
+    "./providers/vllm": "./src/providers/vllm.ts",
+    "./providers/ollama": "./src/providers/ollama.ts",
+    "./providers/anthropic": "./src/providers/anthropic.ts",
+    "./providers/mistral": "./src/providers/mistral.ts",
+    "./providers/gemini": "./src/providers/gemini.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "specs.md"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}
