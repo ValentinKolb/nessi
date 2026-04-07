@@ -1,0 +1,30 @@
+{
+  "name": "nessi-core",
+  "version": "0.1.0",
+  "description": "Minimal event-driven agent loop for nessi.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./providers/ollama": "./src/providers/ollama.ts",
+    "./providers/openai": "./src/providers/openai.ts",
+    "./providers/openrouter": "./src/providers/openrouter.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "dependencies": {
+    "nessi-ai": "workspace:*",
+    "zod": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}
