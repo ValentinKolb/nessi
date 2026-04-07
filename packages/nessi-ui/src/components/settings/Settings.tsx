@@ -1,0 +1,128 @@
+import { createSignal, Match, Switch } from "solid-js";
+import { ProvidersConfig } from "./ProvidersConfig.js";
+import { ApiKeys } from "./ApiKeys.js";
+import { SystemPrompt } from "./SystemPrompt.js";
+import { MemoryEditor } from "./MemoryEditor.js";
+import { SkillsConfig } from "./SkillsConfig.js";
+import type { SkillEntry } from "../../lib/skill-registry.js";
+import type { Prompt } from "../../lib/prompts.js";
+import { SkillEditorView } from "./SkillEditorModal.js";
+import { PromptEditorView } from "./PromptEditorModal.js";
+
+type SettingsRoute =
+  | { kind: "root" }
+  | { kind: "skill-editor"; skill: SkillEntry | null }
+  | { kind: "prompt-editor"; prompt: Prompt | null };
+
+/** Settings dialog that hosts all runtime configuration panels. */
+export function Settings(props: { ref: (el: HTMLDialogElement) => void; onClose: () => void }) {
+  let dialogRef!: HTMLDialogElement;
+  const [route, setRoute] = createSignal<SettingsRoute>({ kind: "root" });
+
+  function close() {
+    dialogRef.close();
+    setRoute({ kind: "root" });
+    props.onClose();
+  }
+
+  function backToRoot() {
+    setRoute({ kind: "root" });
+  }
+
+  function title() {
+    const current = route();
+    switch (current.kind) {
+      case "skill-editor":
+        return current.skill ? "Edit Skill" : "New Skill";
+      case "prompt-editor":
+        return current.prompt ? "Edit Prompt" : "New Prompt";
+      default:
+        return "Settings";
+    }
+  }
+
+  function currentSkill() {
+    const current = route();
+    return current.kind === "skill-editor" ? current.skill : null;
+  }
+
+  function currentPrompt() {
+    const current = route();
+    return current.kind === "prompt-editor" ? current.prompt : null;
+  }
+
+  return (
+    <dialog
+      ref={(el) => { dialogRef = el; props.ref(el); }}
+      class="m-auto bg-gh-surface text-gh-fg p-0 w-[min(980px,96vw)] max-h-[92vh] overflow-hidden shadow-lg"
+      onClick={(e) => { if (e.target === dialogRef && route().kind === "root") close(); }}
+      onCancel={(e) => {
+        if (route().kind !== "root") {
+          e.preventDefault();
+          return;
+        }
+        e.preventDefault();
+        close();
+      }}
+    >
+      <div class="flex max-h-[92vh] min-h-0 flex-col">
+        <div class="flex items-center gap-2 px-4 py-3 bg-gh-overlay rounded-t-md">
+          {route().kind !== "root" && (
+            <button
+              class="p-0.5 text-gh-fg-subtle hover:text-gh-fg cursor-pointer"
+              onClick={backToRoot}
+              title="Back"
+            >
+              <span class="i ti ti-arrow-left text-base" />
+            </button>
+          )}
+          <h2 class="text-sm font-bold uppercase tracking-wider text-gh-fg-secondary flex-1">{title()}</h2>
+          {route().kind === "root" && (
+            <button
+              class="p-0.5 text-gh-fg-subtle hover:text-gh-fg cursor-pointer"
+              onClick={close}
+              title="Close"
+            >
+              <span class="i ti ti-x text-base" />
+            </button>
+          )}
+        </div>
+        <Switch>
+          <Match when={route().kind === "root"}>
+            <div class="hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-5 pt-3 space-y-3">
+              <ProvidersConfig />
+              <ApiKeys />
+              <SkillsConfig
+                onCreateSkill={() => setRoute({ kind: "skill-editor", skill: null })}
+                onEditSkill={(skill) => setRoute({ kind: "skill-editor", skill })}
+              />
+              <SystemPrompt
+                onCreatePrompt={() => setRoute({ kind: "prompt-editor", prompt: null })}
+                onEditPrompt={(prompt) => setRoute({ kind: "prompt-editor", prompt })}
+              />
+              <MemoryEditor />
+            </div>
+          </Match>
+          <Match when={route().kind === "skill-editor"}>
+            <div class="min-h-0 flex-1 overflow-hidden px-4 pb-5 pt-3">
+              <SkillEditorView
+                skill={currentSkill()}
+                onCancel={backToRoot}
+                onDone={backToRoot}
+              />
+            </div>
+          </Match>
+          <Match when={route().kind === "prompt-editor"}>
+            <div class="min-h-0 flex-1 overflow-hidden px-4 pb-5 pt-3">
+              <PromptEditorView
+                prompt={currentPrompt()}
+                onCancel={backToRoot}
+                onDone={backToRoot}
+              />
+            </div>
+          </Match>
+        </Switch>
+      </div>
+    </dialog>
+  );
+}

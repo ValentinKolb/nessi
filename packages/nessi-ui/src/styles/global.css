@@ -1,0 +1,214 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@import "@tabler/icons-webfont/dist/tabler-icons.css";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Minimal light palette */
+@theme {
+  --color-gh-canvas: #fafafa;
+  --color-gh-surface: #ffffff;
+  --color-gh-overlay: #f4f4f5;
+  --color-gh-muted: #e4e4e7;
+  --color-gh-subtle: #d4d4d8;
+  --color-gh-border: #d4d4d8;
+  --color-gh-border-muted: #e4e4e7;
+  --color-gh-fg: #18181b;
+  --color-gh-fg-secondary: #27272a;
+  --color-gh-fg-muted: #52525b;
+  --color-gh-fg-subtle: #71717a;
+  --color-gh-danger: #d1242f;
+  --color-gh-agent-bg: #efeaff;
+  --color-gh-agent-bg-strong: #e7ddff;
+  --color-gh-agent-border: #8664e0;
+}
+
+html, body, input, textarea, button, select {
+  font-family: "JetBrains Mono Variable", "JetBrains Mono", monospace;
+}
+
+button {
+  cursor: pointer;
+}
+
+body {
+  color: var(--color-gh-fg);
+  background: var(--color-gh-canvas);
+  overflow-x: hidden;
+}
+
+@utility btn-primary {
+  @apply text-xs px-2.5 py-1 cursor-pointer bg-zinc-900 text-zinc-50 hover:bg-zinc-800;
+}
+
+.prose table {
+  display: block;
+  overflow-x: auto;
+}
+
+/* Thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-gh-border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-gh-border);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gh-fg-subtle);
+}
+
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+@utility btn-secondary {
+  @apply text-xs px-2.5 py-1 cursor-pointer bg-gh-overlay text-gh-fg-muted hover:text-gh-fg hover:bg-gh-muted;
+}
+
+:where(input, textarea, select, dialog, .btn-primary, .btn-secondary) {
+  border-radius: 0.4rem;
+}
+
+:where(input, textarea, select):focus-visible {
+  outline: none;
+}
+
+dialog::backdrop {
+  background: rgba(18, 23, 30, 0.22);
+}
+
+.ui-input {
+  width: 100%;
+  background: var(--color-gh-surface);
+  color: var(--color-gh-fg);
+  font-size: 0.75rem;
+  line-height: 1.1rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.4rem;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-gh-border-muted) 70%, white);
+  transition: box-shadow 120ms ease, background-color 120ms ease, transform 120ms ease;
+}
+
+.ui-input::placeholder {
+  color: var(--color-gh-fg-subtle);
+}
+
+.ui-input:focus,
+.ui-input:focus-visible {
+  outline: none;
+  background: var(--color-gh-surface);
+  box-shadow: 0 0 0 1px var(--color-gh-subtle);
+}
+
+.ui-panel {
+  background: var(--color-gh-overlay);
+  border-radius: 0.45rem;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.ui-subpanel {
+  background: color-mix(in oklab, var(--color-gh-surface) 88%, white);
+  border-radius: 0.45rem;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.ui-note {
+  background: color-mix(in oklab, #dbeafe 48%, white);
+  color: color-mix(in oklab, var(--color-gh-fg-muted) 86%, #1d4ed8);
+  border-radius: 0.45rem;
+  padding: 0.75rem 0.85rem;
+  font-size: 0.625rem;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.ui-note-editor {
+  min-height: 0;
+}
+
+.ui-note code {
+  background: color-mix(in oklab, white 72%, #bfdbfe);
+  color: var(--color-gh-fg-secondary);
+  padding: 0 0.2rem;
+  border-radius: 0.25rem;
+}
+
+.ui-list {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.ui-row {
+  font-size: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.4rem;
+  background: var(--color-gh-surface);
+  transition: background-color 120ms ease;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ui-row > * {
+  min-width: 0;
+}
+
+.ui-row:hover {
+  background: color-mix(in oklab, var(--color-gh-muted) 48%, white);
+}
+
+.ui-row-active {
+  background: var(--color-gh-surface);
+}
+
+.danger-text:hover {
+  color: var(--color-gh-danger) !important;
+}
+
+.text-block-markdown {
+  color: var(--color-gh-fg-secondary);
+}
+
+.text-block-markdown a {
+  color: #5b43be;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.text-block-markdown code {
+  background: var(--color-gh-overlay);
+  color: var(--color-gh-fg);
+  box-shadow: inset 0 0 0 1px var(--color-gh-border-muted);
+  padding: 0 0.2rem;
+  border-radius: 0.25rem;
+}
+
+.text-block-markdown pre {
+  background: var(--color-gh-overlay);
+  box-shadow: inset 0 0 0 1px var(--color-gh-border-muted);
+  color: var(--color-gh-fg);
+  border-radius: 0.4rem;
+}

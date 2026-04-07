@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nessi</title>
+    <meta name="description" content="Nessi AI Chat" />
+    <meta name="theme-color" content="#f6f8fa" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <script>
+      // Shim for node modules that reference process in browser
+      if (typeof globalThis.process === "undefined") {
+        globalThis.process = { env: {}, pid: 1, ppid: 0, type: "renderer",
+          getuid: function(){return 0}, getgid: function(){return 0}, geteuid: function(){return 0},
+          binding: function(){}, _linkedBinding: function(){}, dlopen: function(){} };
+      }
+    </script>
+  </head>
+  <body style="background:#f6f8fa">
+    <div id="app"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>
