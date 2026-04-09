@@ -12,45 +12,41 @@ import { readString, writeString } from "../lib/json-storage.js";
 
 const ACTIVE_CHAT_KEY = "nessi:activeChat";
 
-function newId(): string {
-  return humanId({ separator: "-", capitalize: false });
-}
+const newId = () => humanId({ separator: "-", capitalize: false });
 
-function restoreOrNewId(): string {
-  return readString(ACTIVE_CHAT_KEY) || newId();
-}
+const restoreOrNewId = () => readString(ACTIVE_CHAT_KEY) || newId();
 
 /** Top-level application shell for chat, settings and provider/prompt pickers. */
-export function App() {
+export const App = () => {
   const [activeChatId, setActiveChatId] = createSignal(restoreOrNewId());
   const [activeProvider, setActiveProvider] = createSignal(getActiveProviderEntry());
   const [activePromptId, setActivePromptLocal] = createSignal(getActivePromptId());
   let settingsRef!: HTMLDialogElement;
   const refreshTitles = () => void refreshChatTitlesInBackground();
 
-  function switchChat(id: string) {
+  const switchChat = (id: string) => {
     setActiveChatId(id);
     writeString(ACTIVE_CHAT_KEY, id);
-  }
+  };
 
-  function newChat() {
+  const newChat = () => {
     switchChat(newId());
-  }
+  };
 
-  function handleProviderChange(id: string) {
+  const handleProviderChange = (id: string) => {
     setActiveProviderId(id);
     setActiveProvider(getActiveProviderEntry());
-  }
+  };
 
-  function handlePromptChange(id: string) {
+  const handlePromptChange = (id: string) => {
     setActivePromptId(id);
     setActivePromptLocal(id);
-  }
+  };
 
-  function refreshProvider() {
+  const refreshProvider = () => {
     setActiveProvider(getActiveProviderEntry());
     setActivePromptLocal(getActivePromptId());
-  }
+  };
 
   onMount(() => {
     registerCommand({ name: "new", description: "Start a new chat", action: newChat });
@@ -148,4 +144,4 @@ export function App() {
       <Settings ref={(el) => { settingsRef = el; }} onClose={refreshProvider} />
     </div>
   );
-}
+};

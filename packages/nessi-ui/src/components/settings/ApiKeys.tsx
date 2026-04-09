@@ -4,7 +4,7 @@ import { readJson, writeJson } from "../../lib/json-storage.js";
 const TAVILY_KEY = "nessi:tavily";
 
 /** Configure API keys used by built-in integrations. */
-export function ApiKeys() {
+export const ApiKeys = () => {
   const [tavilyKey, setTavilyKey] = createSignal("");
   const [initial, setInitial] = createSignal("");
   const [saved, setSaved] = createSignal(false);
@@ -20,19 +20,22 @@ export function ApiKeys() {
     if (savedTimer) clearTimeout(savedTimer);
   });
 
-  function handleSave() {
+  const handleSave = () => {
     writeJson(TAVILY_KEY, { apiKey: tavilyKey() });
     setInitial(tavilyKey());
     setSaved(true);
     if (savedTimer) clearTimeout(savedTimer);
     savedTimer = setTimeout(() => setSaved(false), 2000);
-  }
+  };
 
   const dirty = () => tavilyKey() !== initial();
 
   return (
     <div class="ui-panel p-3 space-y-2">
-      <h3 class="text-xs font-bold uppercase tracking-wider text-gh-fg-muted">API Keys</h3>
+      <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
+        <span class="i ti ti-key text-sm" />
+        <span>API Keys</span>
+      </h3>
       <div class="ui-subpanel p-2 space-y-2">
         <label class="block">
           <span class="text-xs text-gh-fg-muted">Tavily</span>
@@ -55,4 +58,4 @@ export function ApiKeys() {
       </div>
     </div>
   );
-}
+};

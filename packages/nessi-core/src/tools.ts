@@ -4,19 +4,18 @@
 
 import { z } from "zod";
 import type { ToolDefinition, ServerTool, ClientTool, ToolContext } from "./types.js";
-import type { ToolSpec } from "nessi-ai";
 
 // ----------------------------------------------------------------------------
 // defineTool()
 // ----------------------------------------------------------------------------
 
-export function defineTool<TInput extends z.ZodType, TOutput extends z.ZodType = z.ZodAny>(config: {
+export const defineTool = <TInput extends z.ZodType, TOutput extends z.ZodType = z.ZodAny>(config: {
   name: string;
   description: string;
   inputSchema: TInput;
   outputSchema?: TOutput;
   needsApproval?: boolean;
-}): ToolDefinition<TInput, TOutput> {
+}): ToolDefinition<TInput, TOutput> => {
   const def: ToolDefinition<TInput, TOutput> = {
     ...config,
     needsApproval: config.needsApproval ?? false,
@@ -34,15 +33,13 @@ export function defineTool<TInput extends z.ZodType, TOutput extends z.ZodType =
 // Tool → JSON Schema (for provider adapters)
 // ----------------------------------------------------------------------------
 
-export function toolToJsonSchema(tool: ServerTool | ClientTool) {
-  return {
-    name: tool.def.name,
-    description: tool.def.description,
-    parameters: z.toJSONSchema(tool.def.inputSchema, { target: "draft-07" }),
-  };
-}
+export const toolToJsonSchema = (tool: ServerTool | ClientTool) => ({
+  name: tool.def.name,
+  description: tool.def.description,
+  parameters: z.toJSONSchema(tool.def.inputSchema, { target: "draft-07" }),
+})
 
-export function toolToSpec(tool: ServerTool | ClientTool): ToolSpec {
+export const toolToSpec = (tool: ServerTool | ClientTool) => {
   const schema = toolToJsonSchema(tool);
   return {
     name: schema.name,

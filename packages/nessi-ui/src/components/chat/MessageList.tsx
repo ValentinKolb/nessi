@@ -3,20 +3,22 @@ import type { UIMessage } from "./types.js";
 import { Message } from "./Message.js";
 
 /** Scrollable message viewport that auto-follows streaming updates. */
-export function MessageList(props: {
+export const MessageList = (props: {
   messages: UIMessage[];
   streaming: boolean;
+  canRetryMessage?: (message: UIMessage) => boolean;
+  onRetryMessage?: (message: UIMessage) => void;
   onApproval?: (callId: string, action: "deny" | "allow" | "always") => void;
   onSurveySubmit?: (callId: string, answers: Record<string, string>) => void;
-}) {
+}) => {
   let containerRef!: HTMLDivElement;
   let observer: MutationObserver | null = null;
 
-  function scrollToBottom() {
+  const scrollToBottom = () => {
     requestAnimationFrame(() => {
       containerRef.scrollTop = containerRef.scrollHeight;
     });
-  }
+  };
 
   createEffect(() => {
     // New top-level messages should always jump to bottom.
@@ -54,7 +56,15 @@ export function MessageList(props: {
       >
         <div class="max-w-4xl mx-auto">
           <For each={props.messages}>
-            {(msg) => <Message message={msg} onApproval={props.onApproval} onSurveySubmit={props.onSurveySubmit} />}
+            {(msg) => (
+              <Message
+                message={msg}
+                canRetryLastUserMessage={props.canRetryMessage?.(msg)}
+                onRetryLastUserMessage={() => props.onRetryMessage?.(msg)}
+                onApproval={props.onApproval}
+                onSurveySubmit={props.onSurveySubmit}
+              />
+            )}
           </For>
           <Show when={props.streaming}>
             <div class="px-3 py-2 text-gh-fg-muted text-sm">
@@ -65,4 +75,4 @@ export function MessageList(props: {
       </Show>
     </div>
   );
-}
+};

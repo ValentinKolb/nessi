@@ -1,4 +1,4 @@
-export async function* parseNDJSON<T>(
+export const parseNDJSON = async function* <T>(
   reader: ReadableStreamDefaultReader<Uint8Array>,
 ): AsyncGenerator<T> {
   const decoder = new TextDecoder();
@@ -17,8 +17,8 @@ export async function* parseNDJSON<T>(
       if (!trimmed) continue;
       try {
         yield JSON.parse(trimmed) as T;
-      } catch (error) {
-        console.warn("Ignoring malformed NDJSON record", error, trimmed);
+      } catch {
+        // silently skip malformed records
       }
     }
   }
@@ -27,8 +27,8 @@ export async function* parseNDJSON<T>(
   if (trimmed) {
     try {
       yield JSON.parse(trimmed) as T;
-    } catch (error) {
-      console.warn("Ignoring trailing malformed NDJSON record", error, trimmed);
+    } catch {
+      // silently skip trailing malformed records
     }
   }
-}
+};

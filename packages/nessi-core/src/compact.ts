@@ -3,22 +3,13 @@ import type {
   CompactLoop,
   CompactOptions,
   CompactResult,
-  Usage,
 } from "./types.js";
-
-function zeroUsage(): Usage {
-  return { input: 0, output: 0, total: 0 };
-}
-
-function toErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
-}
+import { zeroUsage, toErrorMessage } from "./utils.js";
 
 /**
  * Run compaction as a loop-style operation so consumers can iterate or subscribe to events.
  */
-export function compact(options: CompactOptions): CompactLoop {
+export const compact = (options: CompactOptions): CompactLoop => {
   const {
     agentId = "main",
     store,
@@ -39,24 +30,25 @@ export function compact(options: CompactOptions): CompactLoop {
 
   const signal = abortController.signal;
 
+  const mkResult = (applied: boolean, entriesBefore: number, entriesAfter: number): CompactResult => ({
+    applied,
+    entriesBefore,
+    entriesAfter,
+    forced: force,
+  })
+
   async function* run(): AsyncGenerator<CompactEvent> {
     let entriesBefore = 0;
 
     try {
-      entriesBefore = (await store.load()).length;
+      const entries = await store.load();
+      entriesBefore = entries.length;
 
       if (signal.aborted) {
-        const abortedResult: CompactResult = {
-          applied: false,
-          entriesBefore,
-          entriesAfter: entriesBefore,
-          forced: force,
-        };
-        yield { type: "done", agentId, reason: "aborted", result: abortedResult };
+        yield { type: "done", agentId, reason: "aborted", result: mkResult(false, entriesBefore, entriesBefore) };
         return;
       }
 
-      const entries = await store.load();
       const operation = compactFn({
         entries,
         store,
@@ -66,13 +58,7 @@ export function compact(options: CompactOptions): CompactLoop {
       });
 
       if (!operation) {
-        const skippedResult: CompactResult = {
-          applied: false,
-          entriesBefore,
-          entriesAfter: entriesBefore,
-          forced: force,
-        };
-        yield { type: "done", agentId, reason: "stop", result: skippedResult };
+        yield { type: "done", agentId, reason: "stop", result: mkResult(false, entriesBefore, entriesBefore) };
         return;
       }
 
@@ -81,29 +67,22 @@ export function compact(options: CompactOptions): CompactLoop {
       yield { type: "compaction_end", agentId };
 
       const entriesAfter = (await store.load()).length;
-      const successResult: CompactResult = {
-        applied: true,
-        entriesBefore,
-        entriesAfter,
-        forced: force,
-      };
       yield {
         type: "done",
         agentId,
         reason: signal.aborted ? "aborted" : "stop",
-        result: successResult,
+        result: mkResult(true, entriesBefore, entriesAfter),
       };
     } catch (err) {
       const message = toErrorMessage(err);
-      const entriesAfter = (await store.load().then((entries) => entries.length).catch(() => entriesBefore));
-      const failedResult: CompactResult = {
-        applied: false,
-        entriesBefore,
-        entriesAfter,
-        forced: force,
-      };
+      const entriesAfter = await store.load().then(e => e.length).catch(() => entriesBefore);
       yield { type: "error", agentId, error: message, retryable: false };
-      yield { type: "done", agentId, reason: signal.aborted ? "aborted" : "error", result: failedResult };
+      yield {
+        type: "done",
+        agentId,
+        reason: signal.aborted ? "aborted" : "error",
+        result: mkResult(false, entriesBefore, entriesAfter),
+      };
     }
   }
 

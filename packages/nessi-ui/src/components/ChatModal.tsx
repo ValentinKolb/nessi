@@ -2,50 +2,49 @@ import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import { deleteChat as deleteChatData, listChatMetas, type ChatMeta } from "../lib/chat-storage.js";
 
 /** Dialog listing chats and quick chat actions. */
-export function ChatModal(props: {
+export const ChatModal = (props: {
   activeChatId: string;
   onSelectChat: (id: string) => void;
   onNewChat: () => void;
-}) {
+}) => {
   let dialogRef!: HTMLDialogElement;
   const [chats, setChats] = createSignal<ChatMeta[]>([]);
-  const storageHandler = () => refresh();
 
-  function refresh() { setChats(listChatMetas()); }
+  const refresh = () => { setChats(listChatMetas()); };
 
   onMount(() => {
     refresh();
-    window.addEventListener("storage", storageHandler);
+    window.addEventListener("storage", refresh);
   });
 
   onCleanup(() => {
-    window.removeEventListener("storage", storageHandler);
+    window.removeEventListener("storage", refresh);
   });
 
-  function open() {
+  const open = () => {
     refresh();
     dialogRef.showModal();
-  }
+  };
 
-  function close() {
+  const close = () => {
     dialogRef.close();
-  }
+  };
 
-  function selectChat(id: string) {
+  const selectChat = (id: string) => {
     props.onSelectChat(id);
     close();
-  }
+  };
 
-  function newChat() {
+  const newChat = () => {
     props.onNewChat();
     close();
-  }
+  };
 
-  function deleteChat(id: string) {
+  const deleteChat = (id: string) => {
     deleteChatData(id);
     refresh();
     if (id === props.activeChatId) newChat();
-  }
+  };
 
   return (
     <>
@@ -103,4 +102,4 @@ export function ChatModal(props: {
       </dialog>
     </>
   );
-}
+};

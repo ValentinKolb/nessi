@@ -1,8 +1,18 @@
 import { readJson, writeJson } from "./json-storage.js";
 import { readSkillDocMeta, slugifySkillCommand } from "./skill-doc.js";
-import { BUILTIN_SKILL_CODES } from "./skill-templates.js";
+import { asRecord, asString } from "./utils.js";
+import surveyDoc from "../assets/skills/survey/SKILL.md?raw";
+import surveyCode from "../assets/skills/survey/skill.ts?raw";
+import webDoc from "../assets/skills/web/SKILL.md?raw";
+import webCode from "../assets/skills/web/skill.ts?raw";
+import pdfDoc from "../assets/skills/pdf/SKILL.md?raw";
+import pdfCode from "../assets/skills/pdf/skill.ts?raw";
+import tableDoc from "../assets/skills/table/SKILL.md?raw";
+import tableCode from "../assets/skills/table/skill.ts?raw";
 
-export interface SkillEntry {
+const DIRECT_TOOL_SKILL_IDS = new Set(["web"]);
+
+export type SkillEntry = {
   id: string;
   name: string;
   description: string;
@@ -11,7 +21,7 @@ export interface SkillEntry {
   enabled: boolean;
   code?: string;
   builtin?: boolean;
-}
+};
 
 const STORAGE_KEY = "nessi:skills:v2";
 const LEGACY_IMPLS_KEY = "nessi:skill-impls:v2";
@@ -22,17 +32,37 @@ const BUILTIN_SKILL_DOCS = import.meta.glob("../assets/skills/*/SKILL.md", {
   import: "default",
 }) as Record<string, string>;
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
+const BUILTIN_SKILL_SOURCES = import.meta.glob("../assets/skills/*/skill.ts", {
+  eager: true,
+  query: "?raw",
+  import: "default",
+}) as Record<string, string>;
 
-function asString(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
+const STATIC_BUILTIN_SKILL_DOCS: Record<string, string> = {
+  "../assets/skills/survey/SKILL.md": surveyDoc,
+  "../assets/skills/web/SKILL.md": webDoc,
+  "../assets/skills/pdf/SKILL.md": pdfDoc,
+  "../assets/skills/table/SKILL.md": tableDoc,
+};
 
-function parseSkillDoc(raw: string): Omit<SkillEntry, "id" | "builtin"> | null {
+const STATIC_BUILTIN_SKILL_SOURCES: Record<string, string> = {
+  "../assets/skills/survey/skill.ts": surveyCode,
+  "../assets/skills/web/skill.ts": webCode,
+  "../assets/skills/pdf/skill.ts": pdfCode,
+  "../assets/skills/table/skill.ts": tableCode,
+};
+
+const ALL_BUILTIN_SKILL_DOCS = {
+  ...BUILTIN_SKILL_DOCS,
+  ...STATIC_BUILTIN_SKILL_DOCS,
+};
+
+const ALL_BUILTIN_SKILL_SOURCES = {
+  ...BUILTIN_SKILL_SOURCES,
+  ...STATIC_BUILTIN_SKILL_SOURCES,
+};
+
+const parseSkillDoc = (raw: string): Omit<SkillEntry, "id" | "builtin"> | null => {
   const parsed = readSkillDocMeta(raw);
   if (!parsed) return null;
 
@@ -44,35 +74,45 @@ function parseSkillDoc(raw: string): Omit<SkillEntry, "id" | "builtin"> | null {
     enabled: parsed.enabled,
     code: undefined,
   };
-}
+};
 
-function builtinSeedFromPath(path: string, raw: string): SkillEntry | null {
+const builtinSourceForFolder = (folder: string) => {
+  const path = Object.keys(ALL_BUILTIN_SKILL_SOURCES).find((entry) => entry.includes(`/skills/${folder}/skill.ts`));
+  return path ? ALL_BUILTIN_SKILL_SOURCES[path] : undefined;
+};
+
+const builtinSeedFromPath = (path: string, raw: string): SkillEntry | null => {
   const parsed = parseSkillDoc(raw);
   if (!parsed) return null;
 
   const folder = path.match(/\/skills\/([^/]+)\/SKILL\.md$/)?.[1] ?? parsed.name;
   const id = slugifySkillCommand(parsed.name || folder);
+  const code = builtinSourceForFolder(folder);
+
+  if (!code) {
+    console.warn(`Built-in skill '${id}' is missing skill.ts in assets/skills/${folder}/`);
+  }
 
   return {
     id,
     ...parsed,
-    code: BUILTIN_SKILL_CODES[id],
+    code,
     builtin: true,
   };
-}
+};
 
-function builtinSeeds(): SkillEntry[] {
-  const seeds: SkillEntry[] = [];
-  for (const [path, raw] of Object.entries(BUILTIN_SKILL_DOCS)) {
+const builtinSeeds = () => {
+  const seeds = new Map<string, SkillEntry>();
+  for (const [path, raw] of Object.entries(ALL_BUILTIN_SKILL_DOCS)) {
     const entry = builtinSeedFromPath(path, raw);
-    if (entry) seeds.push(entry);
+    if (entry && !DIRECT_TOOL_SKILL_IDS.has(entry.id)) seeds.set(entry.id, entry);
   }
-  return seeds.sort((a, b) => a.name.localeCompare(b.name));
-}
+  return [...seeds.values()].sort((a, b) => a.name.localeCompare(b.name));
+};
 
 type StoredSkillEntry = SkillEntry & { legacyImplId?: string };
 
-function normalizeStored(entry: unknown): StoredSkillEntry | null {
+const normalizeStored = (entry: unknown): StoredSkillEntry | null => {
   const o = asRecord(entry);
   if (!o) return null;
 
@@ -89,23 +129,23 @@ function normalizeStored(entry: unknown): StoredSkillEntry | null {
   const legacyImplId = asString(o.implId) ?? undefined;
 
   return { id, name, description, doc, command, enabled, builtin, code, legacyImplId };
-}
+};
 
-function loadStored(): StoredSkillEntry[] {
+const loadStored = () => {
   const parsed = readJson<unknown>(STORAGE_KEY, []);
   if (!Array.isArray(parsed)) return [];
   return parsed
     .map(normalizeStored)
     .filter((x): x is StoredSkillEntry => Boolean(x));
-}
+};
 
-function saveStored(entries: SkillEntry[]) {
+const saveStored = (entries: SkillEntry[]) => {
   writeJson(STORAGE_KEY, entries);
-}
+};
 
-function loadLegacyImplCodes(): Map<string, string> {
+const loadLegacyImplCodes = () => {
   const parsed = readJson<unknown>(LEGACY_IMPLS_KEY, []);
-  if (!Array.isArray(parsed)) return new Map();
+  if (!Array.isArray(parsed)) return new Map<string, string>();
 
   const codes = new Map<string, string>();
   for (const entry of parsed) {
@@ -115,10 +155,10 @@ function loadLegacyImplCodes(): Map<string, string> {
     if (id && code) codes.set(id, code);
   }
   return codes;
-}
+};
 
 /** Load merged skill registry (built-ins + user overrides). */
-export function loadSkills(): SkillEntry[] {
+export const loadSkills = () => {
   const seeds = builtinSeeds();
   const stored = loadStored();
   const legacyImplCodes = loadLegacyImplCodes();
@@ -153,14 +193,14 @@ export function loadSkills(): SkillEntry[] {
   }
 
   return merged;
-}
+};
 
-export function saveSkills(entries: SkillEntry[]) {
+export const saveSkills = (entries: SkillEntry[]) => {
   saveStored(entries);
-}
+};
 
 /** Generate a unique skill id from a base label. */
-export function ensureUniqueSkillId(base: string, existing: SkillEntry[]): string {
+export const ensureUniqueSkillId = (base: string, existing: SkillEntry[]) => {
   const root = slugifySkillCommand(base);
   let id = root;
   let n = 2;
@@ -169,13 +209,9 @@ export function ensureUniqueSkillId(base: string, existing: SkillEntry[]): strin
     id = `${root}-${n++}`;
   }
   return id;
-}
+};
 
-export function getEnabledSkills(): SkillEntry[] {
-  return loadSkills().filter((s) => s.enabled);
-}
+export const getEnabledSkills = () => loadSkills().filter((s) => s.enabled);
 
 /** Virtual path used inside bash for skill documentation. */
-export function skillPath(id: string): string {
-  return `/skills/${id}/SKILL.md`;
-}
+export const skillPath = (id: string) => `/skills/${id}/SKILL.md`;

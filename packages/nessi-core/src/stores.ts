@@ -13,11 +13,11 @@ import type { Message, StoreEntry, SessionStore } from "./types.js";
  * Tiebreaker: at the same seq, "summary" sorts after "message" so that
  * the summary replaces (not precedes) messages at that position.
  */
-export function memoryStore(): SessionStore {
+export const memoryStore = (): SessionStore => {
   const entries: StoreEntry[] = [];
   let nextSeq = 1;
 
-  function sortEntries() {
+  const sortEntries = () => {
     entries.sort((a, b) => {
       if (a.seq !== b.seq) return a.seq - b.seq;
       // summary after message at same seq
@@ -29,13 +29,7 @@ export function memoryStore(): SessionStore {
 
   return {
     async load() {
-      let lastSummaryIdx = -1;
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i]?.kind === "summary") {
-          lastSummaryIdx = i;
-          break;
-        }
-      }
+      const lastSummaryIdx = entries.findLastIndex(e => e.kind === "summary");
       return lastSummaryIdx >= 0 ? entries.slice(lastSummaryIdx) : [...entries];
     },
 

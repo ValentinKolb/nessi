@@ -2,14 +2,14 @@ import type { ContentPart } from "nessi-core";
 
 export type UIUserContentPart =
   | { type: "text"; text: string }
-  | { type: "image"; src: string; mediaType: string; data: string; name?: string };
+  | { type: "image"; src: string; mediaType: string; data: string; name?: string }
+  | { type: "file"; fileId: string; name: string; mimeType: string; size: number };
 
-export function filePartSrc(mediaType: string, data: string): string {
-  return `data:${mediaType};base64,${data}`;
-}
+export const filePartSrc = (mediaType: string, data: string) =>
+  `data:${mediaType};base64,${data}`;
 
-export function contentPartsToUIContent(parts: ContentPart[]): UIUserContentPart[] {
-  return parts.map((part) => {
+export const contentPartsToUIContent = (parts: ContentPart[]): UIUserContentPart[] =>
+  parts.map((part) => {
     if (typeof part === "string") return { type: "text" as const, text: part };
     if (part.type === "text") return { type: "text" as const, text: part.text };
     return {
@@ -19,20 +19,17 @@ export function contentPartsToUIContent(parts: ContentPart[]): UIUserContentPart
       data: part.data,
     };
   });
-}
 
-export function uiContentToParts(content: UIUserContentPart[]): ContentPart[] {
-  return content.map((part) =>
-    part.type === "text"
-      ? ({ type: "text", text: part.text } as const)
-      : ({ type: "file", data: part.data, mediaType: part.mediaType } as const),
-  );
-}
+export const uiContentToParts = (content: UIUserContentPart[]) =>
+  content.flatMap((part): ContentPart[] => {
+    if (part.type === "text") return [{ type: "text", text: part.text }];
+    if (part.type === "image") return [{ type: "file", data: part.data, mediaType: part.mediaType }];
+    return [];
+  });
 
-export function uiContentText(content: UIUserContentPart[]): string {
-  return content
+export const uiContentText = (content: UIUserContentPart[]) =>
+  content
     .filter((part): part is Extract<UIUserContentPart, { type: "text" }> => part.type === "text")
     .map((part) => part.text)
     .join("")
     .trim();
-}

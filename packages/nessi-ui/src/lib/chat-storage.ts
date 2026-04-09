@@ -1,35 +1,31 @@
 import { readJson, writeJson } from "./json-storage.js";
+import { deleteAllChatFiles } from "./chat-files.js";
+import { CHAT_PREFIX } from "./utils.js";
 
-export interface ChatMeta {
+export type ChatMeta = {
   id: string;
   title: string;
   createdAt: string;
   titleSource?: "fallback" | "generated";
-}
+};
 
-const CHAT_PREFIX = "chat:";
 const CHAT_INDEX_KEY = "nessi:chat-index";
 
 /** Build the metadata key for a chat id. */
-export function chatMetaKey(chatId: string): string {
-  return `${CHAT_PREFIX}${chatId}:meta`;
-}
+export const chatMetaKey = (chatId: string) => `${CHAT_PREFIX}${chatId}:meta`;
 
-function emitStorage(key: string): void {
+const emitStorage = (key: string) => {
   window.dispatchEvent(new StorageEvent("storage", { key }));
-}
+};
 
 /** List all chat metadata objects sorted by newest first. */
-export function listChatMetas(): ChatMeta[] {
+export const listChatMetas = () => {
   let ids = readJson<string[]>(CHAT_INDEX_KEY, []);
   if (!Array.isArray(ids) || ids.length === 0) {
-    ids = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key?.startsWith(CHAT_PREFIX) || !key.endsWith(":meta")) continue;
-      const chatId = key.slice(CHAT_PREFIX.length, -":meta".length);
-      if (chatId) ids.push(chatId);
-    }
+    ids = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i))
+      .filter((key): key is string => key != null && key.startsWith(CHAT_PREFIX) && key.endsWith(":meta"))
+      .map((key) => key.slice(CHAT_PREFIX.length, -":meta".length))
+      .filter(Boolean);
     if (ids.length > 0) writeJson(CHAT_INDEX_KEY, [...new Set(ids)]);
   }
   const chats: ChatMeta[] = ids
@@ -37,26 +33,24 @@ export function listChatMetas(): ChatMeta[] {
     .filter((meta): meta is ChatMeta => Boolean(meta && typeof meta.id === "string" && typeof meta.createdAt === "string"));
   chats.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return chats;
-}
+};
 
 /** Remove all persisted records for a given chat id. */
-export function deleteChat(chatId: string): void {
+export const deleteChat = (chatId: string) => {
   const prefix = `${CHAT_PREFIX}${chatId}:`;
-  const keys: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(prefix)) keys.push(key);
-  }
+  const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i))
+    .filter((key): key is string => key != null && key.startsWith(prefix));
   for (const key of keys) localStorage.removeItem(key);
   writeJson(
     CHAT_INDEX_KEY,
     readJson<string[]>(CHAT_INDEX_KEY, []).filter((id) => id !== chatId),
   );
+  void deleteAllChatFiles(chatId);
   emitStorage(chatMetaKey(chatId));
-}
+};
 
 /** Ensure chat metadata exists and notify listeners once it is created. */
-export function ensureChatMeta(chatId: string, firstMessage: string): void {
+export const ensureChatMeta = (chatId: string, firstMessage: string) => {
   const key = chatMetaKey(chatId);
   if (localStorage.getItem(key)) return;
 
@@ -74,15 +68,15 @@ export function ensureChatMeta(chatId: string, firstMessage: string): void {
   writeJson(CHAT_INDEX_KEY, [...ids]);
 
   emitStorage(key);
-}
+};
 
-export function updateChatTitle(chatId: string, title: string, titleSource: ChatMeta["titleSource"] = "generated"): void {
+export const updateChatTitle = (chatId: string, title: string, titleSource: ChatMeta["titleSource"] = "generated") => {
   const key = chatMetaKey(chatId);
   const current = readJson<ChatMeta | null>(key, null);
   if (!current) return;
 
   const nextTitle = title.trim();
-  if (!nextTitle || current.title === nextTitle && current.titleSource === titleSource) return;
+  if (!nextTitle || (current.title === nextTitle && current.titleSource === titleSource)) return;
 
   writeJson(key, {
     ...current,
@@ -90,8 +84,6 @@ export function updateChatTitle(chatId: string, title: string, titleSource: Chat
     titleSource,
   } satisfies ChatMeta);
   emitStorage(key);
-}
+};
 
-export function needsGeneratedTitle(meta: ChatMeta): boolean {
-  return meta.titleSource !== "generated";
-}
+export const needsGeneratedTitle = (meta: ChatMeta) => meta.titleSource !== "generated";

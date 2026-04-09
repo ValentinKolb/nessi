@@ -3,16 +3,12 @@ import type { ExecResult, Command } from "just-bash";
 import type { CommandHelpers } from "./helpers.js";
 import { createCommandHelpers } from "./helpers.js";
 
-export function ok(stdout: string): ExecResult {
-  return { stdout, stderr: "", exitCode: 0 };
-}
+export const ok = (stdout: string): ExecResult => ({ stdout, stderr: "", exitCode: 0 });
 
-export function err(msg: string): ExecResult {
-  return { stdout: "", stderr: msg + "\n", exitCode: 1 };
-}
+export const err = (msg: string): ExecResult => ({ stdout: "", stderr: msg + "\n", exitCode: 1 });
 
 /** Parse `--key value` pairs from an args array. */
-export function parseArgs(args: string[]): Map<string, string> {
+export const parseArgs = (args: string[]) => {
   const map = new Map<string, string>();
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
@@ -22,10 +18,10 @@ export function parseArgs(args: string[]): Map<string, string> {
     }
   }
   return map;
-}
+};
 
 /** Collect positional (non-flag) args from an args array. */
-export function positionalArgs(args: string[]): string[] {
+export const positionalArgs = (args: string[]) => {
   const result: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
@@ -36,7 +32,7 @@ export function positionalArgs(args: string[]): string[] {
     }
   }
   return result;
-}
+};
 
 type SubcommandHandler = (args: string[], helpers: CommandHelpers) => Promise<ExecResult> | ExecResult;
 
@@ -49,7 +45,7 @@ type Subcommand = {
 export type CliBuilder = ReturnType<typeof cli>;
 
 /** Build a CLI command with auto-generated help. */
-export function cli(opts: { name: string; description: string }) {
+export const cli = (opts: { name: string; description: string }) => {
   const subcommands: Subcommand[] = [];
 
   const builder = {
@@ -83,4 +79,4 @@ export function cli(opts: { name: string; description: string }) {
   };
 
   return builder;
-}
+};

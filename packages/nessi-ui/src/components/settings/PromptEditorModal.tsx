@@ -3,26 +3,24 @@ import { createEffect, createSignal } from "solid-js";
 import type { Prompt } from "../../lib/prompts.js";
 import { isDefault, loadPrompts, loadUserPrompts, newPromptId, saveUserPrompts } from "../../lib/prompts.js";
 
-const inputClass = "ui-input";
-
 type PromptDraft = {
   id: string;
   name: string;
   content: string;
 };
 
-function toDraft(prompt: Prompt | null): PromptDraft {
+const toDraft = (prompt: Prompt | null): PromptDraft => {
   if (!prompt) {
     return { id: newPromptId(), name: "", content: "" };
   }
   return { id: prompt.id, name: prompt.name, content: prompt.content };
-}
+};
 
-export function PromptEditorView(props: {
+export const PromptEditorView = (props: {
   prompt: Prompt | null;
   onCancel: () => void;
   onDone: () => void;
-}) {
+}) => {
   const { copy, copied } = createCopyAction();
   const [draft, setDraft] = createSignal<PromptDraft>(toDraft(props.prompt));
 
@@ -30,9 +28,7 @@ export function PromptEditorView(props: {
     setDraft(toDraft(props.prompt));
   });
 
-  const current = () => props.prompt;
-
-  function save() {
+  const save = () => {
     const nextPrompt: Prompt = {
       id: draft().id,
       name: draft().name.trim() || "Untitled",
@@ -45,21 +41,20 @@ export function PromptEditorView(props: {
       : [...userPrompts, nextPrompt];
     saveUserPrompts(next);
     props.onDone();
-  }
+  };
 
-  function remove() {
-    const prompt = current();
-    if (!prompt) return;
-    saveUserPrompts(loadUserPrompts().filter((entry) => entry.id !== prompt.id));
+  const remove = () => {
+    if (!props.prompt) return;
+    saveUserPrompts(loadUserPrompts().filter((entry) => entry.id !== props.prompt!.id));
     props.onDone();
-  }
+  };
 
   return (
     <div class="flex h-full min-h-0 flex-col gap-3">
       <div class="space-y-1">
         <label class="text-[10px] font-bold uppercase tracking-wider text-gh-fg-muted">Prompt Name</label>
         <input
-          class={inputClass}
+          class="ui-input"
           value={draft().name}
           onInput={(e) => setDraft((prev) => ({ ...prev, name: e.currentTarget.value }))}
         />
@@ -67,10 +62,10 @@ export function PromptEditorView(props: {
       <div class="min-h-0 flex-1 space-y-3">
         <p class="text-[10px] leading-tight text-gh-fg-subtle">
           Supported placeholders: <code>{"{{date}}"}</code>, <code>{"{{weekday}}"}</code>, <code>{"{{model}}"}</code>,
-          <code>{" {{skills}}"}</code>.
+          <code>{" {{skills}}"}</code>, <code>{" {{file_info}}"}</code>.
         </p>
         <textarea
-          class={`${inputClass} hide-scrollbar h-[calc(100%-1.75rem)] min-h-0 resize-none overflow-y-auto`}
+          class="ui-input hide-scrollbar h-[calc(100%-1.75rem)] min-h-0 resize-none overflow-y-auto"
           rows={20}
           value={draft().content}
           onInput={(e) => setDraft((prev) => ({ ...prev, content: e.currentTarget.value }))}
@@ -91,10 +86,10 @@ export function PromptEditorView(props: {
         </button>
         <div class="flex-1" />
         <button class="btn-secondary danger-text" onClick={remove}>
-          {current() && isDefault(current()!) ? "reset" : "delete"}
+          {props.prompt && isDefault(props.prompt) ? "reset" : "delete"}
         </button>
         <button class="btn-primary" onClick={save}>save</button>
       </div>
     </div>
   );
-}
+};

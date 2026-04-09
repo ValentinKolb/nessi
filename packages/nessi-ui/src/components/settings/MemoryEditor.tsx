@@ -4,7 +4,7 @@ import { readString, removeKey, writeString } from "../../lib/json-storage.js";
 const STORAGE_KEY = "nessi:memory";
 
 /** Manual editor for long-term memory text used by the memory tool. */
-export function MemoryEditor() {
+export const MemoryEditor = () => {
   const [text, setText] = createSignal("");
   const [initial, setInitial] = createSignal("");
   const [saved, setSaved] = createSignal(false);
@@ -28,7 +28,7 @@ export function MemoryEditor() {
     if (savedTimer) clearTimeout(savedTimer);
   });
 
-  function handleSave() {
+  const handleSave = () => {
     const val = text().trim();
     if (val) writeString(STORAGE_KEY, val);
     else removeKey(STORAGE_KEY);
@@ -36,13 +36,16 @@ export function MemoryEditor() {
     setSaved(true);
     if (savedTimer) clearTimeout(savedTimer);
     savedTimer = setTimeout(() => setSaved(false), 2000);
-  }
+  };
 
   const dirty = () => text() !== initial();
 
   return (
     <div class="ui-panel p-3 space-y-2">
-      <h3 class="text-xs font-bold uppercase tracking-wider text-gh-fg-muted">Memory</h3>
+      <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
+        <span class="i ti ti-brain text-sm" />
+        <span>Memory</span>
+      </h3>
       <p class="text-[10px] text-gh-fg-subtle leading-tight">
         The agent can read and update this memory. You can also edit it manually.
       </p>
@@ -62,4 +65,4 @@ export function MemoryEditor() {
       </div>
     </div>
   );
-}
+};

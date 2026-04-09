@@ -1,63 +1,63 @@
 export type InputFilePart = { type: "file"; data: string; mediaType: string };
 export type ContentPart = string | { type: "text"; text: string } | InputFilePart;
 
-export interface TextBlock {
+export type TextBlock = {
   type: "text";
   text: string;
-}
+};
 
-export interface ThinkingBlock {
+export type ThinkingBlock = {
   type: "thinking";
   thinking: string;
-}
+};
 
-export interface ToolCallBlock {
+export type ToolCallBlock = {
   type: "tool_call";
   id: string;
   name: string;
   args: Record<string, unknown>;
-}
+};
 
 export type AssistantContentBlock = TextBlock | ThinkingBlock | ToolCallBlock;
 
-export interface UserMessage {
+export type UserMessage = {
   role: "user";
   content: ContentPart[];
-}
+};
 
 export type AssistantStopReason = "stop" | "tool_use" | "max_tokens" | "aborted" | "error";
 
-export interface AssistantMessage {
+export type AssistantMessage = {
   role: "assistant";
   content: AssistantContentBlock[];
   model?: string;
   usage?: Usage;
   stopReason?: AssistantStopReason;
-}
+};
 
-export interface ToolResultMessage {
+export type ToolResultMessage = {
   role: "tool_result";
   callId: string;
   name: string;
   result: unknown;
   isError?: boolean;
-}
+};
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;
 
-export interface Usage {
+export type Usage = {
   input: number;
   output: number;
   cacheRead?: number;
   total: number;
   creditsUsed?: number;
-}
+};
 
-export interface ToolSpec {
+export type ToolSpec = {
   name: string;
   description: string;
   inputSchema: unknown;
-}
+};
 
 export type ProviderFamily =
   | "openai-compatible"
@@ -66,24 +66,24 @@ export type ProviderFamily =
   | "mistral"
   | "gemini";
 
-export interface ProviderCapabilities {
+export type ProviderCapabilities = {
   streaming: boolean;
   tools: boolean;
   images: boolean;
   thinking: boolean;
   usage: boolean;
-}
+};
 
-export interface GenerateRequest {
+export type GenerateRequest = {
   systemPrompt?: string;
   messages: Message[];
   tools?: ToolSpec[];
   signal?: AbortSignal;
   temperature?: number;
   maxOutputTokens?: number;
-}
+};
 
-export interface GenerateResult {
+export type GenerateResult = {
   message: AssistantMessage;
   usage?: Usage;
   finishReason: AssistantStopReason;
@@ -91,7 +91,7 @@ export interface GenerateResult {
     requestId?: string;
     model?: string;
   };
-}
+};
 
 export type StreamEvent =
   | { type: "text"; delta: string }
@@ -102,10 +102,7 @@ export type StreamEvent =
   | { type: "usage"; usage: Usage; finishReason?: AssistantStopReason }
   | { type: "error"; error: string; retryable: boolean; contextOverflow?: boolean };
 
-export type ProviderEvent = StreamEvent;
-export type ProviderRequest = GenerateRequest;
-
-export interface Provider {
+export type Provider = {
   name: string;
   family: ProviderFamily;
   model: string;
@@ -113,18 +110,18 @@ export interface Provider {
   capabilities: ProviderCapabilities;
   stream(request: GenerateRequest): AsyncIterable<StreamEvent>;
   complete(request: GenerateRequest): Promise<GenerateResult>;
-}
+};
 
-export interface OpenAICompat {
+export type OpenAICompat = {
   toolCallIdPolicy?: "passthrough" | "strict9";
   supportsUsageInStreaming?: boolean;
   requiresToolResultName?: boolean;
   requiresAssistantAfterToolResult?: boolean;
   thinkingFormat?: "none" | "reasoning_details" | "text";
   maxTokensField?: "max_tokens" | "max_completion_tokens";
-}
+};
 
-export interface OpenAICompatibleConfig {
+export type OpenAICompatibleConfig = {
   name: string;
   model: string;
   baseURL: string;
@@ -135,4 +132,4 @@ export interface OpenAICompatibleConfig {
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
   headers?: Record<string, string>;
-}
+};

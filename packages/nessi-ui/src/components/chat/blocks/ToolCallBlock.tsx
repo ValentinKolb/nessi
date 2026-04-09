@@ -1,29 +1,102 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import type { UIToolCallBlock } from "../types.js";
 
+const stringArg = (args: Record<string, unknown> | undefined, key: string, fallback: string) =>
+  typeof args?.[key] === "string" ? args[key] : fallback;
+
 /** Collapsible shell command block with approval controls and command output. */
-export function ToolCallBlock(props: { block: UIToolCallBlock; onApproval?: (callId: string, action: "deny" | "allow" | "always") => void }) {
+export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (callId: string, action: "deny" | "allow" | "always") => void }) => {
   const [expanded, setExpanded] = createSignal(false);
 
-  const argsStr = () => {
-    try {
-      const a = props.block.args as Record<string, unknown>;
-      if (a && typeof a === "object" && "command" in a) return String(a.command);
-      return JSON.stringify(a, null, 2);
-    } catch { return String(props.block.args); }
+  const formatValue = (value: unknown): string => {
+    if (Array.isArray(value)) return value.map((item) => formatValue(item)).join(", ");
+    if (value && typeof value === "object") return JSON.stringify(value, null, 2);
+    if (typeof value === "string") return value;
+    if (value === null) return "null";
+    if (typeof value === "undefined") return "";
+    return String(value);
   };
 
-  const resultStr = () => {
-    if (props.block.result === undefined) return "";
-    try {
-      const r = props.block.result as Record<string, unknown>;
-      if (r && typeof r === "object" && "stdout" in r) {
-        const stdout = String(r.stdout || "");
-        const stderr = String(r.stderr || "");
-        return stderr ? `${stdout}\n${stderr}` : stdout;
+  const formatLabel = (key: string) =>
+    key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").toLowerCase();
+
+  const headline = () => {
+    const args = props.block.args as Record<string, unknown> | undefined;
+    const name = props.block.name;
+
+    const headlineMap: Record<string, () => string> = {
+      bash: () => stringArg(args, "command", "bash"),
+      memory: () => `memory ${stringArg(args, "action", "")}`,
+      web: () => {
+        const action = stringArg(args, "action", "search");
+        return action === "extract" ? `web extract ${stringArg(args, "url", "")}` : `web search "${stringArg(args, "query", "")}"`;
+      },
+      file_read: () => `read ${stringArg(args, "path", "")}`,
+      file_write: () => `write ${stringArg(args, "path", "")}`,
+      file_edit: () => `edit ${stringArg(args, "path", "")}`,
+      file_list: () => `ls ${stringArg(args, "path", "/")}`,
+      survey: () => "survey",
+    };
+
+    return headlineMap[name]?.() ?? name;
+  };
+
+  const leadingIconClass = () => {
+    if (props.block.isError) return "ti-exclamation-circle";
+    if (props.block.name === "bash") return "ti-circle-chevron-right";
+    if (props.block.name === "web") return "ti-search";
+    if (props.block.name === "memory") return "ti-brain";
+    if (props.block.name === "list_files" || props.block.name === "read_file") return "ti-file-search";
+    if (props.block.name === "write_file" || props.block.name === "edit_file") return "ti-file-text-spark";
+    return "";
+  };
+
+  const argsEntries = () => {
+    if (!props.block.args || typeof props.block.args !== "object" || Array.isArray(props.block.args)) {
+      return [["value", formatValue(props.block.args)]] as Array<[string, string]>;
+    }
+
+    return Object.entries(props.block.args)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => [formatLabel(key), formatValue(value)] as [string, string]);
+  };
+
+  const argsTitle = () => (props.block.name === "bash" ? "Command" : "Args");
+
+  const commandBody = () => {
+    const args = props.block.args as Record<string, unknown> | undefined;
+    return typeof args?.command === "string" ? args.command : formatValue(props.block.args);
+  };
+
+  const detailTitle = () => (props.block.isError ? "Error" : "Result");
+
+  const detailBody = () => {
+    const result = props.block.result;
+    if (typeof result === "undefined") return "";
+    if (typeof result === "string") return result;
+
+    if (result && typeof result === "object" && !Array.isArray(result)) {
+      const record = result as Record<string, unknown>;
+
+      if (typeof record.result === "string" && Object.keys(record).length === 1) {
+        return record.result;
       }
-      return JSON.stringify(r, null, 2);
-    } catch { return String(props.block.result); }
+
+      if ("stdout" in record || "stderr" in record || "exitCode" in record) {
+        const parts: string[] = [];
+        if (record.stdout) parts.push(String(record.stdout));
+        if (record.stderr) parts.push(`stderr:\n${String(record.stderr)}`);
+        if (typeof record.exitCode !== "undefined") parts.push(`exit code: ${String(record.exitCode)}`);
+        return parts.join("\n\n").trim();
+      }
+
+      return Object.entries(record)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => `${formatLabel(key)}: ${formatValue(value)}`)
+        .join("\n");
+    }
+
+    return formatValue(result);
   };
 
   const hasResult = () => props.block.result !== undefined;
@@ -31,17 +104,24 @@ export function ToolCallBlock(props: { block: UIToolCallBlock; onApproval?: (cal
   const isPending = () => props.block.approval === "pending";
 
   return (
-    <div class="my-1 ui-panel text-xs overflow-hidden tool-call-block rounded-md">
+    <div class="ui-panel text-xs overflow-hidden tool-call-block rounded-md">
       <button
         class="w-full flex items-center gap-1.5 px-2 py-1 bg-gh-overlay hover:bg-gh-muted text-left tool-call-head"
         onClick={() => setExpanded(!expanded())}
       >
-        <span class={`select-none ${props.block.isError ? "text-gh-danger" : "text-gh-fg-subtle"}`}>$</span>
-        <span class="text-gh-fg-muted truncate flex-1">{argsStr()}</span>
+        <Show
+          when={leadingIconClass()}
+          fallback={<span class={`select-none ${props.block.isError ? "text-gh-danger" : "text-gh-fg-subtle"}`}>$</span>}
+        >
+          {(iconClass) => (
+            <span class={`i ti ${iconClass()} text-sm ${props.block.isError ? "text-gh-danger" : "text-gh-fg-subtle"}`} />
+          )}
+        </Show>
+        <span class="text-gh-fg-muted truncate flex-1">{headline()}</span>
         <Show when={isRunning()}>
           <span class="text-gh-fg-subtle animate-pulse">...</span>
         </Show>
-        <Show when={hasResult()}>
+        <Show when={hasResult() || props.block.args !== undefined}>
           <span class={`i ti ti-chevron-${expanded() ? "up" : "down"} text-gh-fg-subtle text-xs`} />
         </Show>
       </button>
@@ -58,11 +138,44 @@ export function ToolCallBlock(props: { block: UIToolCallBlock; onApproval?: (cal
           </button>
         </div>
       </Show>
-      <Show when={expanded() && hasResult()}>
-        <pre class={`px-2 py-1.5 overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-xs tool-call-output ${props.block.isError ? "text-gh-danger" : "text-gh-fg-muted"}`}>
-          {resultStr()}
-        </pre>
+      <Show when={expanded()}>
+        <div class="px-2 py-2 space-y-2">
+          <Show when={props.block.args !== undefined}>
+            <div class="space-y-1">
+              <div class="text-[10px] uppercase tracking-[0.12em] text-gh-fg-subtle">{argsTitle()}</div>
+              <Show
+                when={props.block.name === "bash"}
+                fallback={
+                  <div class="space-y-1 text-xs text-gh-fg-muted">
+                    <For each={argsEntries()}>
+                      {(entry) => (
+                        <div class="flex items-start gap-2">
+                          <span class="shrink-0 text-gh-fg-subtle">{entry[0]}:</span>
+                          <span class="min-w-0 whitespace-pre-wrap break-words">{entry[1]}</span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                }
+              >
+                <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-32 overflow-y-auto text-xs text-gh-fg-muted tool-call-output">
+                  {commandBody()}
+                </pre>
+              </Show>
+            </div>
+          </Show>
+          <Show when={hasResult()}>
+            <div class="space-y-1">
+              <div class={`text-[10px] uppercase tracking-[0.12em] ${props.block.isError ? "text-gh-danger" : "text-gh-fg-subtle"}`}>
+                {detailTitle()}
+              </div>
+              <pre class={`overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-xs tool-call-output ${props.block.isError ? "text-gh-danger" : "text-gh-fg-muted"}`}>
+                {detailBody()}
+              </pre>
+            </div>
+          </Show>
+        </div>
       </Show>
     </div>
   );
-}
+};

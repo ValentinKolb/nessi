@@ -1,4 +1,4 @@
-import { normalizeHttpError } from "../shared/errors.js";
+import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { parseNDJSON } from "../shared/ndjson.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
@@ -6,16 +6,16 @@ import { toOllamaTools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
 import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock } from "../types.js";
 
-interface OllamaMessage {
+type OllamaMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
   images?: string[];
   tool_call_id?: string;
   name?: string;
   tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }>;
-}
+};
 
-interface OllamaResponse {
+type OllamaResponse = {
   model?: string;
   message?: {
     role?: string;
@@ -25,17 +25,17 @@ interface OllamaResponse {
   done: boolean;
   prompt_eval_count?: number;
   eval_count?: number;
-}
+};
 
-export interface OllamaOptions {
+export type OllamaOptions = {
   baseURL?: string;
   contextWindow?: number;
   temperature?: number;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
-}
+};
 
-function convertMessages(messages: Message[], systemPrompt: string | undefined): OllamaMessage[] {
+const convertMessages = (messages: Message[], systemPrompt: string | undefined) => {
   const out: OllamaMessage[] = [];
   if (systemPrompt) out.push({ role: "system", content: systemPrompt });
 
@@ -79,26 +79,24 @@ function convertMessages(messages: Message[], systemPrompt: string | undefined):
   }
 
   return out;
-}
+};
 
-function usageFromResponse(response: OllamaResponse, options?: OllamaOptions) {
-  return applyCredits(
+const usageFromResponse = (response: OllamaResponse, options?: OllamaOptions) =>
+  applyCredits(
     makeUsage(response.prompt_eval_count ?? 0, response.eval_count ?? 0),
     options?.creditsPerInputToken,
     options?.creditsPerOutputToken,
   );
-}
 
-function toolCallsFromResponse(response: OllamaResponse): ToolCallBlock[] {
-  return (response.message?.tool_calls ?? []).map((toolCall, index) => ({
+const toolCallsFromResponse = (response: OllamaResponse): ToolCallBlock[] =>
+  (response.message?.tool_calls ?? []).map((toolCall, index) => ({
     type: "tool_call",
     id: `ollama-${index}`,
     name: toolCall.function.name,
     args: toolCall.function.arguments,
   }));
-}
 
-export function ollama(model: string, options?: OllamaOptions): Provider {
+export const ollama = (model: string, options?: OllamaOptions): Provider => {
   const baseURL = (options?.baseURL ?? "http://localhost:11434").replace(/\/+$/, "");
   const contextWindow = options?.contextWindow ?? 128_000;
 
@@ -130,7 +128,7 @@ export function ollama(model: string, options?: OllamaOptions): Provider {
         body: JSON.stringify(body),
         signal: request.signal,
       }).catch((error: unknown) => {
-        throw new Error(`ollama connection failed: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(formatConnectionError("ollama", error));
       });
 
       if (!response.ok) {
@@ -172,7 +170,7 @@ export function ollama(model: string, options?: OllamaOptions): Provider {
       } catch (error) {
         yield {
           type: "error",
-          error: `ollama connection failed: ${error instanceof Error ? error.message : String(error)}`,
+          error: formatConnectionError("ollama", error),
           retryable: true,
         };
         return;
@@ -184,7 +182,7 @@ export function ollama(model: string, options?: OllamaOptions): Provider {
         return;
       }
 
-      const reader = response.body?.getReader();
+      const reader = response.body?.getReader() as ReadableStreamDefaultReader<Uint8Array> | undefined;
       if (!reader) {
         yield { type: "error", error: "ollama response body missing", retryable: false };
         return;
@@ -209,4 +207,4 @@ export function ollama(model: string, options?: OllamaOptions): Provider {
       }
     },
   };
-}
+};

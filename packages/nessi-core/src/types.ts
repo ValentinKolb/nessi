@@ -3,6 +3,17 @@
 // ============================================================================
 
 import type { z } from "zod";
+import type {
+  AssistantMessage,
+  ContentPart,
+  GenerateRequest,
+  Message,
+  Provider,
+  StreamEvent,
+  ToolResultMessage,
+  Usage,
+  UserMessage,
+} from "nessi-ai";
 export type {
   AssistantContentBlock,
   AssistantMessage,
@@ -10,8 +21,6 @@ export type {
   ContentPart,
   Message,
   Provider,
-  ProviderEvent,
-  ProviderRequest,
   TextBlock,
   ThinkingBlock,
   ToolCallBlock,
@@ -20,18 +29,9 @@ export type {
   Usage,
   UserMessage,
 } from "nessi-ai";
-import type {
-  AssistantMessage,
-  ContentPart,
-  Message,
-  Provider,
-  ProviderEvent,
-  ProviderRequest,
-  ToolSpec,
-  ToolResultMessage,
-  Usage,
-  UserMessage,
-} from "nessi-ai";
+
+export type ProviderEvent = StreamEvent;
+export type ProviderRequest = GenerateRequest;
 
 // ----------------------------------------------------------------------------
 // 1. Content
@@ -76,7 +76,7 @@ export type DoneReason = "stop" | "no_credits" | "max_turns" | "context_overflow
 // 3. Tools
 // ----------------------------------------------------------------------------
 
-export interface ToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> {
+export type ToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> = {
   name: string;
   description: string;
   inputSchema: TInput;
@@ -90,13 +90,13 @@ export interface ToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput ex
   ): ClientTool<TInput, TOutput>;
 }
 
-export interface ServerTool<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> {
+export type ServerTool<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> = {
   readonly kind: "server";
   readonly def: ToolDefinition<TInput, TOutput>;
   execute(input: z.infer<TInput>, ctx: ToolContext): Promise<z.infer<TOutput>>;
 }
 
-export interface ClientTool<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> {
+export type ClientTool<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> = {
   readonly kind: "client";
   readonly def: ToolDefinition<TInput, TOutput>;
   execute(input: z.infer<TInput>): z.infer<TOutput> | Promise<z.infer<TOutput>>;
@@ -104,7 +104,7 @@ export interface ClientTool<TInput extends z.ZodType = z.ZodType, TOutput extend
 
 export type Tool = ServerTool | ClientTool;
 
-export interface ToolContext {
+export type ToolContext = {
   signal: AbortSignal;
   /** Request user approval mid-execution. Returns true if approved, false if denied. */
   requestApproval(message: string): Promise<boolean>;
@@ -116,7 +116,7 @@ export interface ToolContext {
 // 4. nessi()
 // ----------------------------------------------------------------------------
 
-export interface NessiOptions {
+export type NessiOptions = {
   agentId?: string;
   input: Input;
   provider: Provider;
@@ -129,7 +129,7 @@ export interface NessiOptions {
   signal?: AbortSignal;
 }
 
-export interface NessiLoop {
+export type NessiLoop = {
   [Symbol.asyncIterator](): AsyncIterator<OutboundEvent>;
   subscribe(listener: (event: OutboundEvent) => void): () => void;
   push(event: InboundEvent): void;
@@ -141,13 +141,13 @@ export interface NessiLoop {
 // 5. SessionStore
 // ----------------------------------------------------------------------------
 
-export interface StoreEntry {
+export type StoreEntry = {
   seq: number;
   kind: "message" | "summary";
   message: Message;
 }
 
-export interface SessionStore {
+export type SessionStore = {
   load(): Promise<StoreEntry[]>;
   append(message: Message, opts?: { seq?: number; kind?: "message" | "summary" }): Promise<void>;
 }
@@ -158,7 +158,7 @@ export interface SessionStore {
 
 export type CompactFn = (ctx: CompactContext) => null | Promise<void>;
 
-export interface CompactContext {
+export type CompactContext = {
   entries: StoreEntry[];
   store: SessionStore;
   provider: Provider;
@@ -166,7 +166,7 @@ export interface CompactContext {
   force: boolean;
 }
 
-export interface CompactOptions {
+export type CompactOptions = {
   agentId?: string;
   store: SessionStore;
   provider: Provider;
@@ -176,7 +176,7 @@ export interface CompactOptions {
   signal?: AbortSignal;
 }
 
-export interface CompactResult {
+export type CompactResult = {
   applied: boolean;
   entriesBefore: number;
   entriesAfter: number;
@@ -191,7 +191,7 @@ export type CompactEvent =
   | { type: "error"; agentId: string; error: string; retryable: false }
   | { type: "done"; agentId: string; reason: CompactDoneReason; result: CompactResult };
 
-export interface CompactLoop {
+export type CompactLoop = {
   [Symbol.asyncIterator](): AsyncIterator<CompactEvent>;
   subscribe(listener: (event: CompactEvent) => void): () => void;
   abort(): void;
@@ -201,7 +201,7 @@ export interface CompactLoop {
 // 7. CreditStore
 // ----------------------------------------------------------------------------
 
-export interface CreditStore {
+export type CreditStore = {
   remaining(): Promise<number>;
   deduct(credits: number): Promise<void>;
 }

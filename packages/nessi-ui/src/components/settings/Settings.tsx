@@ -1,9 +1,10 @@
-import { createSignal, Match, Switch } from "solid-js";
+import { createSignal, Match, Show, Switch } from "solid-js";
 import { ProvidersConfig } from "./ProvidersConfig.js";
 import { ApiKeys } from "./ApiKeys.js";
 import { SystemPrompt } from "./SystemPrompt.js";
 import { MemoryEditor } from "./MemoryEditor.js";
 import { SkillsConfig } from "./SkillsConfig.js";
+import { CompactionSettings } from "./CompactionSettings.js";
 import type { SkillEntry } from "../../lib/skill-registry.js";
 import type { Prompt } from "../../lib/prompts.js";
 import { SkillEditorView } from "./SkillEditorModal.js";
@@ -15,21 +16,21 @@ type SettingsRoute =
   | { kind: "prompt-editor"; prompt: Prompt | null };
 
 /** Settings dialog that hosts all runtime configuration panels. */
-export function Settings(props: { ref: (el: HTMLDialogElement) => void; onClose: () => void }) {
+export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose: () => void }) => {
   let dialogRef!: HTMLDialogElement;
   const [route, setRoute] = createSignal<SettingsRoute>({ kind: "root" });
 
-  function close() {
+  const close = () => {
     dialogRef.close();
     setRoute({ kind: "root" });
     props.onClose();
-  }
+  };
 
-  function backToRoot() {
+  const backToRoot = () => {
     setRoute({ kind: "root" });
-  }
+  };
 
-  function title() {
+  const title = () => {
     const current = route();
     switch (current.kind) {
       case "skill-editor":
@@ -39,17 +40,17 @@ export function Settings(props: { ref: (el: HTMLDialogElement) => void; onClose:
       default:
         return "Settings";
     }
-  }
+  };
 
-  function currentSkill() {
+  const currentSkill = () => {
     const current = route();
     return current.kind === "skill-editor" ? current.skill : null;
-  }
+  };
 
-  function currentPrompt() {
+  const currentPrompt = () => {
     const current = route();
     return current.kind === "prompt-editor" ? current.prompt : null;
-  }
+  };
 
   return (
     <dialog
@@ -67,7 +68,7 @@ export function Settings(props: { ref: (el: HTMLDialogElement) => void; onClose:
     >
       <div class="flex max-h-[92vh] min-h-0 flex-col">
         <div class="flex items-center gap-2 px-4 py-3 bg-gh-overlay rounded-t-md">
-          {route().kind !== "root" && (
+          <Show when={route().kind !== "root"}>
             <button
               class="p-0.5 text-gh-fg-subtle hover:text-gh-fg cursor-pointer"
               onClick={backToRoot}
@@ -75,9 +76,9 @@ export function Settings(props: { ref: (el: HTMLDialogElement) => void; onClose:
             >
               <span class="i ti ti-arrow-left text-base" />
             </button>
-          )}
+          </Show>
           <h2 class="text-sm font-bold uppercase tracking-wider text-gh-fg-secondary flex-1">{title()}</h2>
-          {route().kind === "root" && (
+          <Show when={route().kind === "root"}>
             <button
               class="p-0.5 text-gh-fg-subtle hover:text-gh-fg cursor-pointer"
               onClick={close}
@@ -85,11 +86,11 @@ export function Settings(props: { ref: (el: HTMLDialogElement) => void; onClose:
             >
               <span class="i ti ti-x text-base" />
             </button>
-          )}
+          </Show>
         </div>
         <Switch>
           <Match when={route().kind === "root"}>
-            <div class="hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-5 pt-3 space-y-3">
+            <div class="hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
               <ProvidersConfig />
               <ApiKeys />
               <SkillsConfig
@@ -100,6 +101,7 @@ export function Settings(props: { ref: (el: HTMLDialogElement) => void; onClose:
                 onCreatePrompt={() => setRoute({ kind: "prompt-editor", prompt: null })}
                 onEditPrompt={(prompt) => setRoute({ kind: "prompt-editor", prompt })}
               />
+              <CompactionSettings />
               <MemoryEditor />
             </div>
           </Match>
@@ -125,4 +127,4 @@ export function Settings(props: { ref: (el: HTMLDialogElement) => void; onClose:
       </div>
     </dialog>
   );
-}
+};

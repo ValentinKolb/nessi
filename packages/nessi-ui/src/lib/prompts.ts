@@ -1,13 +1,17 @@
-import { humanId } from "human-id";
 import defaultPromptContent from "../assets/prompts/default-prompt.mustache?raw";
 import { getActiveProviderEntry } from "./provider.js";
 import { getSkillsSummary } from "./skills.js";
 import { readJson, readString, writeJson, writeString } from "./json-storage.js";
+import { newId } from "./utils.js";
 
 export type Prompt = {
   id: string;
   name: string;
   content: string;
+};
+
+export type PromptContext = {
+  fileInfo?: string;
 };
 
 const PROMPTS_KEY = "nessi:prompts";
@@ -16,38 +20,34 @@ const DEFAULT_ID = "default";
 
 const DEFAULT_PROMPT: Prompt = { id: DEFAULT_ID, name: "nessi", content: defaultPromptContent };
 
-export function loadUserPrompts(): Prompt[] {
-  return readJson<Prompt[]>(PROMPTS_KEY, []);
-}
+export const loadUserPrompts = () => readJson<Prompt[]>(PROMPTS_KEY, []);
 
-export function saveUserPrompts(prompts: Prompt[]) {
+export const saveUserPrompts = (prompts: Prompt[]) => {
   writeJson(PROMPTS_KEY, prompts);
-}
+};
 
 /** All prompts: default first, then user-created. */
-export function loadPrompts(): Prompt[] {
+export const loadPrompts = () => {
   const userPrompts = loadUserPrompts();
   const defaultOverride = userPrompts.find((prompt) => prompt.id === DEFAULT_ID);
   const others = userPrompts.filter((prompt) => prompt.id !== DEFAULT_ID);
   return [defaultOverride ?? DEFAULT_PROMPT, ...others];
-}
+};
 
-export function getActivePromptId(): string {
-  return readString(ACTIVE_KEY, DEFAULT_ID);
-}
+export const getActivePromptId = () => readString(ACTIVE_KEY, DEFAULT_ID);
 
-export function setActivePromptId(id: string) {
+export const setActivePromptId = (id: string) => {
   writeString(ACTIVE_KEY, id);
-}
+};
 
-export function getActivePrompt(): Prompt {
+export const getActivePrompt = () => {
   const id = getActivePromptId();
   const all = loadPrompts();
   return all.find((p) => p.id === id) ?? DEFAULT_PROMPT;
-}
+};
 
-/** Fill {{date}}, {{weekday}}, {{model}}, {{skills}} placeholders. */
-export function resolvePrompt(prompt: Prompt): string {
+/** Fill runtime placeholders like {{date}}, {{weekday}}, {{model}}, {{skills}}, {{file_info}}. */
+export const resolvePrompt = (prompt: Prompt, context?: PromptContext) => {
   const now = new Date();
   const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const weekday = WEEKDAYS[now.getDay()] ?? "Monday";
@@ -56,13 +56,10 @@ export function resolvePrompt(prompt: Prompt): string {
     .replaceAll("{{date}}", now.toISOString().slice(0, 10))
     .replaceAll("{{weekday}}", weekday)
     .replaceAll("{{model}}", provider?.model ?? "unknown")
-    .replaceAll("{{skills}}", getSkillsSummary());
-}
+    .replaceAll("{{skills}}", getSkillsSummary())
+    .replaceAll("{{file_info}}", context?.fileInfo ?? "No chat files are currently mounted.");
+};
 
-export function newPromptId(): string {
-  return humanId({ separator: "-", capitalize: false });
-}
+export const newPromptId = () => newId();
 
-export function isDefault(p: Prompt): boolean {
-  return p.id === DEFAULT_ID;
-}
+export const isDefault = (p: Prompt) => p.id === DEFAULT_ID;

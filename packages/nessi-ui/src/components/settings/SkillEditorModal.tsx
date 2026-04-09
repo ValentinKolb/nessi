@@ -4,8 +4,6 @@ import { ensureUniqueSkillId, loadSkills, saveSkills } from "../../lib/skill-reg
 import { createSkillDocTemplate, readSkillDocMeta, syncSkillDoc } from "../../lib/skill-doc.js";
 import { SNIPPET_TEMPLATE } from "../../lib/skill-templates.js";
 
-const inputClass = "ui-input";
-
 type SkillEditorDraft = {
   id: string;
   name: string;
@@ -14,7 +12,7 @@ type SkillEditorDraft = {
   builtin?: boolean;
 };
 
-function toDraft(skill: SkillEntry | null): SkillEditorDraft {
+const toDraft = (skill: SkillEntry | null): SkillEditorDraft => {
   if (!skill) {
     return {
       id: "",
@@ -32,13 +30,13 @@ function toDraft(skill: SkillEntry | null): SkillEditorDraft {
     code: skill.code ?? "",
     builtin: skill.builtin,
   };
-}
+};
 
-export function SkillEditorView(props: {
+export const SkillEditorView = (props: {
   skill: SkillEntry | null;
   onCancel: () => void;
   onDone: () => void;
-}) {
+}) => {
   const [draft, setDraft] = createSignal<SkillEditorDraft>(toDraft(props.skill));
   const [tab, setTab] = createSignal<"definition" | "implementation">("definition");
 
@@ -49,9 +47,9 @@ export function SkillEditorView(props: {
 
   const isExisting = () => Boolean(draft().id);
   const panelClass = "flex h-full min-h-0 flex-col gap-2";
-  const editorClass = `${inputClass} hide-scrollbar h-full min-h-0 flex-1 resize-none overflow-y-auto font-mono`;
+  const editorClass = "ui-input hide-scrollbar h-full min-h-0 flex-1 resize-none overflow-y-auto font-mono";
 
-  function save() {
+  const save = () => {
     const current = draft();
     const nextDoc = syncSkillDoc(current.doc, { name: current.name });
     const parsed = readSkillDocMeta(nextDoc);
@@ -81,14 +79,14 @@ export function SkillEditorView(props: {
 
     saveSkills(next);
     props.onDone();
-  }
+  };
 
-  function remove() {
+  const remove = () => {
     const current = draft();
     if (!current.id || current.builtin) return;
     saveSkills(loadSkills().filter((skill) => skill.id !== current.id));
     props.onDone();
-  }
+  };
 
   return (
     <div class="flex h-full min-h-0 flex-col gap-4">
@@ -96,7 +94,7 @@ export function SkillEditorView(props: {
         <div class="space-y-1">
           <label class="text-[10px] font-bold uppercase tracking-wider text-gh-fg-muted">Skill Name</label>
           <input
-            class={inputClass}
+            class="ui-input"
             value={draft().name}
             onInput={(e) => setDraft((prev) => ({ ...prev, name: e.currentTarget.value }))}
           />
@@ -165,4 +163,4 @@ export function SkillEditorView(props: {
       </div>
     </div>
   );
-}
+};

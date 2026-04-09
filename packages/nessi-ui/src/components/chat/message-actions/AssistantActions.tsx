@@ -2,52 +2,40 @@ import { createMemo, createSignal, Show } from "solid-js";
 import type { UIAssistantMessage } from "../types.js";
 import { createCopyAction } from "../../../lib/clipboard.js";
 
-function plainText(message: UIAssistantMessage): string {
-  return message.blocks
+const messageText = (message: UIAssistantMessage) =>
+  message.blocks
     .flatMap((block) => {
       if (block.type === "text") return [block.text];
-      if (block.type === "thinking") return [`[thinking]\n${block.text}`];
-      if (block.type === "tool_call") {
-        return [`[tool:${block.name}]\n${JSON.stringify(block.args, null, 2)}`];
-      }
+      if (block.type === "thinking") return [block.text];
       return [];
     })
     .join("\n\n")
     .trim();
-}
 
-function formatDuration(durationMs?: number): string {
+const formatDuration = (durationMs?: number) => {
   if (!durationMs || durationMs <= 0) return "n/a";
   if (durationMs < 1000) return `${durationMs} ms`;
   return `${(durationMs / 1000).toFixed(2)} s`;
-}
+};
 
-function assistantText(message: UIAssistantMessage): string {
-  return message.blocks
-    .flatMap((block) => (block.type === "text" ? [block.text] : block.type === "thinking" ? [block.text] : []))
-    .join(" ")
-    .trim();
-}
-
-function countWords(text: string): number {
+const countWords = (text: string) => {
   const compact = text.trim();
   return compact ? compact.split(/\s+/).length : 0;
-}
+};
 
-function estimateTokens(text: string): number | null {
+const estimateTokens = (text: string) => {
   const compact = text.trim();
   if (!compact) return null;
   return Math.max(1, Math.round(compact.length / 4));
-}
+};
 
-function reportedStat(value: number | undefined): string | null {
-  return typeof value === "number" && value > 0 ? String(value) : null;
-}
+const reportedStat = (value: number | undefined) =>
+  typeof value === "number" && value > 0 ? String(value) : null;
 
-export function AssistantActions(props: { message: UIAssistantMessage }) {
+export const AssistantActions = (props: { message: UIAssistantMessage }) => {
   const { copy, copied } = createCopyAction();
   const [open, setOpen] = createSignal(false);
-  const text = createMemo(() => assistantText(props.message));
+  const text = createMemo(() => messageText(props.message));
   const assistantChars = createMemo(() => text().length);
   const assistantWords = createMemo(() => countWords(text()));
   const estimatedOutputTokens = createMemo(() => estimateTokens(text()));
@@ -71,7 +59,7 @@ export function AssistantActions(props: { message: UIAssistantMessage }) {
         class={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
           copied() ? "bg-gh-muted text-gh-fg" : "text-gh-fg-subtle hover:bg-gh-overlay hover:text-gh-fg"
         }`}
-        onClick={() => copy(plainText(props.message))}
+        onClick={() => copy(text())}
         title={copied() ? "Copied" : "Copy message"}
       >
         <span class={`i ${copied() ? "ti ti-check" : "ti ti-copy"} text-[13px] leading-none`} />
@@ -132,4 +120,4 @@ export function AssistantActions(props: { message: UIAssistantMessage }) {
       </Show>
     </div>
   );
-}
+};

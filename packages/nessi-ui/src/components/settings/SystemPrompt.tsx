@@ -1,4 +1,4 @@
-import { createSignal, For, onMount } from "solid-js";
+import { createSignal, For, Show, onMount } from "solid-js";
 import {
   loadPrompts,
   loadUserPrompts,
@@ -9,7 +9,7 @@ import {
   type Prompt,
 } from "../../lib/prompts.js";
 
-function fromImport(raw: string): Prompt | null {
+const fromImport = (raw: string): Prompt | null => {
   try {
     const parsed = JSON.parse(raw) as Partial<Prompt>;
     if (typeof parsed.name !== "string" || typeof parsed.content !== "string") return null;
@@ -21,22 +21,20 @@ function fromImport(raw: string): Prompt | null {
   } catch {
     return null;
   }
-}
+};
 
-const inputClass = "ui-input";
-
-function promptPreview(content: string): string {
+const promptPreview = (content: string) => {
   const line = content
     .split("\n")
     .map((entry) => entry.trim())
     .find(Boolean);
   return line ?? "No content";
-}
+};
 
-export function SystemPrompt(props: {
+export const SystemPrompt = (props: {
   onCreatePrompt: () => void;
   onEditPrompt: (prompt: Prompt) => void;
-}) {
+}) => {
   const [prompts, setPrompts] = createSignal<Prompt[]>([]);
   const [activeId, setActiveId] = createSignal("default");
   const [importing, setImporting] = createSignal(false);
@@ -47,16 +45,16 @@ export function SystemPrompt(props: {
     setActiveId(getActivePromptId());
   });
 
-  function refreshPrompts() {
+  const refreshPrompts = () => {
     setPrompts(loadPrompts());
-  }
+  };
 
-  function activate(id: string) {
+  const activate = (id: string) => {
     setActiveId(id);
     setActivePromptId(id);
-  }
+  };
 
-  function submitImport() {
+  const submitImport = () => {
     const entry = fromImport(importText());
     if (!entry) {
       alert("Invalid prompt config.");
@@ -66,12 +64,15 @@ export function SystemPrompt(props: {
     setImporting(false);
     setImportText("");
     refreshPrompts();
-  }
+  };
 
   return (
     <div class="ui-panel p-3 space-y-2">
       <div class="flex items-center justify-between">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-gh-fg-muted">Prompts</h3>
+        <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
+          <span class="i ti ti-bubble text-sm" />
+          <span>Prompts</span>
+        </h3>
         <div class="flex gap-2">
           <button class="btn-secondary" onClick={() => { setImporting(!importing()); setImportText(""); }}>import</button>
           <button class="btn-secondary" onClick={props.onCreatePrompt}>+ add</button>
@@ -81,13 +82,13 @@ export function SystemPrompt(props: {
       <p class="text-[10px] leading-tight text-gh-fg-subtle">
         The active prompt is sent to the model. Placeholders: <span class="text-gh-fg-muted">{"{{date}}"}</span>,
         <span class="text-gh-fg-muted"> {"{{weekday}}"}</span>, <span class="text-gh-fg-muted">{"{{model}}"}</span>,
-        <span class="text-gh-fg-muted"> {"{{skills}}"}</span>
+        <span class="text-gh-fg-muted"> {"{{skills}}"}</span>, <span class="text-gh-fg-muted">{"{{file_info}}"}</span>
       </p>
 
-      {importing() && (
+      <Show when={importing()}>
         <div class="ui-subpanel p-2 space-y-2">
           <input
-            class={inputClass}
+            class="ui-input"
             placeholder="Paste JSON..."
             value={importText()}
             onInput={(e) => setImportText(e.currentTarget.value)}
@@ -98,7 +99,7 @@ export function SystemPrompt(props: {
             <button class="btn-primary" onClick={submitImport}>import</button>
           </div>
         </div>
-      )}
+      </Show>
 
       <div class="ui-list">
         <For each={prompts()}>
@@ -124,4 +125,4 @@ export function SystemPrompt(props: {
       </div>
     </div>
   );
-}
+};

@@ -1,5 +1,5 @@
 /** Read JSON from localStorage with a safe fallback. */
-export function readJson<T>(key: string, fallback: T): T {
+export const readJson = <T>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
@@ -7,24 +7,23 @@ export function readJson<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
-}
+};
 
 /** Write JSON to localStorage. */
-export function writeJson(key: string, value: unknown): void {
+export const writeJson = (key: string, value: unknown) => {
   localStorage.setItem(key, JSON.stringify(value));
-}
+};
 
 /** Read a plain string from localStorage with fallback. */
-export function readString(key: string, fallback = ""): string {
-  return localStorage.getItem(key) ?? fallback;
-}
+export const readString = (key: string, fallback = "") =>
+  localStorage.getItem(key) ?? fallback;
 
 /** Write a plain string to localStorage. */
-export function writeString(key: string, value: string): void {
+export const writeString = (key: string, value: string) => {
   localStorage.setItem(key, value);
-}
+};
 
 /** Remove a localStorage key. */
-export function removeKey(key: string): void {
+export const removeKey = (key: string) => {
   localStorage.removeItem(key);
-}
+};

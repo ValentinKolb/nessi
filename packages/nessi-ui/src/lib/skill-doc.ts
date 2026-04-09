@@ -1,5 +1,6 @@
 import { stringify as stringifyYaml } from "yaml";
 import { parseFrontmatter } from "./frontmatter.js";
+import { asRecord, asString } from "./utils.js";
 
 export type SkillDocMeta = {
   name: string;
@@ -8,35 +9,25 @@ export type SkillDocMeta = {
   enabled: boolean;
 };
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function hashCommandSeed(input: string): string {
+const hashCommandSeed = (input: string) => {
   let hash = 2166136261;
   for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(36).slice(0, 6);
-}
+};
 
-export function slugifySkillCommand(input: string): string {
+export const slugifySkillCommand = (input: string) => {
   const slug = input
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return slug || `skill-${hashCommandSeed(input)}`;
-}
+};
 
-function defaultSkillBody(name: string, command: string): string {
-  return `# ${name}
+const defaultSkillBody = (name: string, command: string) =>
+  `# ${name}
 
 Short summary of what this skill does and when it should be used.
 
@@ -57,9 +48,8 @@ ${command} --help
 - Explain important assumptions or limits here.
 - Mention any required settings or API keys here.
 `;
-}
 
-export function createSkillDocTemplate(name = "my-skill", enabled = true): string {
+export const createSkillDocTemplate = (name = "my-skill", enabled = true) => {
   const command = slugifySkillCommand(name);
   return `---
 ${stringifyYaml({
@@ -75,9 +65,9 @@ ${stringifyYaml({
 ---
 
 ${defaultSkillBody(name, command)}`;
-}
+};
 
-export function readSkillDocMeta(raw: string): SkillDocMeta | null {
+export const readSkillDocMeta = (raw: string): SkillDocMeta | null => {
   const { attributes } = parseFrontmatter(raw);
   const name = asString(attributes.name);
   const description = asString(attributes.description);
@@ -92,9 +82,9 @@ export function readSkillDocMeta(raw: string): SkillDocMeta | null {
     command: asString(nessi?.command) ?? slugifySkillCommand(name),
     enabled: typeof nessi?.enabled === "boolean" ? nessi.enabled : true,
   };
-}
+};
 
-export function syncSkillDoc(raw: string, input: { name: string; enabled?: boolean }): string {
+export const syncSkillDoc = (raw: string, input: { name: string; enabled?: boolean }) => {
   const existingMeta = readSkillDocMeta(raw);
   const parsed = parseFrontmatter(raw);
   const attributes = parsed.attributes;
@@ -130,4 +120,4 @@ ${stringifyYaml(nextAttributes).trimEnd()}
 ---
 
 ${body}`;
-}
+};

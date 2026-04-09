@@ -1,8 +1,8 @@
-import { completeFromStream } from "../complete-from-stream.js";
-import { normalizeHttpError } from "../shared/errors.js";
+import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
-import { parseSSE } from "../shared/sse.js";
+import { openSSEStream } from "../shared/stream-helpers.js";
+import { createStrictToolCallIdFactory } from "../shared/tool-call-ids.js";
 import { toOpenAITools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
 import type {
@@ -17,23 +17,23 @@ import type {
   Usage,
 } from "../types.js";
 
-interface OAIMessage {
+type OAIMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string | OAIContentPart[] | null;
   tool_calls?: OAIToolCall[];
   tool_call_id?: string;
   name?: string;
-}
+};
 
 type OAIContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
-interface OAIToolCall {
+type OAIToolCall = {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
-}
+};
 
-interface SSEChunk {
+type SSEChunk = {
   id?: string;
   choices?: Array<{
     index: number;
@@ -67,64 +67,22 @@ interface SSEChunk {
     completion_tokens?: number;
     total_tokens?: number;
   };
-}
+};
 
 type OpenAIStreamDelta = NonNullable<NonNullable<SSEChunk["choices"]>[number]>["delta"];
 
-const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const normalizeToolCallIds = (mode: OpenAICompatibleConfig["compat"]) =>
+  mode?.toolCallIdPolicy === "strict9";
 
-function hash32(input: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function encodeBase62(seed: number, length: number): string {
-  let n = seed >>> 0;
-  let out = "";
-  for (let i = 0; i < length; i++) {
-    if (n === 0) n = hash32(`${seed}:${i}:${out.length}`);
-    out += ALNUM[n % ALNUM.length];
-    n = Math.floor(n / ALNUM.length);
-  }
-  return out;
-}
-
-function createStrictToolCallIdFactory() {
-  const used = new Set<string>();
-  let seq = 0;
-
-  return (seed: string): string => {
-    let attempt = 0;
-    while (attempt < 50_000) {
-      const candidate = encodeBase62(hash32(`${seed}:${seq}:${attempt}`), 9);
-      if (!used.has(candidate)) {
-        used.add(candidate);
-        seq++;
-        return candidate;
-      }
-      attempt++;
-    }
-    throw new Error("Failed to generate unique strict tool call id");
-  };
-}
-
-function normalizeToolCallIds(mode: OpenAICompatibleConfig["compat"]): boolean {
-  return mode?.toolCallIdPolicy === "strict9";
-}
-
-function mapFinishReason(reason: string | null | undefined, hasTools: boolean): AssistantStopReason {
+const mapFinishReason = (reason: string | null | undefined, hasTools: boolean): AssistantStopReason => {
   if (reason === "tool_calls") return "tool_use";
   if (reason === "length") return "max_tokens";
   if (reason === "content_filter") return "error";
   if (hasTools) return "tool_use";
   return "stop";
-}
+};
 
-function convertMessages(messages: Message[], systemPrompt: string | undefined, config: OpenAICompatibleConfig): OAIMessage[] {
+const convertMessages = (messages: Message[], systemPrompt: string | undefined, config: OpenAICompatibleConfig) => {
   const result: OAIMessage[] = [];
   const strictIds = normalizeToolCallIds(config.compat);
   const makeStrictId = createStrictToolCallIdFactory();
@@ -194,18 +152,18 @@ function convertMessages(messages: Message[], systemPrompt: string | undefined, 
   }
 
   return result;
-}
+};
 
-function usageFromChunk(chunk: SSEChunk, config: OpenAICompatibleConfig): Usage | undefined {
+const usageFromChunk = (chunk: SSEChunk, config: OpenAICompatibleConfig): Usage | undefined => {
   if (!chunk.usage) return undefined;
   return applyCredits(
     makeUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0),
     config.creditsPerInputToken,
     config.creditsPerOutputToken,
   );
-}
+};
 
-function thinkingFromDelta(delta: OpenAIStreamDelta, config: OpenAICompatibleConfig): string {
+const thinkingFromDelta = (delta: OpenAIStreamDelta, config: OpenAICompatibleConfig) => {
   if (config.compat?.thinkingFormat === "text") return delta.reasoning ?? "";
   if (config.compat?.thinkingFormat === "reasoning_details") {
     return (delta.reasoning_details ?? [])
@@ -213,9 +171,9 @@ function thinkingFromDelta(delta: OpenAIStreamDelta, config: OpenAICompatibleCon
       .join("");
   }
   return "";
-}
+};
 
-async function parseCompletionResponse(response: Response, config: OpenAICompatibleConfig): Promise<GenerateResult> {
+const parseCompletionResponse = async (response: Response, config: OpenAICompatibleConfig): Promise<GenerateResult> => {
   const payload = safeJsonParse<SSEChunk>(await response.text());
   if (!payload) throw new Error(`${config.name} returned invalid JSON.`);
 
@@ -241,9 +199,9 @@ async function parseCompletionResponse(response: Response, config: OpenAICompati
       requestId: response.headers.get("x-request-id") ?? response.headers.get("request-id") ?? undefined,
     },
   };
-}
+};
 
-export function openAICompatible(config: OpenAICompatibleConfig): Provider {
+export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
   const baseURL = config.baseURL.replace(/\/+$/, "");
   const contextWindow = config.contextWindow ?? 128_000;
 
@@ -286,7 +244,7 @@ export function openAICompatible(config: OpenAICompatibleConfig): Provider {
         body: JSON.stringify(body),
         signal: request.signal,
       }).catch((error: unknown) => {
-        throw new Error(`${config.name} connection failed: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(formatConnectionError(config.name, error));
       });
 
       if (!response.ok) {
@@ -321,32 +279,16 @@ export function openAICompatible(config: OpenAICompatibleConfig): Provider {
       };
       if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
 
-      let response: Response;
-      try {
-        response = await fetch(`${baseURL}/chat/completions`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-          signal: request.signal,
-        });
-      } catch (error) {
-        yield {
-          type: "error",
-          error: `${config.name} connection failed: ${error instanceof Error ? error.message : String(error)}`,
-          retryable: true,
-        };
-        return;
-      }
+      const result = await openSSEStream(
+        `${baseURL}/chat/completions`,
+        headers,
+        body,
+        config.name,
+        request.signal,
+      );
 
-      if (!response.ok) {
-        const normalized = await normalizeHttpError(config.name, response);
-        yield { type: "error", ...normalized };
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        yield { type: "error", error: `${config.name} response body missing`, retryable: false };
+      if (!result.ok) {
+        yield result.error;
         return;
       }
 
@@ -365,7 +307,7 @@ export function openAICompatible(config: OpenAICompatibleConfig): Provider {
         toolBuffers.clear();
       };
 
-      for await (const event of parseSSE(reader)) {
+      for await (const event of result.events) {
         if (event.data === "[DONE]") break;
         const chunk = safeJsonParse<SSEChunk>(event.data);
         if (!chunk) continue;
@@ -421,12 +363,4 @@ export function openAICompatible(config: OpenAICompatibleConfig): Provider {
   };
 
   return provider;
-}
-
-export async function completeOpenAICompatibleFromStream(
-  config: OpenAICompatibleConfig,
-  request: GenerateRequest,
-): Promise<GenerateResult> {
-  const provider = openAICompatible(config);
-  return completeFromStream(provider, request);
-}
+};

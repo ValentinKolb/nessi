@@ -1,33 +1,22 @@
-import type { ContentPart, StoreEntry } from "nessi-core";
+import type { StoreEntry } from "nessi-core";
 import { createProvider, getActiveProviderEntry } from "./provider.js";
-import { chatMetaKey, listChatMetas, needsGeneratedTitle, type ChatMeta, updateChatTitle } from "./chat-storage.js";
+import { listChatMetas, needsGeneratedTitle, type ChatMeta, updateChatTitle } from "./chat-storage.js";
 import { readJson } from "./json-storage.js";
+import { chatEntriesKey, contentPartsToText } from "./utils.js";
 
-const CHAT_PREFIX = "chat:";
 const MAX_CHATS_PER_PASS = 5;
 const MAX_TRANSCRIPT_CHARS = 1800;
 
 let running = false;
 
-function entriesKey(chatId: string): string {
-  return `${CHAT_PREFIX}${chatId}:entries`;
-}
-
-function textFromUserContent(content: ContentPart[]): string {
-  return content
-    .map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : ""))
-    .join(" ")
-    .trim();
-}
-
-function buildTranscript(chatId: string): string {
-  const entries = readJson<StoreEntry[]>(entriesKey(chatId), []);
+const buildTranscript = (chatId: string) => {
+  const entries = readJson<StoreEntry[]>(chatEntriesKey(chatId), []);
   const lines: string[] = [];
 
   for (const entry of entries) {
     const message = entry.message;
     if (message.role === "user") {
-      const text = textFromUserContent(message.content);
+      const text = contentPartsToText(message.content);
       if (text) lines.push(`User: ${text}`);
       continue;
     }
@@ -42,9 +31,9 @@ function buildTranscript(chatId: string): string {
   }
 
   return lines.join("\n").slice(0, MAX_TRANSCRIPT_CHARS);
-}
+};
 
-function cleanTitle(raw: string, fallback: string): string {
+const cleanTitle = (raw: string, fallback: string) => {
   const compact = raw
     .replace(/^["'\s]+|["'\s]+$/g, "")
     .replace(/\s+/g, " ")
@@ -53,9 +42,9 @@ function cleanTitle(raw: string, fallback: string): string {
 
   if (!compact) return fallback;
   return compact.slice(0, 48);
-}
+};
 
-async function generateTitle(meta: ChatMeta): Promise<void> {
+const generateTitle = async (meta: ChatMeta) => {
   const providerEntry = getActiveProviderEntry();
   if (!providerEntry) return;
 
@@ -87,9 +76,9 @@ async function generateTitle(meta: ChatMeta): Promise<void> {
 
   const fallback = meta.title.trim() || "New chat";
   updateChatTitle(meta.id, cleanTitle(titleText, fallback), "generated");
-}
+};
 
-export async function refreshChatTitlesInBackground(limit = MAX_CHATS_PER_PASS): Promise<void> {
+export const refreshChatTitlesInBackground = async (limit = MAX_CHATS_PER_PASS) => {
   if (running) return;
   running = true;
 
@@ -108,4 +97,4 @@ export async function refreshChatTitlesInBackground(limit = MAX_CHATS_PER_PASS):
   } finally {
     running = false;
   }
-}
+};

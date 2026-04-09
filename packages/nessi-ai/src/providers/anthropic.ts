@@ -1,7 +1,7 @@
-import { normalizeHttpError } from "../shared/errors.js";
+import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
-import { parseSSE } from "../shared/sse.js";
+import { openSSEStream } from "../shared/stream-helpers.js";
 import { toAnthropicTools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
 import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock } from "../types.js";
@@ -12,12 +12,12 @@ type AnthropicBlock =
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean };
 
-interface AnthropicMessage {
+type AnthropicMessage = {
   role: "user" | "assistant";
   content: AnthropicBlock[];
-}
+};
 
-interface AnthropicResponse {
+type AnthropicResponse = {
   id?: string;
   model?: string;
   content?: Array<
@@ -29,9 +29,9 @@ interface AnthropicResponse {
     input_tokens?: number;
     output_tokens?: number;
   };
-}
+};
 
-interface AnthropicStreamEvent {
+type AnthropicStreamEvent = {
   message?: {
     id?: string;
     model?: string;
@@ -51,9 +51,9 @@ interface AnthropicStreamEvent {
     partial_json?: string;
     stop_reason?: string | null;
   };
-}
+};
 
-export interface AnthropicOptions {
+export type AnthropicOptions = {
   apiKey?: string;
   baseURL?: string;
   apiVersion?: string;
@@ -62,16 +62,16 @@ export interface AnthropicOptions {
   maxOutputTokens?: number;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
-}
+};
 
-function mapFinishReason(reason: string | null | undefined, hasTools: boolean) {
+const mapFinishReason = (reason: string | null | undefined, hasTools: boolean) => {
   if (reason === "tool_use") return "tool_use" as const;
   if (reason === "max_tokens") return "max_tokens" as const;
   if (hasTools) return "tool_use" as const;
   return "stop" as const;
-}
+};
 
-function convertMessages(messages: Message[]): AnthropicMessage[] {
+const convertMessages = (messages: Message[]) => {
   const out: AnthropicMessage[] = [];
   for (const message of messages) {
     if (message.role === "user") {
@@ -117,20 +117,19 @@ function convertMessages(messages: Message[]): AnthropicMessage[] {
     });
   }
   return out;
-}
+};
 
-function usageFromValue(
+const usageFromValue = (
   usage: { input_tokens?: number; output_tokens?: number } | undefined,
   options?: AnthropicOptions,
-) {
-  return applyCredits(
+) =>
+  applyCredits(
     makeUsage(usage?.input_tokens ?? 0, usage?.output_tokens ?? 0),
     options?.creditsPerInputToken,
     options?.creditsPerOutputToken,
   );
-}
 
-export function anthropic(model: string, options?: AnthropicOptions): Provider {
+export const anthropic = (model: string, options?: AnthropicOptions): Provider => {
   const baseURL = (options?.baseURL ?? "https://api.anthropic.com").replace(/\/+$/, "");
   const apiVersion = options?.apiVersion ?? "2023-06-01";
   const maxOutputTokens = options?.maxOutputTokens ?? 1024;
@@ -168,7 +167,7 @@ export function anthropic(model: string, options?: AnthropicOptions): Provider {
         body: JSON.stringify(body),
         signal: request.signal,
       }).catch((error: unknown) => {
-        throw new Error(`anthropic connection failed: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(formatConnectionError("anthropic", error));
       });
 
       if (!response.ok) {
@@ -212,36 +211,20 @@ export function anthropic(model: string, options?: AnthropicOptions): Provider {
       if (request.tools?.length) body.tools = toAnthropicTools(request.tools);
       if (request.temperature ?? options?.temperature) body.temperature = request.temperature ?? options?.temperature;
 
-      let response: Response;
-      try {
-        response = await fetch(`${baseURL}/v1/messages`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": options?.apiKey ?? globalThis.process?.env?.ANTHROPIC_API_KEY ?? "",
-            "anthropic-version": apiVersion,
-          },
-          body: JSON.stringify(body),
-          signal: request.signal,
-        });
-      } catch (error) {
-        yield {
-          type: "error",
-          error: `anthropic connection failed: ${error instanceof Error ? error.message : String(error)}`,
-          retryable: true,
-        };
-        return;
-      }
+      const result = await openSSEStream(
+        `${baseURL}/v1/messages`,
+        {
+          "Content-Type": "application/json",
+          "x-api-key": options?.apiKey ?? globalThis.process?.env?.ANTHROPIC_API_KEY ?? "",
+          "anthropic-version": apiVersion,
+        },
+        body,
+        "anthropic",
+        request.signal,
+      );
 
-      if (!response.ok) {
-        const normalized = await normalizeHttpError("anthropic", response);
-        yield { type: "error", ...normalized };
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        yield { type: "error", error: "anthropic response body missing", retryable: false };
+      if (!result.ok) {
+        yield result.error;
         return;
       }
 
@@ -251,7 +234,7 @@ export function anthropic(model: string, options?: AnthropicOptions): Provider {
       let syntheticIndex = 0;
       let sawToolCall = false;
 
-      for await (const event of parseSSE(reader)) {
+      for await (const event of result.events) {
         if (event.data === "[DONE]") break;
         const payload = safeJsonParse<AnthropicStreamEvent>(event.data);
         if (!payload) continue;
@@ -328,4 +311,4 @@ export function anthropic(model: string, options?: AnthropicOptions): Provider {
       }
     },
   };
-}
+};

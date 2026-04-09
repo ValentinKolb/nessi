@@ -1,7 +1,7 @@
 import { openAICompatible } from "./openai-compatible.js";
 import type { OpenAICompatibleConfig, Provider } from "../types.js";
 
-export interface OpenRouterOptions {
+export type OpenRouterOptions = {
   apiKey?: string;
   baseURL?: string;
   contextWindow?: number;
@@ -10,9 +10,9 @@ export interface OpenRouterOptions {
   title?: string;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
-}
+};
 
-export function openrouter(model: string, options?: OpenRouterOptions): Provider {
+export const openrouter = (model: string, options?: OpenRouterOptions): Provider => {
   const headers: Record<string, string> = {};
   if (options?.referer) headers["HTTP-Referer"] = options.referer;
   if (options?.title) headers["X-Title"] = options.title;
@@ -36,4 +36,4 @@ export function openrouter(model: string, options?: OpenRouterOptions): Provider
   };
 
   return openAICompatible(config);
-}
+};

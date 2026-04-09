@@ -12,65 +12,91 @@ import type {
   StoreEntry,
   Tool,
 } from "nessi-core";
+import type { Bash } from "just-bash";
 import type { ChatState, UIMessage, UIBlock, UIAssistantMessage, UICompactionBlock } from "./types.js";
 import { MessageList } from "./MessageList.js";
 import { MessageInput } from "./MessageInput.js";
-import { createMainTools } from "../../lib/skills.js";
+import { ChatFilesModal } from "./ChatFilesModal.js";
+import { createMainBashRuntime } from "../../lib/skills.js";
 import { getActivePrompt, resolvePrompt } from "../../lib/prompts.js";
 import { createProvider, getActiveProviderEntry } from "../../lib/provider.js";
 import { contentPartsToUIContent, uiContentText, type UIUserContentPart } from "../../lib/chat-content.js";
-import { loadPersistedEntries, localStorageStore } from "../../lib/store.js";
+import { createProviderContextStore, loadPersistedEntries, localStorageStore, truncatePersistedEntries } from "../../lib/store.js";
 import { isAlwaysAllowed, setAlwaysAllowed } from "../../lib/tool-approvals.js";
 import { ensureChatMeta } from "../../lib/chat-storage.js";
 import { registerCommand } from "../../lib/slash-commands.js";
 import { createDefaultCompactFn } from "../../lib/compaction.js";
+import { loadCompactionSettings } from "../../lib/compaction-settings.js";
 import { refreshChatTitlesInBackground } from "../../lib/chat-titles.js";
+import { prepareImageUpload } from "../../lib/image-resize.js";
+import { createChatFileService } from "../../lib/file-service.js";
+import {
+  attachFilesToMessage,
+  buildFileInfo,
+  clearMessageFileRefs,
+  classifyPendingChatFile,
+  downloadChatFile,
+  fileMetasForMessage,
+  listChatFiles,
+  listInputFiles,
+  listOutputFiles,
+  putInputFile,
+  putOutputFile,
+  readChatFile,
+  removeChatFile,
+  removeOutputFilesMissingFromPaths,
+  type ChatFileMeta,
+  type PendingChatFile,
+} from "../../lib/chat-files.js";
 
-function msgId(): string {
-  return humanId({ separator: "-", capitalize: false });
-}
+import { isAssistantMessage, isUserMessage } from "./guards.js";
 
-function isAssistantMessage(message: UIMessage | undefined): message is UIAssistantMessage {
-  return Boolean(message && message.role === "assistant");
-}
+const msgId = () => humanId({ separator: "-", capitalize: false });
 
-function compactPreview(text: string, max = 1200): string {
-  return text.length <= max ? text : `${text.slice(0, max)}...`;
-}
+const compactPreview = (text: string, max = 1200) =>
+  text.length <= max ? text : `${text.slice(0, max)}...`;
 
-function summaryPreviewFromEntries(entries: StoreEntry[]): string | undefined {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i];
-    if (entry?.kind !== "summary") continue;
-    const message = entry.message;
+const summaryTextFromEntry = (entry: StoreEntry): string | undefined => {
+  const message = entry.message;
 
-    if (message.role === "assistant") {
-      const textParts: string[] = [];
-      for (const block of message.content) {
-        if (block.type === "text") textParts.push(block.text);
-      }
-      const text = textParts.join("\n").trim();
-      if (text) return compactPreview(text);
-    }
+  if (message.role === "assistant") {
+    const text = message.content
+      .filter((block): block is Extract<typeof message.content[number], { type: "text" }> => block.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+    return text || undefined;
+  }
 
-    if (message.role === "user") {
-      const text = message.content
-        .map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : ""))
-        .join("\n")
-        .trim();
-      if (text) return compactPreview(text);
-    }
+  if (message.role === "user") {
+    const text = message.content
+      .map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : ""))
+      .join("\n")
+      .trim();
+    return text || undefined;
   }
 
   return undefined;
-}
+};
+
+const summaryPreviewFromEntries = (entries: StoreEntry[]): string | undefined => {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry?.kind !== "summary") continue;
+    const text = summaryTextFromEntry(entry);
+    if (text) return compactPreview(text);
+  }
+
+  return undefined;
+};
 
 /** Rebuild UI messages from persisted nessi-core StoreEntry format. */
-function loadMessages(chatId: string): UIMessage[] {
+const loadMessages = (chatId: string): UIMessage[] => {
   const entries = loadPersistedEntries(chatId);
 
   const toolResults = new Map<string, { result: unknown; isError?: boolean }>();
   for (const entry of entries) {
+    if (entry.kind === "summary") continue;
     const message = entry.message;
     if (message.role === "tool_result" && message.callId) {
       toolResults.set(message.callId, { result: message.result, isError: message.isError });
@@ -80,13 +106,43 @@ function loadMessages(chatId: string): UIMessage[] {
   const messages: UIMessage[] = [];
   let lastUserTimestamp: string | undefined;
   for (const entry of entries) {
+    if (entry.kind === "summary") {
+      const summaryText = summaryTextFromEntry(entry);
+      if (summaryText) {
+        messages.push({
+          id: msgId(),
+          role: "assistant",
+          blocks: [{
+            type: "compaction",
+            title: "Checkpoint summary",
+            message: "Older history was condensed into a checkpoint summary.",
+            sessionName: "main",
+            applied: true,
+            reason: "stop",
+            summaryPreview: compactPreview(summaryText),
+          }],
+          meta: {
+            entrySeq: entry.seq,
+            timestamp: entry.createdAt,
+          },
+        });
+      }
+      continue;
+    }
     const message = entry.message;
 
     if (message.role === "user") {
+      const fileParts = fileMetasForMessage(chatId, entry.seq).map((file) => ({
+        type: "file" as const,
+        fileId: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size,
+      }));
       messages.push({
         id: msgId(),
         role: "user",
-        content: contentPartsToUIContent(message.content),
+        content: [...contentPartsToUIContent(message.content), ...fileParts],
         timestamp: entry.createdAt,
         entrySeq: entry.seq,
       });
@@ -144,55 +200,36 @@ function loadMessages(chatId: string): UIMessage[] {
   }
 
   return messages;
-}
+};
 
-function textPart(text: string): ContentPart {
-  return { type: "text", text };
-}
+const textPart = (text: string): ContentPart => ({ type: "text", text });
 
-function hasFiles(dataTransfer: DataTransfer | null): boolean {
-  return Boolean(dataTransfer?.types && Array.from(dataTransfer.types).includes("Files"));
-}
+const hasFiles = (dataTransfer: DataTransfer | null) =>
+  Boolean(dataTransfer?.types && Array.from(dataTransfer.types).includes("Files"));
 
-function readFileAsBase64(file: File): Promise<Extract<UIUserContentPart, { type: "image" }>> {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      reject(new Error(`${file.name} is not an image.`));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error(`Failed to read ${file.name}.`));
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      const [, base64 = ""] = result.split(",", 2);
-      resolve({
-        type: "image",
-        src: result,
-        data: base64,
-        mediaType: file.type,
-        name: file.name,
-      });
-    };
-    reader.readAsDataURL(file);
-  });
-}
+const MAX_IMAGES_PER_MESSAGE = 6;
 
 type Runtime = {
   store: SessionStore;
   tools: Tool[];
   compactFn: CompactFn;
+  bash: Bash;
 };
 
 /** Main chat runtime built directly on nessi-core loop (single main session, no subagents). */
-export function ChatView(props: { chatId: string; providerId: string; onOpenSettings?: () => void }) {
+export const ChatView = (props: { chatId: string; providerId: string; onOpenSettings?: () => void }) => {
   const [state, setState] = createStore<ChatState>({ messages: [], streaming: false });
   const [pendingImages, setPendingImages] = createSignal<Array<Extract<UIUserContentPart, { type: "image" }>>>([]);
+  const [pendingFiles, setPendingFiles] = createSignal<PendingChatFile[]>([]);
+  const [inputFiles, setInputFiles] = createSignal<ChatFileMeta[]>([]);
+  const [outputFiles, setOutputFiles] = createSignal<ChatFileMeta[]>([]);
+  const [filesModalOpen, setFilesModalOpen] = createSignal(false);
   const [dropActive, setDropActive] = createSignal(false);
 
   let runtime: Runtime | null = null;
   let activeLoop: NessiLoop | null = null;
   let currentAssistantStartedAt: string | undefined;
+  let pendingAutoCompactionEntriesBefore: number | null = null;
   let dragDepth = 0;
 
   let assistantIdx = -1;
@@ -200,13 +237,13 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
   const surveyBlockIndices = new Map<string, number>();
   const approvalBlockIndices = new Map<string, number>();
 
-  function clearPendingCallMappings() {
+  const clearPendingCallMappings = () => {
     toolBlockIndices.clear();
     surveyBlockIndices.clear();
     approvalBlockIndices.clear();
-  }
+  };
 
-  function closeStreamingAssistantMessage() {
+  const closeStreamingAssistantMessage = () => {
     mapMessages((messages) => {
       const current = messages[assistantIdx];
       if (!isAssistantMessage(current) || !current.streaming) return messages;
@@ -214,27 +251,44 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
       next[assistantIdx] = { ...current, streaming: false };
       return next;
     });
-  }
+  };
 
-  function resetRuntime(chatId: string) {
+  const fileService = createChatFileService({
+    getChatId: () => props.chatId,
+    getBash: () => runtime?.bash ?? null,
+    onFilesChanged: () => {
+      refreshChatFiles();
+    },
+  });
+
+  const resetRuntime = (chatId: string) => {
     activeLoop?.abort();
     activeLoop = null;
     runtime = null;
 
     setState({ messages: loadMessages(chatId), streaming: false });
     setPendingImages([]);
+    setPendingFiles([]);
+    setInputFiles(listInputFiles(chatId));
+    setOutputFiles(listOutputFiles(chatId));
+    setFilesModalOpen(false);
     currentAssistantStartedAt = undefined;
     dragDepth = 0;
     setDropActive(false);
     assistantIdx = -1;
     clearPendingCallMappings();
-  }
+  };
 
-  function mapMessages(mutator: (messages: UIMessage[]) => UIMessage[]) {
+  const refreshChatFiles = () => {
+    setInputFiles(listInputFiles(props.chatId));
+    setOutputFiles(listOutputFiles(props.chatId));
+  };
+
+  const mapMessages = (mutator: (messages: UIMessage[]) => UIMessage[]) => {
     setState("messages", (messages) => mutator(messages));
-  }
+  };
 
-  function appendStatusMessage(text: string) {
+  const appendStatusMessage = (text: string) => {
     mapMessages((messages) => [
       ...messages,
       {
@@ -243,9 +297,9 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
         blocks: [{ type: "text", text }],
       },
     ]);
-  }
+  };
 
-  function appendCompactionBlock(block: UICompactionBlock) {
+  const appendCompactionBlock = (block: UICompactionBlock) => {
     mapMessages((messages) => [
       ...messages,
       {
@@ -254,9 +308,9 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
         blocks: [block],
       },
     ]);
-  }
+  };
 
-  function ensureAssistantTurnMessage() {
+  const ensureAssistantTurnMessage = () => {
     const current = state.messages[assistantIdx];
     if (isAssistantMessage(current)) return;
 
@@ -273,15 +327,15 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
       },
     ]);
     assistantIdx = state.messages.length - 1;
-  }
+  };
 
-  function getCurrentBlocks(): UIBlock[] {
+  const getCurrentBlocks = (): UIBlock[] => {
     const assistant = state.messages[assistantIdx];
     if (!isAssistantMessage(assistant)) return [];
     return assistant.blocks;
-  }
+  };
 
-  function appendBlock(block: UIBlock): number | null {
+  const appendBlock = (block: UIBlock): number | null => {
     ensureAssistantTurnMessage();
     const idx = getCurrentBlocks().length;
 
@@ -294,9 +348,9 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
     });
 
     return idx;
-  }
+  };
 
-  function updateBlock(blockIdx: number, updater: (block: UIBlock) => UIBlock) {
+  const updateBlock = (blockIdx: number, updater: (block: UIBlock) => UIBlock) => {
     mapMessages((messages) => {
       const current = messages[assistantIdx];
       if (!isAssistantMessage(current)) return messages;
@@ -310,46 +364,144 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
       next[assistantIdx] = { ...current, blocks: nextBlocks };
       return next;
     });
-  }
+  };
 
-  function ensureRuntime(): { provider: ReturnType<typeof createProvider>; runtime: Runtime } | null {
+  const buildRuntimeInitialFiles = async (chatId: string) => {
+    const initialFiles: Record<string, Uint8Array> = {};
+    const staleIds: string[] = [];
+
+    for (const meta of listChatFiles(chatId)) {
+      try {
+        initialFiles[meta.mountPath] = await readChatFile(meta);
+      } catch {
+        staleIds.push(meta.id);
+      }
+    }
+
+    if (staleIds.length > 0) {
+      await Promise.all(staleIds.map((fileId) => removeChatFile(chatId, fileId)));
+      refreshChatFiles();
+    }
+
+    return initialFiles;
+  };
+
+  const syncRuntimeOutputs = async (chatId: string, bash: Bash) => {
+    const outputPaths = new Set<string>();
+
+    for (const path of bash.fs.getAllPaths()) {
+      if (!path.startsWith("/output/")) continue;
+
+      try {
+        const stat = await bash.fs.stat(path);
+        if (!stat.isFile) continue;
+        const bytes = await bash.fs.readFileBuffer(path);
+        await putOutputFile(chatId, path, bytes);
+        outputPaths.add(path);
+      } catch {
+        // Ignore transient fs issues; future turns rebuild from persisted state.
+      }
+    }
+
+    await removeOutputFilesMissingFromPaths(chatId, outputPaths);
+    refreshChatFiles();
+  };
+
+  const ensureRuntime = async (): Promise<{ provider: ReturnType<typeof createProvider>; runtime: Runtime } | null> => {
     const providerEntry = getActiveProviderEntry();
     if (!providerEntry) return null;
 
     if (!runtime) {
+      const initialFiles = await buildRuntimeInitialFiles(props.chatId);
+      const bashRuntime = createMainBashRuntime({
+        initialFiles,
+        fileService,
+        afterExec: async (bash) => {
+          await syncRuntimeOutputs(props.chatId, bash);
+        },
+      });
       runtime = {
         store: localStorageStore(props.chatId),
-        tools: createMainTools(),
-        compactFn: createDefaultCompactFn(),
+        tools: bashRuntime.tools,
+        compactFn: createDefaultCompactFn({
+          minMessages: loadCompactionSettings().autoCompactAfterMessages,
+        }),
+        bash: bashRuntime.bash,
       };
     }
 
     return { provider: createProvider(providerEntry), runtime };
-  }
+  };
 
-  function providerSupportsImages() {
+  const providerSupportsImages = () => {
     const providerEntry = getActiveProviderEntry();
     return providerEntry ? createProvider(providerEntry).capabilities.images : false;
-  }
+  };
 
-  async function addPendingImages(files: FileList | File[]) {
-    if (!providerSupportsImages()) return;
-    const nextFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
-    if (nextFiles.length === 0) return;
+  const lastUserEntrySeq = () => {
+    for (let i = state.messages.length - 1; i >= 0; i--) {
+      const message = state.messages[i];
+      if (isUserMessage(message) && message.entrySeq !== undefined) return message.entrySeq;
+    }
+    return undefined;
+  };
+
+  const latestPersistedSeq = () =>
+    loadPersistedEntries(props.chatId).reduce((max, entry) => Math.max(max, entry.seq), 0);
+
+  const addPendingFiles = async (files: FileList | File[]) => {
+    const incoming = Array.from(files);
+    const images = incoming.filter((file) => file.type.startsWith("image/"));
+    const documents = incoming
+      .map(classifyPendingChatFile)
+      .filter((file): file is PendingChatFile => Boolean(file));
+
+    const unsupportedCount = incoming.length - images.length - documents.length;
+    if (unsupportedCount > 0) {
+      appendStatusMessage("Some files were ignored. Only images, text/code files, CSV/XLSX spreadsheets, and PDFs are supported.");
+    }
+
+    if (documents.length > 0) {
+      setPendingFiles((current) => [...current, ...documents]);
+    }
+
+    if (images.length === 0) return;
+    if (!providerSupportsImages()) {
+      appendStatusMessage("The active provider does not support image inputs.");
+      return;
+    }
+
+    const remainingSlots = Math.max(0, MAX_IMAGES_PER_MESSAGE - pendingImages().length);
+    if (remainingSlots === 0) {
+      appendStatusMessage(`You can attach up to ${MAX_IMAGES_PER_MESSAGE} images per message.`);
+      return;
+    }
+
+    const nextImages = images.slice(0, remainingSlots);
+    if (nextImages.length < images.length) {
+      appendStatusMessage(`Only the first ${MAX_IMAGES_PER_MESSAGE} images are attached.`);
+    }
 
     try {
-      const images = await Promise.all(nextFiles.map(readFileAsBase64));
-      setPendingImages((current) => [...current, ...images]);
+      const prepared = await Promise.all(nextImages.map(prepareImageUpload));
+      setPendingImages((current) => [...current, ...prepared]);
     } catch (error) {
       appendStatusMessage(error instanceof Error ? error.message : String(error));
     }
-  }
+  };
 
-  function removePendingImage(index: number) {
+  const removePendingImage = (index: number) => {
     setPendingImages((current) => current.filter((_, imageIndex) => imageIndex !== index));
-  }
+  };
 
-  function updateAssistantMeta(updater: (meta: NonNullable<UIAssistantMessage["meta"]>) => NonNullable<UIAssistantMessage["meta"]>) {
+  const removePendingFile = (id: string) => {
+    setPendingFiles((current) => current.filter((file) => file.id !== id));
+  };
+
+  const canRetryMessage = (message: UIMessage) =>
+    !state.streaming && isUserMessage(message) && message.entrySeq !== undefined;
+
+  const updateAssistantMeta = (updater: (meta: NonNullable<UIAssistantMessage["meta"]>) => NonNullable<UIAssistantMessage["meta"]>) => {
     mapMessages((messages) => {
       const current = messages[assistantIdx];
       if (!isAssistantMessage(current)) return messages;
@@ -361,9 +513,9 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
       };
       return next;
     });
-  }
+  };
 
-  async function handleApproval(callId: string, action: "deny" | "allow" | "always") {
+  const handleApproval = async (callId: string, action: "deny" | "allow" | "always") => {
     const loop = activeLoop;
     const customApprovalIdx = approvalBlockIndices.get(callId);
     const toolEntry = toolBlockIndices.get(callId);
@@ -398,9 +550,9 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
     updateBlock(toolEntry.idx, (block) =>
       block.type === "tool_call" ? { ...block, approval: approved ? "approved" : "denied" } : block,
     );
-  }
+  };
 
-  async function handleSurveySubmit(callId: string, answers: Record<string, string>) {
+  const handleSurveySubmit = async (callId: string, answers: Record<string, string>) => {
     const loop = activeLoop;
     if (!loop) {
       appendStatusMessage("This survey is no longer active.");
@@ -418,9 +570,9 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
     updateBlock(blockIdx, (block) =>
       block.type === "survey" ? { ...block, submitted: true, answers } : block,
     );
-  }
+  };
 
-  async function handleNessiEvent(event: OutboundEvent) {
+  const handleNessiEvent = async (event: OutboundEvent) => {
     switch (event.type) {
       case "turn_start": {
         currentAssistantStartedAt = new Date().toISOString();
@@ -510,13 +662,25 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
         if (event.kind === "client_tool" && event.name === "survey") {
           const args = event.args as {
             title?: string;
-            questions: Array<{ question: string; options: string[] }>;
+            questions?: Array<{ question: string; options: string[] }>;
           };
+          const questions = Array.isArray(args.questions) ? args.questions : [];
+          if (questions.length === 0) {
+            activeLoop?.push({
+              type: "tool_result",
+              callId: event.callId,
+              result: {
+                result:
+                  "Error: survey requires a non-empty questions array. Example input: {\"title\":\"Language preference\",\"questions\":[{\"question\":\"Preferred language?\",\"options\":[\"Deutsch\",\"English\"]}]}",
+              },
+            });
+            break;
+          }
           const idx = appendBlock({
             type: "survey",
             callId: event.callId,
             title: args.title,
-            questions: args.questions,
+            questions,
             submitted: false,
           });
           if (idx !== null) {
@@ -544,7 +708,7 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
       case "turn_end": {
         const persistedAssistant = [...loadPersistedEntries(props.chatId)]
           .reverse()
-          .find((entry) => entry.message.role === "assistant");
+          .find((entry) => entry.kind === "message" && entry.message.role === "assistant");
         const completedAt = persistedAssistant?.createdAt ?? new Date().toISOString();
         updateAssistantMeta((meta) => ({
           ...meta,
@@ -563,41 +727,79 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
       }
 
       case "error": {
-        mapMessages((messages) => [
-          ...messages,
-          {
-            id: msgId(),
-            role: "assistant",
-            blocks: [{ type: "text", text: `Error: ${event.error}` }],
-          },
-        ]);
+        appendStatusMessage(`Error: ${event.error}`);
         break;
       }
 
       case "done":
       case "steer_applied":
-      case "compaction_start":
-      case "compaction_end":
         break;
-    }
-  }
 
-  async function handleCompactCommand() {
+      case "compaction_start": {
+        try {
+          pendingAutoCompactionEntriesBefore = (await runtime?.store.load())?.length ?? null;
+        } catch {
+          pendingAutoCompactionEntriesBefore = null;
+        }
+        break;
+      }
+
+      case "compaction_end": {
+        try {
+          const entriesAfter = await runtime?.store.load();
+          const afterCount = entriesAfter?.length;
+          const summaryPreview = entriesAfter ? summaryPreviewFromEntries(entriesAfter) : undefined;
+          const reduced = typeof afterCount === "number" && typeof pendingAutoCompactionEntriesBefore === "number"
+            ? Math.max(0, pendingAutoCompactionEntriesBefore - afterCount)
+            : undefined;
+
+          appendCompactionBlock({
+            type: "compaction",
+            title: "Checkpoint summary",
+            message: typeof reduced === "number" && reduced > 0
+              ? `Older history was condensed into a checkpoint summary (${reduced} entries reduced).`
+              : "Older history was condensed into a checkpoint summary.",
+            sessionName: "main",
+            applied: true,
+            reason: "stop",
+            entriesBefore: pendingAutoCompactionEntriesBefore ?? undefined,
+            entriesAfter: afterCount,
+            summaryPreview,
+          });
+        } catch {
+          appendCompactionBlock({
+            type: "compaction",
+            title: "Checkpoint summary",
+            message: "Older history was condensed into a checkpoint summary.",
+            sessionName: "main",
+            applied: true,
+            reason: "stop",
+          });
+        } finally {
+          pendingAutoCompactionEntriesBefore = null;
+        }
+        break;
+      }
+    }
+  };
+
+  const handleCompactCommand = async () => {
     if (state.streaming) {
       appendStatusMessage("Cannot compact while session is busy.");
       return;
     }
 
-    const ensured = ensureRuntime();
+    const ensured = await ensureRuntime();
     if (!ensured) {
       appendStatusMessage("Cannot compact: no provider configured.");
       return;
     }
 
     try {
+      const store = createProviderContextStore(ensured.runtime.store, latestPersistedSeq());
       const loop = compact({
         agentId: "main",
-        store: ensured.runtime.store,
+        store,
         provider: ensured.provider,
         compact: ensured.runtime.compactFn,
         force: true,
@@ -688,47 +890,70 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
         reason: "error",
         error: message,
       });
+    } finally {
+      runtime = null;
     }
-  }
+  };
 
-  async function runTurn(text: string, images: Array<Extract<UIUserContentPart, { type: "image" }>>) {
-    const ensured = ensureRuntime();
+  const runTurn = async (
+    text: string,
+    images: Array<Extract<UIUserContentPart, { type: "image" }>>,
+    attachedFiles: ChatFileMeta[] = [],
+    newFiles: ChatFileMeta[] = [],
+  ) => {
+    const ensured = await ensureRuntime();
     if (!ensured) {
-      mapMessages((messages) => [
-        ...messages,
-        {
-          id: msgId(),
-          role: "assistant",
-          blocks: [{ type: "text", text: "Error: No provider configured. Open Settings to add one." }],
-        },
-      ]);
+      appendStatusMessage("Error: No provider configured. Open Settings to add one.");
       return;
     }
 
     const content: UIUserContentPart[] = [];
     if (text) content.push({ type: "text", text });
     content.push(...images);
+    content.push(...attachedFiles.map((file) => ({
+      type: "file" as const,
+      fileId: file.id,
+      name: file.name,
+      mimeType: file.mimeType,
+      size: file.size,
+    })));
+
+    const predictedUserSeq = latestPersistedSeq() + 1;
+    if (attachedFiles.length > 0) {
+      attachFilesToMessage(props.chatId, predictedUserSeq, attachedFiles.map((file) => file.id));
+    }
 
     mapMessages((messages) => [
       ...messages,
-      { id: msgId(), role: "user", content, timestamp: new Date().toISOString() },
+      { id: msgId(), role: "user", content, timestamp: new Date().toISOString(), entrySeq: predictedUserSeq },
     ]);
 
-    ensureChatMeta(props.chatId, uiContentText(content) || images[0]?.name || "Image chat");
+    ensureChatMeta(props.chatId, uiContentText(content) || attachedFiles[0]?.name || images[0]?.name || "Files chat");
     clearPendingCallMappings();
     assistantIdx = -1;
     setPendingImages([]);
+    setPendingFiles([]);
     setState("streaming", true);
+
+    const store = createProviderContextStore(ensured.runtime.store, latestPersistedSeq());
+    const prompt = resolvePrompt(getActivePrompt(), {
+      fileInfo: buildFileInfo(newFiles, listChatFiles(props.chatId)),
+    });
+    const input: ContentPart[] = [
+      ...(text ? [textPart(text)] : []),
+      ...images.map((image) => ({ type: "file", data: image.data, mediaType: image.mediaType } as const)),
+    ];
+
+    if (!text && images.length === 0 && attachedFiles.length > 0) {
+      input.push(textPart("The user attached files for this turn."));
+    }
 
     const loop = nessi({
       agentId: "main",
-      input: [
-        ...(text ? [textPart(text)] : []),
-        ...images.map((image) => ({ type: "file", data: image.data, mediaType: image.mediaType } as const)),
-      ],
+      input,
       provider: ensured.provider,
-      systemPrompt: resolvePrompt(getActivePrompt()),
-      store: ensured.runtime.store,
+      systemPrompt: prompt,
+      store,
       tools: ensured.runtime.tools,
       maxTurns: 10,
       compact: ensured.runtime.compactFn,
@@ -741,15 +966,7 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
         await handleNessiEvent(event);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      mapMessages((messages) => [
-        ...messages,
-        {
-          id: msgId(),
-          role: "assistant",
-          blocks: [{ type: "text", text: `Error: ${message}` }],
-        },
-      ]);
+      appendStatusMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       activeLoop = null;
       clearPendingCallMappings();
@@ -757,45 +974,99 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
       currentAssistantStartedAt = undefined;
       assistantIdx = -1;
       setState("streaming", false);
+      runtime = null;
+      refreshChatFiles();
       void refreshChatTitlesInBackground(1);
     }
-  }
+  };
 
-  function handleSend(text: string) {
+  const retryLastUserTurn = async (message: UIMessage) => {
+    if (!canRetryMessage(message) || !isUserMessage(message) || message.entrySeq === undefined) return;
+
+    clearMessageFileRefs(props.chatId, message.entrySeq);
+    truncatePersistedEntries(props.chatId, message.entrySeq);
+    clearPendingCallMappings();
+    assistantIdx = -1;
+    currentAssistantStartedAt = undefined;
+    setPendingImages([]);
+    setPendingFiles([]);
+    runtime = null;
+    setState({ messages: loadMessages(props.chatId), streaming: false });
+    refreshChatFiles();
+
+    const text = uiContentText(message.content);
+    const images = message.content.filter((part): part is Extract<UIUserContentPart, { type: "image" }> => part.type === "image");
+    const files = message.content
+      .filter((part): part is Extract<UIUserContentPart, { type: "file" }> => part.type === "file")
+      .map((part) => listChatFiles(props.chatId).find((file) => file.id === part.fileId))
+      .filter((file): file is ChatFileMeta => Boolean(file));
+    void runTurn(text, images, files, []);
+  };
+
+  const handleSend = (text: string) => {
     if (state.streaming) return;
     const images = pendingImages();
+    const files = pendingFiles();
     const trimmed = text.trim();
-    if (!trimmed && images.length === 0) return;
-    void runTurn(trimmed, images);
-  }
+    if (!trimmed && images.length === 0 && files.length === 0) return;
 
-  function handleDragEnter(event: DragEvent) {
-    if (!providerSupportsImages() || !hasFiles(event.dataTransfer)) return;
+    void (async () => {
+      try {
+        const persistedFiles = await Promise.all(files.map((file) => putInputFile(props.chatId, file)));
+        refreshChatFiles();
+        await runTurn(trimmed, images, persistedFiles, persistedFiles);
+      } catch (error) {
+        appendStatusMessage(error instanceof Error ? error.message : String(error));
+      }
+    })();
+  };
+
+  const handleDragEnter = (event: DragEvent) => {
+    if (!hasFiles(event.dataTransfer)) return;
     event.preventDefault();
     dragDepth++;
     setDropActive(true);
-  }
+  };
 
-  function handleDragOver(event: DragEvent) {
-    if (!providerSupportsImages() || !hasFiles(event.dataTransfer)) return;
+  const handleDragOver = (event: DragEvent) => {
+    if (!hasFiles(event.dataTransfer)) return;
     event.preventDefault();
-  }
+  };
 
-  function handleDragLeave(event: DragEvent) {
-    if (!providerSupportsImages() || !hasFiles(event.dataTransfer)) return;
+  const handleDragLeave = (event: DragEvent) => {
+    if (!hasFiles(event.dataTransfer)) return;
     event.preventDefault();
     dragDepth = Math.max(0, dragDepth - 1);
     if (dragDepth === 0) setDropActive(false);
-  }
+  };
 
-  function handleDrop(event: DragEvent) {
-    if (!providerSupportsImages() || !hasFiles(event.dataTransfer)) return;
+  const handleDrop = (event: DragEvent) => {
+    if (!hasFiles(event.dataTransfer)) return;
     event.preventDefault();
     dragDepth = 0;
     setDropActive(false);
     const files = event.dataTransfer?.files;
-    if (files && files.length > 0) void addPendingImages(files);
-  }
+    if (files && files.length > 0) void addPendingFiles(files);
+  };
+
+  const handleDeleteInputFile = async (file: ChatFileMeta) => {
+    try {
+      await removeChatFile(props.chatId, file.id);
+      runtime = null;
+      refreshChatFiles();
+      setState("messages", loadMessages(props.chatId));
+    } catch (error) {
+      appendStatusMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleDownloadOutputFile = async (file: ChatFileMeta) => {
+    try {
+      await downloadChatFile(file);
+    } catch (error) {
+      appendStatusMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   createEffect(on(() => props.chatId, (id) => resetRuntime(id)));
   createEffect(on(() => props.providerId, () => {
@@ -826,7 +1097,7 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
     >
       <Show when={dropActive()}>
         <div class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-emerald-400 bg-emerald-50/70 text-sm text-emerald-700">
-          drop images to attach
+          drop files to attach
         </div>
       </Show>
       <Show when={!getActiveProviderEntry()}>
@@ -844,18 +1115,41 @@ export function ChatView(props: { chatId: string; providerId: string; onOpenSett
       <MessageList
         messages={state.messages}
         streaming={state.streaming}
+        canRetryMessage={canRetryMessage}
+        onRetryMessage={retryLastUserTurn}
         onApproval={handleApproval}
         onSurveySubmit={handleSurveySubmit}
       />
+      <Show when={inputFiles().length > 0 || outputFiles().length > 0}>
+        <div class="px-3 pt-2">
+          <div class="max-w-4xl mx-auto">
+            <button
+              class="ui-subpanel w-full px-3 py-2 text-left text-xs text-gh-fg-secondary hover:text-gh-fg"
+              onClick={() => setFilesModalOpen(true)}
+            >
+              {inputFiles().length} input file{inputFiles().length === 1 ? "" : "s"} · {outputFiles().length} output file{outputFiles().length === 1 ? "" : "s"}
+            </button>
+          </div>
+        </div>
+      </Show>
       <MessageInput
         onSend={handleSend}
-        onAddImages={addPendingImages}
+        onAddFiles={addPendingFiles}
         onRemoveImage={removePendingImage}
+        onRemovePendingFile={removePendingFile}
         images={pendingImages()}
-        canAttachImages={providerSupportsImages()}
+        files={pendingFiles()}
         dropActive={dropActive()}
         disabled={state.streaming}
       />
+      <ChatFilesModal
+        open={filesModalOpen()}
+        inputFiles={inputFiles()}
+        outputFiles={outputFiles()}
+        onClose={() => setFilesModalOpen(false)}
+        onDeleteInput={handleDeleteInputFile}
+        onDownloadOutput={handleDownloadOutputFile}
+      />
     </div>
   );
-}
+};

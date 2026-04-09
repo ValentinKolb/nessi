@@ -1,7 +1,7 @@
 import { openAICompatible } from "./openai-compatible.js";
 import type { OpenAICompatibleConfig, Provider } from "../types.js";
 
-export interface OpenAIOptions {
+export type OpenAIOptions = {
   apiKey?: string;
   baseURL?: string;
   contextWindow?: number;
@@ -9,9 +9,9 @@ export interface OpenAIOptions {
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
   normalizeToolCallIds?: "auto" | "never" | "strict9";
-}
+};
 
-export function openai(model: string, options?: OpenAIOptions): Provider {
+export const openai = (model: string, options?: OpenAIOptions): Provider => {
   const config: OpenAICompatibleConfig = {
     name: "openai",
     model,
@@ -30,4 +30,4 @@ export function openai(model: string, options?: OpenAIOptions): Provider {
   };
 
   return openAICompatible(config);
-}
+};

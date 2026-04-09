@@ -1,16 +1,16 @@
 import { openAICompatible } from "./openai-compatible.js";
 import type { OpenAICompatibleConfig, Provider } from "../types.js";
 
-export interface VLLMOptions {
+export type VLLMOptions = {
   apiKey?: string;
   baseURL?: string;
   contextWindow?: number;
   temperature?: number;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
-}
+};
 
-export function vllm(model: string, options?: VLLMOptions): Provider {
+export const vllm = (model: string, options?: VLLMOptions): Provider => {
   const config: OpenAICompatibleConfig = {
     name: "vllm",
     model,
@@ -29,4 +29,4 @@ export function vllm(model: string, options?: VLLMOptions): Provider {
   };
 
   return openAICompatible(config);
-}
+};

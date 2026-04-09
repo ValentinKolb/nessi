@@ -1,32 +1,32 @@
-import { createSignal, For, onMount } from "solid-js";
+import { createSignal, For, Show, onMount } from "solid-js";
 import { createCopyAction } from "../../lib/clipboard.js";
 import {
   loadSkills,
   saveSkills,
   type SkillEntry,
 } from "../../lib/skill-registry.js";
-const inputClass = "ui-input";
+const NATIVE_TOOLS = ["memory", "web", "list_files", "read_file", "write_file", "edit_file", "bash"] as const;
 
-export function SkillsConfig(props: {
+export const SkillsConfig = (props: {
   onCreateSkill: () => void;
   onEditSkill: (skill: SkillEntry) => void;
-}) {
+}) => {
   const [skills, setSkills] = createSignal<SkillEntry[]>([]);
   const [importing, setImporting] = createSignal(false);
   const [importText, setImportText] = createSignal("");
   const { copy, copied } = createCopyAction();
 
-  function refresh() {
+  const refresh = () => {
     setSkills(loadSkills());
-  }
+  };
 
   onMount(refresh);
 
-  function exportBundle() {
+  const exportBundle = () => {
     copy(JSON.stringify({ version: 2, skills: skills() }, null, 2));
-  }
+  };
 
-  function importBundle() {
+  const importBundle = () => {
     try {
       const parsed = JSON.parse(importText()) as { skills?: SkillEntry[] };
       if (!Array.isArray(parsed.skills)) {
@@ -39,12 +39,15 @@ export function SkillsConfig(props: {
     } catch {
       alert("Invalid skills bundle JSON.");
     }
-  }
+  };
 
   return (
     <div class="ui-panel p-3 space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-gh-fg-muted">Skills</h3>
+        <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
+          <span class="i ti ti-forklift text-sm" />
+          <span>Skills</span>
+        </h3>
         <div class="flex items-center gap-2">
           <button class="btn-secondary" onClick={() => setImporting((value) => !value)}>
             {importing() ? "close import" : "import"}
@@ -60,10 +63,21 @@ export function SkillsConfig(props: {
         Each skill owns its markdown definition and optional code implementation directly.
       </p>
 
-      {importing() && (
+      <div class="flex flex-wrap items-center gap-1.5 text-[10px]">
+        <span class="text-gh-fg-subtle">Native tools:</span>
+        <For each={NATIVE_TOOLS}>
+          {(tool) => (
+            <span class="rounded-full bg-sky-50 px-2 py-0.5 text-sky-700">
+              {tool}
+            </span>
+          )}
+        </For>
+      </div>
+
+      <Show when={importing()}>
         <div class="ui-subpanel p-2 space-y-2">
           <textarea
-            class={`${inputClass} min-h-24 resize-y font-mono`}
+            class="ui-input min-h-24 resize-y font-mono"
             rows={6}
             placeholder="Paste skills bundle JSON"
             value={importText()}
@@ -74,7 +88,7 @@ export function SkillsConfig(props: {
             <button class="btn-primary" onClick={importBundle}>import</button>
           </div>
         </div>
-      )}
+      </Show>
 
       <div class="ui-list">
         <For each={skills()}>
@@ -92,4 +106,4 @@ export function SkillsConfig(props: {
       </div>
     </div>
   );
-}
+};

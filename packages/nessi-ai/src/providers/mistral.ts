@@ -1,12 +1,13 @@
-import { normalizeHttpError } from "../shared/errors.js";
+import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
-import { parseSSE } from "../shared/sse.js";
+import { openSSEStream } from "../shared/stream-helpers.js";
+import { createStrictToolCallIdFactory } from "../shared/tool-call-ids.js";
 import { toOpenAITools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
 import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock, Usage } from "../types.js";
 
-interface MistralMessage {
+type MistralMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> | null;
   tool_calls?: Array<{
@@ -16,9 +17,9 @@ interface MistralMessage {
   }>;
   tool_call_id?: string;
   name?: string;
-}
+};
 
-interface MistralChunk {
+type MistralChunk = {
   choices?: Array<{
     index: number;
     delta: {
@@ -42,58 +43,18 @@ interface MistralChunk {
     prompt_tokens?: number;
     completion_tokens?: number;
   };
-}
+};
 
-const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-function hash32(input: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function encodeBase62(seed: number, length: number): string {
-  let n = seed >>> 0;
-  let out = "";
-  for (let i = 0; i < length; i++) {
-    if (n === 0) n = hash32(`${seed}:${i}:${out.length}`);
-    out += ALNUM[n % ALNUM.length];
-    n = Math.floor(n / ALNUM.length);
-  }
-  return out;
-}
-
-function createStrictToolCallIdFactory() {
-  const used = new Set<string>();
-  let seq = 0;
-  return (seed: string) => {
-    let attempt = 0;
-    while (attempt < 50_000) {
-      const candidate = encodeBase62(hash32(`${seed}:${seq}:${attempt}`), 9);
-      if (!used.has(candidate)) {
-        used.add(candidate);
-        seq++;
-        return candidate;
-      }
-      attempt++;
-    }
-    throw new Error("Failed to generate unique strict tool call id");
-  };
-}
-
-function usageFromChunk(chunk: MistralChunk, options?: MistralOptions): Usage | undefined {
+const usageFromChunk = (chunk: MistralChunk, options?: MistralOptions): Usage | undefined => {
   if (!chunk.usage) return undefined;
   return applyCredits(
     makeUsage(chunk.usage.prompt_tokens ?? 0, chunk.usage.completion_tokens ?? 0),
     options?.creditsPerInputToken,
     options?.creditsPerOutputToken,
   );
-}
+};
 
-function convertMessages(messages: Message[], systemPrompt: string | undefined, options?: MistralOptions): MistralMessage[] {
+const convertMessages = (messages: Message[], systemPrompt: string | undefined, options?: MistralOptions) => {
   const out: MistralMessage[] = [];
   const pendingToolIds = new Map<string, string[]>();
   const makeStrictId = options?.normalizeToolCallIds === "strict9" ? createStrictToolCallIdFactory() : null;
@@ -151,16 +112,16 @@ function convertMessages(messages: Message[], systemPrompt: string | undefined, 
   }
 
   return out;
-}
+};
 
-function mapFinishReason(reason: string | null | undefined, hasTools: boolean) {
+const mapFinishReason = (reason: string | null | undefined, hasTools: boolean) => {
   if (reason === "tool_calls") return "tool_use" as const;
   if (reason === "length") return "max_tokens" as const;
   if (hasTools) return "tool_use" as const;
   return "stop" as const;
-}
+};
 
-export interface MistralOptions {
+export type MistralOptions = {
   apiKey?: string;
   baseURL?: string;
   contextWindow?: number;
@@ -168,9 +129,9 @@ export interface MistralOptions {
   normalizeToolCallIds?: "strict9" | "never";
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
-}
+};
 
-export function mistral(model: string, options?: MistralOptions): Provider {
+export const mistral = (model: string, options?: MistralOptions): Provider => {
   const baseURL = (options?.baseURL ?? "https://api.mistral.ai/v1").replace(/\/+$/, "");
 
   return {
@@ -208,7 +169,7 @@ export function mistral(model: string, options?: MistralOptions): Provider {
         body: JSON.stringify(body),
         signal: request.signal,
       }).catch((error: unknown) => {
-        throw new Error(`mistral connection failed: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(formatConnectionError("mistral", error));
       });
 
       if (!response.ok) {
@@ -249,35 +210,19 @@ export function mistral(model: string, options?: MistralOptions): Provider {
       if (request.temperature ?? options?.temperature) body.temperature = request.temperature ?? options?.temperature;
       if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens;
 
-      let response: Response;
-      try {
-        response = await fetch(`${baseURL}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${options?.apiKey ?? globalThis.process?.env?.MISTRAL_API_KEY ?? ""}`,
-          },
-          body: JSON.stringify(body),
-          signal: request.signal,
-        });
-      } catch (error) {
-        yield {
-          type: "error",
-          error: `mistral connection failed: ${error instanceof Error ? error.message : String(error)}`,
-          retryable: true,
-        };
-        return;
-      }
+      const result = await openSSEStream(
+        `${baseURL}/chat/completions`,
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${options?.apiKey ?? globalThis.process?.env?.MISTRAL_API_KEY ?? ""}`,
+        },
+        body,
+        "mistral",
+        request.signal,
+      );
 
-      if (!response.ok) {
-        const normalized = await normalizeHttpError("mistral", response);
-        yield { type: "error", ...normalized };
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        yield { type: "error", error: "mistral response body missing", retryable: false };
+      if (!result.ok) {
+        yield result.error;
         return;
       }
 
@@ -296,7 +241,7 @@ export function mistral(model: string, options?: MistralOptions): Provider {
         buffers.clear();
       };
 
-      for await (const event of parseSSE(reader)) {
+      for await (const event of result.events) {
         if (event.data === "[DONE]") break;
         const chunk = safeJsonParse<MistralChunk>(event.data);
         if (!chunk) continue;
@@ -342,4 +287,4 @@ export function mistral(model: string, options?: MistralOptions): Provider {
       }
     },
   };
-}
+};

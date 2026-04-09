@@ -14,16 +14,14 @@ import {
 } from "../../lib/provider.js";
 import { createCopyAction } from "../../lib/clipboard.js";
 
-function newEntry(): ProviderEntry {
-  return {
-    id: humanId({ separator: "-", capitalize: false }),
-    type: "openai-compatible",
-    name: "",
-    baseURL: "http://localhost:11434/v1",
-    model: "",
-    toolCallIdPolicy: "passthrough",
-  };
-}
+const newEntry = (): ProviderEntry => ({
+  id: humanId({ separator: "-", capitalize: false }),
+  type: "openai-compatible",
+  name: "",
+  baseURL: "http://localhost:11434/v1",
+  model: "",
+  toolCallIdPolicy: "passthrough",
+});
 
 /** Export format — no id, generated on import */
 type ProviderExport = Omit<ProviderEntry, "id">;
@@ -33,12 +31,12 @@ const POLICY_OPTIONS: Array<{ value: ToolCallIdPolicy; label: string }> = [
   { value: "strict9", label: "Strict 9-char alnum" },
 ];
 
-function toExport(p: ProviderEntry): ProviderExport {
+const toExport = (p: ProviderEntry): ProviderExport => {
   const { id: _, ...rest } = p;
   return rest;
-}
+};
 
-function fromImport(raw: string): ProviderEntry | null {
+const fromImport = (raw: string): ProviderEntry | null => {
   try {
     const o = JSON.parse(raw) as Record<string, unknown>;
     if (!o || typeof o.name !== "string" || typeof o.model !== "string") return null;
@@ -53,12 +51,10 @@ function fromImport(raw: string): ProviderEntry | null {
     };
     return validateProviderEntry(entry) ? null : entry;
   } catch { return null; }
-}
-
-const inputClass = "ui-input";
+};
 
 /** Manage provider endpoints/models and active provider selection. */
-export function ProvidersConfig() {
+export const ProvidersConfig = () => {
   const [providers, setProviders] = createSignal<ProviderEntry[]>([]);
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [editingId, setEditingId] = createSignal<string | null>(null);
@@ -72,25 +68,25 @@ export function ProvidersConfig() {
     setActiveId(getActiveProviderId());
   });
 
-  function persist(list: ProviderEntry[]) {
+  const persist = (list: ProviderEntry[]) => {
     setProviders(list);
     saveProviders(list);
-  }
+  };
 
-  function startAdd() {
+  const startAdd = () => {
     const entry = newEntry();
     setDraft(entry);
     setEditingId(entry.id);
-  }
+  };
 
-  function startEdit(entry: ProviderEntry) {
+  const startEdit = (entry: ProviderEntry) => {
     setDraft({ ...entry });
     setEditingId(entry.id);
-  }
+  };
 
-  function cancel() { setEditingId(null); }
+  const cancel = () => { setEditingId(null); };
 
-  function save() {
+  const save = () => {
     const d = draft();
     const validationError = validateProviderEntry(d);
     if (validationError) {
@@ -111,9 +107,9 @@ export function ProvidersConfig() {
       setActiveProviderId(d.id);
     }
     setEditingId(null);
-  }
+  };
 
-  function remove(id: string) {
+  const remove = (id: string) => {
     const filtered = providers().filter((p) => p.id !== id);
     persist(filtered);
     if (activeId() === id) {
@@ -122,18 +118,18 @@ export function ProvidersConfig() {
       if (next) setActiveProviderId(next);
     }
     setEditingId(null);
-  }
+  };
 
-  function activate(id: string) {
+  const activate = (id: string) => {
     setActiveId(id);
     setActiveProviderId(id);
-  }
+  };
 
-  function updateDraft(field: keyof ProviderEntry, value: string) {
+  const updateDraft = (field: keyof ProviderEntry, value: string) => {
     setDraft((prev) => ({ ...prev, [field]: value }));
-  }
+  };
 
-  function applyPreset(presetId: string) {
+  const applyPreset = (presetId: string) => {
     const preset = PRESETS.find((item) => item.id === presetId);
     if (!preset) return;
     setDraft((prev) => ({
@@ -144,26 +140,26 @@ export function ProvidersConfig() {
       model: prev.model.trim() ? prev.model : preset.defaults.model,
       toolCallIdPolicy: preset.defaults.toolCallIdPolicy,
     }));
-  }
+  };
 
-  function applyProviderType(type: ProviderType) {
+  const applyProviderType = (type: ProviderType) => {
     if (type === "openai-compatible") {
       setDraft((prev) => ({ ...prev, type }));
       return;
     }
     applyPreset(type);
-  }
+  };
 
-  function updateDraftPolicy(value: string) {
+  const updateDraftPolicy = (value: string) => {
     const policy: ToolCallIdPolicy = value === "strict9" ? "strict9" : "passthrough";
     setDraft((prev) => ({ ...prev, toolCallIdPolicy: policy }));
-  }
+  };
 
-  function handleExport(p: ProviderEntry) {
+  const handleExport = (p: ProviderEntry) => {
     copyExport(JSON.stringify(toExport(p), null, 2));
-  }
+  };
 
-  function submitImport() {
+  const submitImport = () => {
     const entry = fromImport(importText());
     if (!entry) { alert("Invalid provider config."); return; }
     persist([...providers(), entry]);
@@ -174,34 +170,34 @@ export function ProvidersConfig() {
     setImporting(false);
     setImportText("");
     startEdit(entry);
-  }
+  };
 
   const isNew = () => !providers().find((p) => p.id === editingId());
 
-  function EditForm() {
+  const EditForm = () => {
     const editing = () => providers().find((p) => p.id === editingId());
     const capabilities = () => getProviderCapabilities(draft());
     return (
       <div class="ui-subpanel p-2 space-y-2">
         <div class="grid grid-cols-3 gap-2">
-          <select class={inputClass} value={draft().type} onInput={(e) => applyProviderType(e.currentTarget.value as ProviderType)}>
+          <select class={"ui-input"} value={draft().type} onInput={(e) => applyProviderType(e.currentTarget.value as ProviderType)}>
             <For each={PRESETS}>
               {(preset) => <option value={preset.id}>{preset.label}</option>}
             </For>
             <option value="openai-compatible">Custom OpenAI-compatible</option>
           </select>
-          <input class={inputClass} placeholder="Name" value={draft().name} onInput={(e) => updateDraft("name", e.currentTarget.value)} />
-          <input class={inputClass} placeholder="Model" value={draft().model} onInput={(e) => updateDraft("model", e.currentTarget.value)} />
+          <input class={"ui-input"} placeholder="Name" value={draft().name} onInput={(e) => updateDraft("name", e.currentTarget.value)} />
+          <input class={"ui-input"} placeholder="Model" value={draft().model} onInput={(e) => updateDraft("model", e.currentTarget.value)} />
         </div>
         <div class="grid grid-cols-2 gap-2">
-          <input class={inputClass} placeholder="Base URL" value={draft().baseURL} onInput={(e) => updateDraft("baseURL", e.currentTarget.value)} />
-          <select class={inputClass} value={draft().toolCallIdPolicy} onInput={(e) => updateDraftPolicy(e.currentTarget.value)}>
+          <input class={"ui-input"} placeholder="Base URL" value={draft().baseURL} onInput={(e) => updateDraft("baseURL", e.currentTarget.value)} />
+          <select class={"ui-input"} value={draft().toolCallIdPolicy} onInput={(e) => updateDraftPolicy(e.currentTarget.value)}>
             <For each={POLICY_OPTIONS}>
               {(option) => <option value={option.value}>{option.label}</option>}
             </For>
           </select>
         </div>
-        <input type="password" class={inputClass} placeholder="API Key (optional)" value={draft().apiKey ?? ""} onInput={(e) => updateDraft("apiKey", e.currentTarget.value)} />
+        <input type="password" class={"ui-input"} placeholder="API Key (optional)" value={draft().apiKey ?? ""} onInput={(e) => updateDraft("apiKey", e.currentTarget.value)} />
         <div class="flex items-center gap-2 text-[10px] text-gh-fg-subtle">
           <span class={`rounded-full px-2 py-0.5 ${capabilities().images ? "bg-emerald-50 text-emerald-700" : "bg-gh-surface text-gh-fg-subtle"}`}>
             {capabilities().images ? "supports images" : "text only"}
@@ -225,12 +221,15 @@ export function ProvidersConfig() {
         </div>
       </div>
     );
-  }
+  };
 
   return (
     <div class="ui-panel p-3 space-y-2">
       <div class="flex items-center justify-between">
-        <h3 class="text-xs font-bold uppercase tracking-wider text-gh-fg-muted">Providers</h3>
+      <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
+        <span class="i ti ti-sparkles-2 text-sm" />
+        <span>Providers</span>
+      </h3>
         <div class="flex gap-2">
           <button class="btn-secondary" onClick={() => { setImporting(!importing()); setImportText(""); }}>import</button>
           <button class="btn-secondary" onClick={startAdd}>+ add</button>
@@ -244,7 +243,7 @@ export function ProvidersConfig() {
       <Show when={importing()}>
         <div class="ui-subpanel p-2 space-y-2">
           <input
-            class={inputClass}
+            class={"ui-input"}
             placeholder="Paste JSON..."
             value={importText()}
             onInput={(e) => setImportText(e.currentTarget.value)}
@@ -302,4 +301,4 @@ export function ProvidersConfig() {
       </Show>
     </div>
   );
-}
+};

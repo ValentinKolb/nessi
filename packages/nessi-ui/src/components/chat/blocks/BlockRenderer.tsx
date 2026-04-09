@@ -22,12 +22,8 @@ const renderers: Record<string, Component<BlockProps>> = {
   compaction: CompactionBlock as Component<BlockProps>,
 };
 
-export function registerBlock(type: string, component: Component<BlockProps>) {
-  renderers[type] = component;
-}
-
 /** Dispatch a UI block to its matching renderer component. */
-export function BlockRenderer(props: BlockProps) {
+export const BlockRenderer = (props: BlockProps) => {
   const Comp = () => renderers[props.block.type];
   return (
     <Show when={Comp()} fallback={<div class="text-xs text-gh-fg-subtle">[unknown block: {props.block.type}]</div>}>
@@ -37,4 +33,4 @@ export function BlockRenderer(props: BlockProps) {
       }}
     </Show>
   );
-}
+};

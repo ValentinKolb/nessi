@@ -2,14 +2,17 @@ import { z } from "zod";
 import { defineTool } from "nessi-core";
 import type { Tool } from "nessi-core";
 import { Bash, defineCommand } from "just-bash";
-import type { ExecResult, Command } from "just-bash";
+import type { ExecResult, Command, InitialFiles } from "just-bash";
 import { cli, ok, err, parseArgs, positionalArgs } from "./commands/cli.js";
 import type { CliBuilder } from "./commands/cli.js";
 import type { CommandHelpers } from "./commands/helpers.js";
 import { createCommandHelpers } from "./commands/helpers.js";
-import { surveyTool } from "./survey.js";
 import { memoryTool } from "./tools/memory-tool.js";
+import { webTool } from "./tools/web-tool.js";
 import { getEnabledSkills, loadSkills, skillPath, type SkillEntry } from "./skill-registry.js";
+import type { ChatFileService } from "./file-service.js";
+import { extractPdfText } from "./pdf-text.js";
+import { truncateText } from "./utils.js";
 
 const MAX_OUTPUT_LENGTH = 30_000;
 
@@ -25,39 +28,44 @@ type SnippetApi = {
 
 type SnippetFactory = (api: SnippetApi) => Command | CliBuilder | Promise<Command | CliBuilder>;
 
-function truncate(text: string, label: string): string {
-  if (text.length <= MAX_OUTPUT_LENGTH) return text;
-  return text.slice(0, MAX_OUTPUT_LENGTH) + `\n\n... [${label} truncated, ${text.length - MAX_OUTPUT_LENGTH} chars omitted]`;
-}
+const isCommand = (value: unknown): value is Command =>
+  Boolean(value)
+  && typeof value === "object"
+  && typeof (value as { name?: unknown }).name === "string"
+  && typeof (value as { execute?: unknown }).execute === "function";
 
-function isCommand(value: unknown): value is Command {
-  return Boolean(value)
-    && typeof value === "object"
-    && typeof (value as { name?: unknown }).name === "string"
-    && typeof (value as { execute?: unknown }).execute === "function";
-}
+const isCliBuilder = (value: unknown): value is CliBuilder =>
+  Boolean(value)
+  && typeof value === "object"
+  && typeof (value as { build?: unknown }).build === "function";
 
-function isCliBuilder(value: unknown): value is CliBuilder {
-  return Boolean(value)
-    && typeof value === "object"
-    && typeof (value as { build?: unknown }).build === "function";
-}
-
-function generateReadme(skills: SkillEntry[]): string {
-  const lines = ["# Skills", ""];
-  for (const skill of skills) {
+const generateReadme = (skills: SkillEntry[]) => {
+  const skillLines = skills.map((skill) => {
     const state = skill.code?.trim() ? "ready" : "docs-only";
-    lines.push(`- ${skill.command}: ${skill.description} (${state}) -> \`cat ${skillPath(skill.id)}\``);
-  }
-  lines.push("", "Every command supports `--help`.");
-  return lines.join("\n");
-}
+    return `- ${skill.command}: ${skill.description} (${state}) -> \`cat ${skillPath(skill.id)}\``;
+  });
+
+  return [
+    "# Skills",
+    "",
+    "Chat files are mounted under `/input`.",
+    "Generated files should be written under `/output`.",
+    "Built-in command: `pdf2text /input/file.pdf > /output/file.txt`.",
+    "",
+    ...skillLines,
+    "",
+    "Every command supports `--help`.",
+  ].join("\n");
+};
 
 const bashToolDef = defineTool({
   name: "bash",
-  description: "Run a bash command. Read /skills/README.md to discover available commands and capabilities.",
+  description:
+    "Run a bash command. Use this for shell commands, pipelines, and skills. For large file reads prefer read_file. For writing or editing files prefer write_file or edit_file. Example input: {\"command\":\"ls /input && readlink /output || true\"}. Read /skills/README.md to discover available commands and capabilities.",
   inputSchema: z.object({
-    command: z.string().describe("The bash command to execute"),
+    command: z.string().describe(
+      "The bash command to execute. Example: 'ls /input && wc -l /output/result.txt'",
+    ),
   }),
   outputSchema: z.object({
     stdout: z.string(),
@@ -67,7 +75,101 @@ const bashToolDef = defineTool({
   needsApproval: true,
 });
 
-async function loadSnippetFactory(code: string): Promise<SnippetFactory> {
+const listFilesToolDef = defineTool({
+  name: "list_files",
+  description:
+    "List mounted chat files under /input and generated files under /output. Example input: {\"scope\":\"all\"}. Use this to see what files are available before reading or editing.",
+  inputSchema: z.object({
+    scope: z.enum(["input", "output", "all"]).optional().describe(
+      "Optional scope filter. Use 'input', 'output', or 'all'. Default is 'all'.",
+    ),
+  }),
+  outputSchema: z.object({
+    files: z.array(z.object({
+      path: z.string(),
+      name: z.string(),
+      kind: z.enum(["input", "output"]),
+      mimeType: z.string(),
+      size: z.number(),
+      createdAt: z.string(),
+    })),
+    counts: z.object({
+      input: z.number(),
+      output: z.number(),
+    }),
+  }),
+});
+
+const readFileToolDef = defineTool({
+  name: "read_file",
+  description:
+    "Read a mounted text/code file or PDF with line ranges. Prefer this over cat for larger files. Example input: {\"path\":\"/input/notes.md\",\"offset\":1,\"limit\":200}.",
+  inputSchema: z.object({
+    path: z.string().describe(
+      "Absolute mounted file path to read. Usually under /input or /output. Example: '/input/notes.md'",
+    ),
+    offset: z.coerce.number().int().positive().optional().describe(
+      "Optional 1-based start line. Default is 1.",
+    ),
+    limit: z.coerce.number().int().positive().optional().describe(
+      "Optional number of lines to return. Default is 200, maximum is 400.",
+    ),
+  }),
+  outputSchema: z.object({
+    path: z.string(),
+    mimeType: z.string(),
+    content: z.string(),
+    totalLines: z.number(),
+    linesReturned: z.number(),
+    truncated: z.boolean(),
+  }),
+});
+
+const writeFileToolDef = defineTool({
+  name: "write_file",
+  description:
+    "Write a new file or overwrite an existing one under /output. Use this instead of pasting file contents into chat. Example input: {\"path\":\"/output/summary.md\",\"content\":\"# Summary\\n...\"}.",
+  inputSchema: z.object({
+    path: z.string().describe(
+      "Target path under /output. Example: '/output/summary.md'",
+    ),
+    content: z.string().describe("Full file contents to write."),
+    overwrite: z.boolean().optional().describe(
+      "Whether an existing /output file may be overwritten. Default is true.",
+    ),
+  }),
+  outputSchema: z.object({
+    path: z.string(),
+    bytesWritten: z.number(),
+    created: z.boolean(),
+  }),
+});
+
+const editFileToolDef = defineTool({
+  name: "edit_file",
+  description:
+    "Edit an existing text/code file with exact string replacement and write the result under /output. Prefer this over bash heredocs for file edits. Example input: {\"path\":\"/input/app.ts\",\"oldString\":\"foo\",\"newString\":\"bar\"}.",
+  inputSchema: z.object({
+    path: z.string().describe(
+      "Source path to edit. Can be under /input or /output. Example: '/input/app.ts'",
+    ),
+    oldString: z.string().describe("Exact text to find in the source file."),
+    newString: z.string().describe("Replacement text."),
+    replaceAll: z.boolean().optional().describe(
+      "Replace all matching occurrences instead of just the first one.",
+    ),
+    outputPath: z.string().optional().describe(
+      "Optional explicit target path under /output. Example: '/output/app-edited.ts'",
+    ),
+  }),
+  outputSchema: z.object({
+    sourcePath: z.string(),
+    outputPath: z.string(),
+    replacements: z.number(),
+  }),
+});
+
+const loadSnippetFactory = async (code: string) => {
   if (!code.trim()) {
     throw new Error("Skill has no implementation code.");
   }
@@ -84,19 +186,19 @@ async function loadSnippetFactory(code: string): Promise<SnippetFactory> {
   } finally {
     URL.revokeObjectURL(url);
   }
-}
+};
 
-function normalizeSnippetResult(result: Command | CliBuilder, helpers: CommandHelpers): Command {
+const normalizeSnippetResult = (result: Command | CliBuilder, helpers: CommandHelpers): Command => {
   if (isCommand(result)) return result;
   if (isCliBuilder(result)) return result.build(helpers);
   throw new Error("Snippet returned unsupported value. Use Command or CliBuilder.");
-}
+};
 
-async function buildCommandFromFactory(
+const buildCommandFromFactory = async (
   factory: SnippetFactory,
   helpers: CommandHelpers,
   errorPrefix: string,
-): Promise<Command> {
+) => {
   try {
     const api: SnippetApi = {
       defineCommand,
@@ -112,9 +214,34 @@ async function buildCommandFromFactory(
   } catch (e) {
     throw new Error(`${errorPrefix}: ${e instanceof Error ? e.message : "unknown error"}`);
   }
-}
+};
 
-function createSnippetProxyCommand(skill: SkillEntry, helpers: CommandHelpers): Command {
+const createPdfToTextCommand = (): Command =>
+  defineCommand("pdf2text", async (args, ctx) => {
+    const path = args[0];
+    if (!path) {
+      return err("Usage: pdf2text /input/file.pdf");
+    }
+
+    try {
+      const bytes = await ctx.fs.readFileBuffer(ctx.fs.resolvePath(ctx.cwd, path));
+      const text = await extractPdfText(bytes);
+      return ok(text.endsWith("\n") ? text : `${text}\n`);
+    } catch (error) {
+      return err(error instanceof Error ? error.message : "Failed to extract PDF text.");
+    }
+  });
+
+const createFileTools = (fileService: ChatFileService): Tool[] => [
+  listFilesToolDef.server(async (input) => fileService.list(input.scope)),
+  readFileToolDef.server(async (input) => fileService.read(input.path, input.offset, input.limit)),
+  writeFileToolDef.server(async (input) => fileService.write(input.path, input.content, input.overwrite)),
+  editFileToolDef.server(async (input) =>
+    fileService.edit(input.path, input.oldString, input.newString, input.replaceAll, input.outputPath),
+  ),
+];
+
+const createSnippetProxyCommand = (skill: SkillEntry, helpers: CommandHelpers): Command => {
   let resolved: Command | null = null;
   let loadError: string | null = null;
 
@@ -142,34 +269,35 @@ function createSnippetProxyCommand(skill: SkillEntry, helpers: CommandHelpers): 
 
     return resolved.execute(args, ctx);
   });
-}
+};
 
-function createCommandForSkill(skill: SkillEntry, helpers: CommandHelpers): Command | null {
+const createCommandForSkill = (skill: SkillEntry, helpers: CommandHelpers) => {
   if (!skill.code?.trim()) return null;
   return createSnippetProxyCommand(skill, helpers);
-}
+};
 
-function buildSkillCommands(skills: SkillEntry[], helpers: CommandHelpers): Command[] {
-  const commands: Command[] = [];
+const buildSkillCommands = (skills: SkillEntry[], helpers: CommandHelpers) => {
   const seen = new Set<string>();
-
-  for (const skill of skills) {
-    if (seen.has(skill.command)) continue;
-    const command = createCommandForSkill(skill, helpers);
-    if (!command) continue;
-    commands.push(command);
+  return skills.flatMap((skill) => {
+    if (seen.has(skill.command)) return [];
     seen.add(skill.command);
-  }
-
-  return commands;
-}
+    const command = createCommandForSkill(skill, helpers);
+    return command ? [command] : [];
+  });
+};
 
 /** Create a Bash instance exposing only the selected skills. */
-export function createBashWithSkills(skillIds: string[], helpers: CommandHelpers, extraCommands?: Command[]): Bash {
+export const createBashWithSkills = (
+  skillIds: string[],
+  helpers: CommandHelpers,
+  extraCommands?: Command[],
+  initialFiles?: InitialFiles,
+) => {
   const allSkills = loadSkills();
   const skills = allSkills.filter((skill) => skillIds.includes(skill.id));
 
-  const files: Record<string, string> = {
+  const files: InitialFiles = {
+    ...(initialFiles ?? {}),
     "/skills/README.md": generateReadme(skills),
   };
 
@@ -184,31 +312,35 @@ export function createBashWithSkills(skillIds: string[], helpers: CommandHelpers
     cwd: "/home/user",
     customCommands: [...skillCommands, ...(extraCommands ?? [])],
   });
-}
+};
 
 /** Create the nessi-core tool wrapper for one bash runtime. */
-function createBashTool(bash: Bash, helpers: CommandHelpers): Tool {
-  return bashToolDef.server(async (input, ctx): Promise<ExecResult> => {
+const createBashToolWithHook = (
+  bash: Bash,
+  helpers: CommandHelpers,
+  afterExec?: (bash: Bash) => Promise<void> | void,
+): Tool =>
+  bashToolDef.server(async (input, ctx): Promise<ExecResult> => {
     helpers.requestApproval = ctx.requestApproval;
     helpers.requestSurvey = (surveyInput) => ctx.requestClientTool("survey", surveyInput) as Promise<{ result: string }>;
     const result = await bash.exec(input.command);
+    await afterExec?.(bash);
     return {
-      stdout: truncate(result.stdout, "stdout"),
-      stderr: truncate(result.stderr, "stderr"),
+      stdout: truncateText(result.stdout, MAX_OUTPUT_LENGTH, "stdout"),
+      stderr: truncateText(result.stderr, MAX_OUTPUT_LENGTH, "stderr"),
       exitCode: result.exitCode,
     };
   });
-}
 
 /** Create bash + survey + memory tools for a specific skill subset. */
-export function createToolsForSkills(skillIds: string[]): Tool[] {
+export const createToolsForSkills = (skillIds: string[]): Tool[] => {
   const helpers = createCommandHelpers();
-  const bash = createBashWithSkills(skillIds, helpers);
-  return [createBashTool(bash, helpers), surveyTool, memoryTool];
-}
+  const bash = createBashWithSkills(skillIds, helpers, [createPdfToTextCommand()]);
+  return [memoryTool, webTool, createBashToolWithHook(bash, helpers)];
+};
 
 /** Build skill list text used in system prompts (`{{skills}}`). */
-export function getSkillsSummary(skillIds?: string[]): string {
+export const getSkillsSummary = (skillIds?: string[]) => {
   const all = loadSkills();
   const selected = skillIds
     ? all.filter((skill) => skillIds.includes(skill.id))
@@ -217,21 +349,49 @@ export function getSkillsSummary(skillIds?: string[]): string {
   if (selected.length === 0) return "No skills available.";
 
   const lines = [
-    "All skills run via bash. Read the docs before first use: `cat /skills/<name>/SKILL.md`",
+    "Available skills (bash commands):",
     "",
+    ...[...selected].sort((a, b) => a.command.localeCompare(b.command))
+      .map((skill) => `- ${skill.command}: ${skill.description}`),
+    "",
+    "Before using a skill for the first time, read its docs: `cat /skills/<name>/SKILL.md`",
   ];
 
-  for (const skill of selected) {
-    lines.push(`- ${skill.command}: ${skill.description}`);
-  }
-
   return lines.join("\n");
-}
+};
 
 /** Tools for the main agent (enabled skills only). */
-export function createMainTools(): Tool[] {
+export const createMainTools = (): Tool[] => {
   const helpers = createCommandHelpers();
   const enabledSkillIds = getEnabledSkills().map((skill) => skill.id);
-  const bash = createBashWithSkills(enabledSkillIds, helpers);
-  return [createBashTool(bash, helpers), surveyTool, memoryTool];
-}
+  const bash = createBashWithSkills(enabledSkillIds, helpers, [createPdfToTextCommand()]);
+  return [memoryTool, webTool, createBashToolWithHook(bash, helpers)];
+};
+
+export const createMainBashRuntime = (options?: {
+  initialFiles?: InitialFiles;
+  afterExec?: (bash: Bash) => Promise<void> | void;
+  fileService?: ChatFileService;
+}) => {
+  const helpers = createCommandHelpers();
+  if (options?.fileService) {
+    helpers.files.readBytes = async (path) => (await options.fileService!.readBytes(path)).bytes;
+  }
+  const enabledSkillIds = getEnabledSkills().map((skill) => skill.id);
+  const bash = createBashWithSkills(
+    enabledSkillIds,
+    helpers,
+    [createPdfToTextCommand()],
+    options?.initialFiles,
+  );
+
+  return {
+    bash,
+    tools: [
+      memoryTool,
+      webTool,
+      ...(options?.fileService ? createFileTools(options.fileService) : []),
+      createBashToolWithHook(bash, helpers, options?.afterExec),
+    ] satisfies Tool[],
+  };
+};

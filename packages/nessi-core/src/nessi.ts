@@ -12,8 +12,6 @@ import type {
   AssistantMessage,
   ToolResultMessage,
   AssistantContentBlock,
-  TextBlock,
-  ThinkingBlock,
   ToolCallBlock,
   Usage,
   Tool,
@@ -22,17 +20,18 @@ import type {
   StoreEntry,
 } from "./types.js";
 import { toolToSpec } from "./tools.js";
+import { zeroUsage, toErrorMessage } from "./utils.js";
 
 // ----------------------------------------------------------------------------
 // Inbound event channel — lets the consumer push() events that the loop awaits
 // ----------------------------------------------------------------------------
 
-interface Channel<T> {
+type Channel<T> = {
   push(value: T): void;
   pull(): Promise<T>;
 }
 
-function createChannel<T>(): Channel<T> {
+const createChannel = <T>(): Channel<T> => {
   const queue: T[] = [];
   const waiters: Array<(value: T) => void> = [];
 
@@ -45,7 +44,7 @@ function createChannel<T>(): Channel<T> {
         queue.push(value);
       }
     },
-    pull(): Promise<T> {
+    pull() {
       const queued = queue.shift();
       if (queued !== undefined) return Promise.resolve(queued);
       return new Promise((resolve) => waiters.push(resolve));
@@ -57,7 +56,7 @@ function createChannel<T>(): Channel<T> {
 // Input normalization
 // ----------------------------------------------------------------------------
 
-function normalizeInput(input: NessiOptions["input"]): UserMessage {
+const normalizeInput = (input: NessiOptions["input"]): UserMessage => {
   if (typeof input === "string") {
     return { role: "user", content: [{ type: "text", text: input }] };
   }
@@ -68,18 +67,61 @@ function normalizeInput(input: NessiOptions["input"]): UserMessage {
 }
 
 // ----------------------------------------------------------------------------
-// Zero usage
+// Debug helpers
 // ----------------------------------------------------------------------------
 
-function zeroUsage(): Usage {
-  return { input: 0, output: 0, total: 0 };
+const formatDebugJson = (value: unknown, maxLength = 2400) => {
+  try {
+    const text = JSON.stringify(value, null, 2) ?? String(value);
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength)}\n... truncated`;
+  } catch {
+    return String(value);
+  }
+}
+
+const formatToolValidationError = (tool: Tool, args: unknown, error: { issues: unknown[] }) => {
+  const issues = error.issues.length > 0
+    ? error.issues
+        .map((rawIssue, index) => {
+          const issue = rawIssue as {
+            path?: unknown;
+            code?: unknown;
+            message?: unknown;
+            expected?: unknown;
+            input?: unknown;
+          };
+          const path = Array.isArray(issue.path) && issue.path.length > 0 ? issue.path.join(".") : "(root)";
+          const code = typeof issue.code === "string" ? issue.code : "unknown";
+          const message = typeof issue.message === "string" ? issue.message : "Validation failed";
+          const expected = typeof issue.expected === "string" ? `, expected ${issue.expected}` : "";
+          const received = Object.prototype.hasOwnProperty.call(issue, "input")
+            ? `, received ${formatDebugJson(issue.input, 200).replace(/\s+/g, " ")}`
+            : "";
+          return `${index + 1}. ${path}: ${message} [${code}${expected}${received}]`;
+        })
+        .join("\n")
+    : "No detailed issues reported.";
+
+  return [
+    `Validation error for tool "${tool.def.name}"`,
+    "",
+    "Issues:",
+    issues,
+    "",
+    "Received args:",
+    formatDebugJson(args),
+    "",
+    "Expected input schema:",
+    formatDebugJson(toolToSpec(tool).inputSchema),
+  ].join("\n");
 }
 
 // ----------------------------------------------------------------------------
 // nessi()
 // ----------------------------------------------------------------------------
 
-export function nessi(options: NessiOptions): NessiLoop {
+export const nessi = (options: NessiOptions): NessiLoop => {
   const {
     agentId = "main",
     input,
@@ -101,7 +143,7 @@ export function nessi(options: NessiOptions): NessiLoop {
   let lastUsage: Usage = zeroUsage();
 
   // Pull the inbound event for a specific callId/type, buffering unrelated events.
-  async function pullMatching<T extends InboundEvent>(match: (event: InboundEvent) => event is T): Promise<T> {
+  const pullMatching = async <T extends InboundEvent>(match: (event: InboundEvent) => event is T): Promise<T> => {
     while (true) {
       const bufferedIdx = deferredInbound.findIndex(match);
       if (bufferedIdx >= 0) {
@@ -124,13 +166,19 @@ export function nessi(options: NessiOptions): NessiLoop {
 
   const signal = abortController.signal;
 
-  // Tool lookup
-  const toolMap = new Map<string, Tool>();
-  for (const tool of tools) {
-    if (toolMap.has(tool.def.name)) {
-      throw new Error(`Duplicate tool name: ${tool.def.name}`);
-    }
-    toolMap.set(tool.def.name, tool);
+  // Tool lookup (fix F: build functionally)
+  const names = tools.map(t => t.def.name);
+  if (new Set(names).size !== names.length) {
+    const dup = names.find((n, i) => names.indexOf(n) !== i);
+    throw new Error(`Duplicate tool name: ${dup}`);
+  }
+  const toolMap = new Map(tools.map(t => [t.def.name, t]));
+
+  // Helper: create and store a tool result message (fix C)
+  const appendToolResult = async (callId: string, name: string, result: unknown, isError = false) => {
+    const msg: ToolResultMessage = { role: "tool_result", callId, name, result, isError };
+    await store.append(msg);
+    return msg;
   }
 
   // The generator that drives the loop
@@ -195,7 +243,6 @@ export function nessi(options: NessiOptions): NessiLoop {
       yield { type: "turn_start", agentId };
 
       // Stream from provider
-      const assistantBlocks: AssistantContentBlock[] = [];
       let currentText = "";
       let currentThinking = "";
       let turnUsage: Usage = zeroUsage();
@@ -262,8 +309,7 @@ export function nessi(options: NessiOptions): NessiLoop {
           }
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        yield { type: "error", agentId, error: message, retryable: false };
+        yield { type: "error", agentId, error: toErrorMessage(err), retryable: false };
         yield { type: "done", agentId, reason: "error" };
         return;
       }
@@ -316,16 +362,12 @@ export function nessi(options: NessiOptions): NessiLoop {
         return;
       }
 
-      // Build assistant message
-      if (currentText) {
-        assistantBlocks.push({ type: "text", text: currentText });
-      }
-      if (currentThinking) {
-        assistantBlocks.push({ type: "thinking", thinking: currentThinking });
-      }
-      for (const tc of toolCalls) {
-        assistantBlocks.push(tc);
-      }
+      // Build assistant message (fix D: declarative blocks)
+      const assistantBlocks: AssistantContentBlock[] = [
+        ...(currentText ? [{ type: "text" as const, text: currentText }] : []),
+        ...(currentThinking ? [{ type: "thinking" as const, thinking: currentThinking }] : []),
+        ...toolCalls,
+      ];
 
       const assistantMessage: AssistantMessage = {
         role: "assistant",
@@ -355,20 +397,13 @@ export function nessi(options: NessiOptions): NessiLoop {
         const tool = toolMap.get(tc.name);
         if (!tool) {
           // Unknown tool — report error to LLM
-          const errorResult: ToolResultMessage = {
-            role: "tool_result",
-            callId: tc.id,
-            name: tc.name,
-            result: `Unknown tool: ${tc.name}`,
-            isError: true,
-          };
-          await store.append(errorResult);
+          await appendToolResult(tc.id, tc.name, `Unknown tool: ${tc.name}`, true);
           yield {
             type: "tool_end",
             agentId,
             callId: tc.id,
             name: tc.name,
-            result: errorResult.result,
+            result: `Unknown tool: ${tc.name}`,
             isError: true,
           };
           continue;
@@ -377,15 +412,8 @@ export function nessi(options: NessiOptions): NessiLoop {
         // Validate input
         const inputResult = tool.def.inputSchema.safeParse(tc.args);
         if (!inputResult.success) {
-          const errorMsg = `Validation error: ${inputResult.error.message}`;
-          const errorResult: ToolResultMessage = {
-            role: "tool_result",
-            callId: tc.id,
-            name: tc.name,
-            result: errorMsg,
-            isError: true,
-          };
-          await store.append(errorResult);
+          const errorMsg = formatToolValidationError(tool, tc.args, inputResult.error);
+          await appendToolResult(tc.id, tc.name, errorMsg, true);
           yield {
             type: "tool_end",
             agentId,
@@ -416,13 +444,7 @@ export function nessi(options: NessiOptions): NessiLoop {
             (event): event is Extract<InboundEvent, { type: "tool_result" }> =>
               event.type === "tool_result" && event.callId === tc.id,
           );
-          const toolResult: ToolResultMessage = {
-            role: "tool_result",
-            callId: tc.id,
-            name: tc.name,
-            result: response.result,
-          };
-          await store.append(toolResult);
+          await appendToolResult(tc.id, tc.name, response.result);
           yield { type: "tool_end", agentId, callId: tc.id, name: tc.name, result: response.result };
           continue;
         }
@@ -442,20 +464,13 @@ export function nessi(options: NessiOptions): NessiLoop {
               event.type === "approval_response" && event.callId === tc.id,
           );
           if (!response.approved) {
-            const deniedResult: ToolResultMessage = {
-              role: "tool_result",
-              callId: tc.id,
-              name: tc.name,
-              result: "User denied this action",
-              isError: true,
-            };
-            await store.append(deniedResult);
+            await appendToolResult(tc.id, tc.name, "User denied this action", true);
             yield {
               type: "tool_end",
               agentId,
               callId: tc.id,
               name: tc.name,
-              result: deniedResult.result,
+              result: "User denied this action",
               isError: true,
             };
             continue;
@@ -482,15 +497,15 @@ export function nessi(options: NessiOptions): NessiLoop {
 
           const ctx: ToolContext = {
             signal,
-            requestApproval(message: string): Promise<boolean> {
+            requestApproval(message: string) {
               return new Promise((resolve) => {
                 const id = `${tc.id}-approval-${approvalCounter++}`;
                 approvalQueue.push({ id, message, resolve });
                 queueNotify?.();
               });
             },
-            requestClientTool<T = unknown>(name: string, args: unknown): Promise<T> {
-              return new Promise((resolve) => {
+            requestClientTool<T = unknown>(name: string, args: unknown) {
+              return new Promise<T>((resolve) => {
                 const id = `${tc.id}-client-${clientToolCounter++}`;
                 clientToolQueue.push({ id, name, args, resolve: resolve as (result: unknown) => void });
                 queueNotify?.();
@@ -559,37 +574,17 @@ export function nessi(options: NessiOptions): NessiLoop {
             const outputResult = tool.def.outputSchema.safeParse(result);
             if (!outputResult.success) {
               const errorMsg = `Output validation error: ${outputResult.error.message}`;
-              const errorToolResult: ToolResultMessage = {
-                role: "tool_result",
-                callId: tc.id,
-                name: tc.name,
-                result: errorMsg,
-                isError: true,
-              };
-              await store.append(errorToolResult);
+              await appendToolResult(tc.id, tc.name, errorMsg, true);
               yield { type: "tool_end", agentId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
               continue;
             }
           }
 
-          const toolResult: ToolResultMessage = {
-            role: "tool_result",
-            callId: tc.id,
-            name: tc.name,
-            result,
-          };
-          await store.append(toolResult);
+          await appendToolResult(tc.id, tc.name, result);
           yield { type: "tool_end", agentId, callId: tc.id, name: tc.name, result };
         } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          const errorResult: ToolResultMessage = {
-            role: "tool_result",
-            callId: tc.id,
-            name: tc.name,
-            result: errorMsg,
-            isError: true,
-          };
-          await store.append(errorResult);
+          const errorMsg = toErrorMessage(err);
+          await appendToolResult(tc.id, tc.name, errorMsg, true);
           yield { type: "tool_end", agentId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
         }
       }
@@ -607,8 +602,7 @@ export function nessi(options: NessiOptions): NessiLoop {
         yield { type: "done", agentId, reason: "aborted" };
         return;
       }
-      const message = err instanceof Error ? err.message : String(err);
-      yield { type: "error", agentId, error: message, retryable: false };
+      yield { type: "error", agentId, error: toErrorMessage(err), retryable: false };
       yield { type: "done", agentId, reason: "error" };
       return;
     }

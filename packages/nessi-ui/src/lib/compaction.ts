@@ -1,19 +1,20 @@
 import type { AssistantMessage, CompactFn, Message, Provider, StoreEntry, Usage } from "nessi-core";
+import { contentPartsToText } from "./utils.js";
 
-const MIN_ENTRIES = 16;
+const MIN_MESSAGES = 30;
 const KEEP_RECENT_ENTRIES = 8;
 const MAX_SOURCE_CHARS = 24_000;
 const USAGE_THRESHOLD = 0.75;
 
-export interface DefaultCompactionOptions {
-  minEntries?: number;
+export type DefaultCompactionOptions = {
+  minMessages?: number;
   keepRecentEntries?: number;
   maxSourceChars?: number;
   usageThreshold?: number;
   compactEveryMessages?: number;
-}
+};
 
-function toText(value: unknown): string {
+const toText = (value: unknown) => {
   if (typeof value === "string") return value;
   if (value === null || value === undefined) return String(value);
   try {
@@ -22,16 +23,12 @@ function toText(value: unknown): string {
   } catch {
     return String(value);
   }
-}
+};
 
-function messageToLine(entry: StoreEntry): string {
+const messageToLine = (entry: StoreEntry) => {
   const { message } = entry;
   if (message.role === "user") {
-    const text = message.content.map((part) => {
-      if (typeof part === "string") return part;
-      if (part.type === "text") return part.text;
-      return `[file:${part.mediaType}]`;
-    }).join(" ");
+    const text = contentPartsToText(message.content);
     return `[${entry.seq}] user: ${text}`;
   }
 
@@ -45,14 +42,14 @@ function messageToLine(entry: StoreEntry): string {
   }
 
   return `[${entry.seq}] tool_result:${message.name}(${message.callId}): ${toText(message.result)}`;
-}
+};
 
-function trimSource(text: string, limit: number): string {
+const trimSource = (text: string, limit: number) => {
   if (text.length <= limit) return text;
   return text.slice(text.length - limit);
-}
+};
 
-async function summarize(provider: Provider, text: string): Promise<string> {
+const summarize = async (provider: Provider, text: string) => {
   const prompt = [
     "Create a compact checkpoint summary of this conversation history.",
     "Keep key facts, constraints, decisions, open tasks and relevant tool results.",
@@ -79,19 +76,22 @@ async function summarize(provider: Provider, text: string): Promise<string> {
   const summary = output.trim();
   if (!summary) throw new Error("Compaction summary model returned empty output.");
   return summary;
-}
+};
 
-function countConversationMessages(entries: StoreEntry[]): number {
-  return entries.reduce((total, entry) => total + (entry.kind === "message" ? 1 : 0), 0);
-}
+const countConversationMessages = (entries: StoreEntry[]) =>
+  entries.reduce((total, entry) => total + (
+    entry.kind === "message" && (entry.message.role === "user" || entry.message.role === "assistant")
+      ? 1
+      : 0
+  ), 0);
 
-function shouldCompact(
+const shouldCompact = (
   entries: StoreEntry[],
   usage: Usage,
   provider: Provider,
   force: boolean,
   options: Required<DefaultCompactionOptions>,
-): boolean {
+) => {
   if (entries.length <= options.keepRecentEntries + 1) return false;
   if (force) return true;
 
@@ -105,20 +105,18 @@ function shouldCompact(
   const usageHigh = typeof provider.contextWindow === "number"
     ? usage.total >= provider.contextWindow * options.usageThreshold
     : false;
-  const historyLong = entries.length >= options.minEntries;
+  const historyLong = countConversationMessages(entries) >= options.minMessages;
   return usageHigh || historyLong;
-}
+};
 
-function collectAssistantToolCallIds(entry: StoreEntry): string[] {
+const collectAssistantToolCallIds = (entry: StoreEntry) => {
   if (entry.message.role !== "assistant") return [];
-  const ids: string[] = [];
-  for (const block of entry.message.content) {
-    if (block.type === "tool_call") ids.push(block.id);
-  }
-  return ids;
-}
+  return entry.message.content
+    .filter((block) => block.type === "tool_call")
+    .map((block) => block.id);
+};
 
-function hasResolvableToolResults(entries: StoreEntry[]): boolean {
+const hasResolvableToolResults = (entries: StoreEntry[]) => {
   const knownToolCalls = new Set<string>();
   for (const entry of entries) {
     for (const id of collectAssistantToolCallIds(entry)) {
@@ -129,9 +127,9 @@ function hasResolvableToolResults(entries: StoreEntry[]): boolean {
     }
   }
   return true;
-}
+};
 
-function findSafeSplitIndex(entries: StoreEntry[], keepRecentEntries: number): number {
+const findSafeSplitIndex = (entries: StoreEntry[], keepRecentEntries: number) => {
   const preferred = Math.max(1, entries.length - keepRecentEntries);
   for (let idx = preferred; idx >= 1; idx--) {
     const recent = entries.slice(idx);
@@ -141,16 +139,16 @@ function findSafeSplitIndex(entries: StoreEntry[], keepRecentEntries: number): n
     }
   }
   return -1;
-}
+};
 
 /** Build the default compaction strategy used by UI sessions. */
-export function createDefaultCompactFn(rawOptions: DefaultCompactionOptions = {}): CompactFn {
+export const createDefaultCompactFn = (rawOptions: DefaultCompactionOptions = {}): CompactFn => {
   const options: Required<DefaultCompactionOptions> = {
-    minEntries: rawOptions.minEntries ?? MIN_ENTRIES,
+    minMessages: rawOptions.minMessages ?? MIN_MESSAGES,
     keepRecentEntries: rawOptions.keepRecentEntries ?? KEEP_RECENT_ENTRIES,
     maxSourceChars: rawOptions.maxSourceChars ?? MAX_SOURCE_CHARS,
     usageThreshold: rawOptions.usageThreshold ?? USAGE_THRESHOLD,
-    compactEveryMessages: rawOptions.compactEveryMessages ?? 0,
+    compactEveryMessages: rawOptions.compactEveryMessages ?? (rawOptions.minMessages ?? MIN_MESSAGES),
   };
 
   return (ctx) => {
@@ -178,4 +176,4 @@ export function createDefaultCompactFn(rawOptions: DefaultCompactionOptions = {}
       await ctx.store.append(summary, { seq: checkpointSeq, kind: "summary" });
     })();
   };
-}
+};

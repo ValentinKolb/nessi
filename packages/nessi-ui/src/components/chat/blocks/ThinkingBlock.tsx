@@ -2,7 +2,7 @@ import { createSignal, Show } from "solid-js";
 import type { UIThinkingBlock } from "../types.js";
 
 /** Toggleable block for model thinking traces. */
-export function ThinkingBlock(props: { block: UIThinkingBlock }) {
+export const ThinkingBlock = (props: { block: UIThinkingBlock }) => {
   const [expanded, setExpanded] = createSignal(false);
 
   return (
@@ -21,4 +21,4 @@ export function ThinkingBlock(props: { block: UIThinkingBlock }) {
       </Show>
     </div>
   );
-}
+};

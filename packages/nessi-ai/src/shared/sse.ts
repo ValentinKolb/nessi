@@ -1,10 +1,10 @@
-export interface SSEEvent {
+export type SSEEvent = {
   event?: string;
   data: string;
   id?: string;
-}
+};
 
-function parseFrame(frame: string): SSEEvent | null {
+const parseFrame = (frame: string): SSEEvent | null => {
   const lines = frame.split(/\r?\n/);
   const dataLines: string[] = [];
   let event: string | undefined;
@@ -24,9 +24,9 @@ function parseFrame(frame: string): SSEEvent | null {
 
   if (dataLines.length === 0) return null;
   return { event, data: dataLines.join("\n"), id };
-}
+};
 
-export async function* parseSSE(reader: ReadableStreamDefaultReader<Uint8Array>): AsyncGenerator<SSEEvent> {
+export const parseSSE = async function* (reader: ReadableStreamDefaultReader<Uint8Array>): AsyncGenerator<SSEEvent> {
   const decoder = new TextDecoder();
   let buffer = "";
 
@@ -42,12 +42,10 @@ export async function* parseSSE(reader: ReadableStreamDefaultReader<Uint8Array>)
     for (const frame of frames) {
       const parsed = parseFrame(frame);
       if (parsed) yield parsed;
-      else if (frame.trim()) console.warn("Ignoring malformed SSE frame", frame);
     }
   }
 
   const finalFrame = buffer.replace(/\r\n/g, "\n");
   const parsed = parseFrame(finalFrame);
   if (parsed) yield parsed;
-  else if (finalFrame.trim()) console.warn("Ignoring trailing malformed SSE frame", finalFrame);
-}
+};

@@ -1,30 +1,38 @@
 import { createEffect, createSignal, on, onMount, Show, For } from "solid-js";
 import { matchCommands, type SlashCommand } from "../../lib/slash-commands.js";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
+import type { PendingChatFile } from "../../lib/chat-files.js";
+import { formatFileSize } from "../../lib/chat-files.js";
 
 /** Keep the textarea compact while allowing multiline input. */
-function autoResize(el: HTMLTextAreaElement) {
+const autoResize = (el: HTMLTextAreaElement) => {
   el.style.height = "auto";
   const lineHeight = 20;
   el.style.height = Math.min(el.scrollHeight, lineHeight * 5) + "px";
-}
+};
 
 /** Chat composer with slash-command autocomplete and submit shortcuts. */
-export function MessageInput(props: {
+export const MessageInput = (props: {
   onSend: (text: string) => void;
-  onAddImages?: (files: FileList | File[]) => void;
+  onAddFiles?: (files: FileList | File[]) => void;
   onRemoveImage?: (index: number) => void;
+  onRemovePendingFile?: (id: string) => void;
   images?: UIUserContentPart[];
-  canAttachImages?: boolean;
+  files?: PendingChatFile[];
   dropActive?: boolean;
   disabled: boolean;
   placeholder?: string;
-}) {
+}) => {
   const [text, setText] = createSignal("");
   const [matches, setMatches] = createSignal<SlashCommand[]>([]);
   const [selectedIdx, setSelectedIdx] = createSignal(0);
   let textareaRef!: HTMLTextAreaElement;
   let fileInputRef!: HTMLInputElement;
+
+  const images = () => props.images ?? [];
+  const files = () => props.files ?? [];
+  const hasAttachments = () => images().some(p => p.type === "image") || files().length > 0;
+  const canSend = () => Boolean(text().trim()) || hasAttachments();
 
   onMount(() => {
     requestAnimationFrame(() => textareaRef.focus());
@@ -36,7 +44,7 @@ export function MessageInput(props: {
     }
   }));
 
-  function updateMatches(val: string) {
+  const updateMatches = (val: string) => {
     if (val.startsWith("/") && !val.includes(" ")) {
       const query = val.slice(1);
       setMatches(matchCommands(query));
@@ -44,16 +52,16 @@ export function MessageInput(props: {
     } else {
       setMatches([]);
     }
-  }
+  };
 
-  function handleInput(e: InputEvent & { currentTarget: HTMLTextAreaElement }) {
+  const handleInput = (e: InputEvent & { currentTarget: HTMLTextAreaElement }) => {
     const val = e.currentTarget.value;
     setText(val);
     updateMatches(val);
     autoResize(e.currentTarget);
-  }
+  };
 
-  async function executeCommand(cmd: SlashCommand) {
+  const executeCommand = async (cmd: SlashCommand) => {
     setText("");
     setMatches([]);
     textareaRef.style.height = "auto";
@@ -63,20 +71,19 @@ export function MessageInput(props: {
       console.error("Slash command failed", err);
     }
     requestAnimationFrame(() => textareaRef.focus());
-  }
+  };
 
-  function handleSend() {
+  const handleSend = () => {
     const t = text().trim();
-    const hasImages = (props.images ?? []).some((part) => part.type === "image");
-    if ((!t && !hasImages) || props.disabled) return;
+    if ((!t && !hasAttachments()) || props.disabled) return;
     props.onSend(t);
     setText("");
     setMatches([]);
     textareaRef.style.height = "auto";
     requestAnimationFrame(() => textareaRef.focus());
-  }
+  };
 
-  function handleKeyDown(e: KeyboardEvent) {
+  const handleKeyDown = (e: KeyboardEvent) => {
     const m = matches();
 
     // Slash command navigation
@@ -114,7 +121,7 @@ export function MessageInput(props: {
       setText((prev) => prev + "\n");
       requestAnimationFrame(() => autoResize(textareaRef));
     }
-  }
+  };
 
   return (
     <div class="px-3 pb-3 pt-3">
@@ -142,15 +149,36 @@ export function MessageInput(props: {
           </div>
         </Show>
 
-        <Show when={(props.images ?? []).some((part) => part.type === "image")}>
+        <Show when={hasAttachments()}>
           <div class="mb-2 flex flex-wrap gap-2">
-            <For each={(props.images ?? []).filter((part): part is Extract<UIUserContentPart, { type: "image" }> => part.type === "image")}>
+            <For each={images().filter((part): part is Extract<UIUserContentPart, { type: "image" }> => part.type === "image")}>
               {(image, index) => (
                 <div class="relative">
                   <img src={image.src} alt={image.name ?? "selected image"} class="h-16 w-16 rounded-md object-cover" />
                   <button
                     class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-gh-surface text-gh-fg-subtle shadow-sm hover:text-gh-fg"
                     onClick={() => props.onRemoveImage?.(index())}
+                  >
+                    <span class="i ti ti-x text-[10px]" />
+                  </button>
+                </div>
+              )}
+            </For>
+            <For each={files()}>
+              {(file) => (
+                <div class="ui-subpanel flex items-center gap-2 px-2.5 py-1 text-xs text-gh-fg-secondary">
+                  <span class={`i ${
+                    file.sourceType === "pdf"
+                      ? "ti ti-file-type-pdf"
+                      : file.sourceType === "table"
+                        ? "ti ti-table"
+                        : "ti ti-file-text"
+                  } text-sm text-gh-fg-subtle`} />
+                  <span class="max-w-[180px] truncate">{file.name}</span>
+                  <span class="text-[10px] text-gh-fg-subtle">{formatFileSize(file.size)}</span>
+                  <button
+                    class="flex h-5 w-5 items-center justify-center rounded-full text-gh-fg-subtle hover:text-gh-fg"
+                    onClick={() => props.onRemovePendingFile?.(file.id)}
                   >
                     <span class="i ti ti-x text-[10px]" />
                   </button>
@@ -164,28 +192,26 @@ export function MessageInput(props: {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,text/*,.txt,.md,.markdown,.csv,.tsv,.xls,.xlsx,.json,.jsonl,.js,.jsx,.mjs,.cjs,.ts,.tsx,.mts,.cts,.html,.htm,.css,.scss,.less,.xml,.yaml,.yml,.toml,.ini,.conf,.env,.log,.sh,.sql,.py,.rb,.php,.go,.rs,.java,.kt,.swift,.dart,.scala,.lua,.r,.pl,.c,.cc,.cpp,.h,.hpp,.cs,.zig,.dockerfile,.gitignore,.gradle,.lock,.mk,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/tab-separated-values"
             multiple
             class="hidden"
             onChange={(event) => {
               const files = event.currentTarget.files;
-              if (files && files.length > 0) props.onAddImages?.(files);
+              if (files && files.length > 0) props.onAddFiles?.(files);
               event.currentTarget.value = "";
             }}
           />
-          <Show when={props.canAttachImages}>
-            <button
-              class={`ui-panel flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
-                props.dropActive
-                  ? "!bg-emerald-50 text-emerald-600"
-                  : "text-gh-fg-subtle hover:text-gh-fg"
-              }`}
-              onClick={() => fileInputRef.click()}
-              title="Attach image"
-            >
-              <span class="i ti ti-photo-plus text-base leading-none" />
-            </button>
-          </Show>
+          <button
+            class={`ui-panel flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+              props.dropActive
+                ? "!bg-emerald-50 text-emerald-600"
+                : "text-gh-fg-subtle hover:text-gh-fg"
+            }`}
+            onClick={() => fileInputRef.click()}
+            title="Add files"
+          >
+            <span class="i ti ti-file-plus text-base leading-none" />
+          </button>
           <div class={`ui-panel flex-1 transition-colors focus-within:!bg-gh-surface ${props.dropActive ? "!bg-emerald-50" : ""}`}>
             <div class="px-3 py-2 flex gap-2 items-end">
             <textarea
@@ -201,7 +227,7 @@ export function MessageInput(props: {
             <button
               class="text-gh-fg-subtle hover:text-gh-fg disabled:opacity-30 text-sm cursor-pointer shrink-0"
               onClick={handleSend}
-              disabled={props.disabled || (!text().trim() && !(props.images ?? []).some((part) => part.type === "image"))}
+              disabled={props.disabled || !canSend()}
             >
               <span class="i ti ti-arrow-right" />
             </button>
@@ -211,4 +237,4 @@ export function MessageInput(props: {
       </div>
     </div>
   );
-}
+};

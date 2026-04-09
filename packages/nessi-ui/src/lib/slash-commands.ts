@@ -7,19 +7,17 @@ export type SlashCommand = {
 const commands: SlashCommand[] = [];
 
 /** Register a slash command once by its unique name. */
-export function registerCommand(cmd: SlashCommand) {
+export const registerCommand = (cmd: SlashCommand) => {
   const idx = commands.findIndex((c) => c.name === cmd.name);
   if (idx >= 0) commands[idx] = cmd;
   else commands.push(cmd);
-}
+};
 
 /** Get all currently registered slash commands. */
-export function getCommands(): SlashCommand[] {
-  return commands;
-}
+export const getCommands = () => commands;
 
 /** Match commands by prefix (e.g. "cl" matches "clear"). */
-export function matchCommands(query: string): SlashCommand[] {
+export const matchCommands = (query: string) => {
   const q = query.toLowerCase();
   return commands.filter((c) => c.name.startsWith(q));
-}
+};

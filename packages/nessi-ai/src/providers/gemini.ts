@@ -1,24 +1,24 @@
-import { normalizeHttpError } from "../shared/errors.js";
+import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse } from "../shared/json.js";
-import { parseSSE } from "../shared/sse.js";
+import { openSSEStream } from "../shared/stream-helpers.js";
 import { toGeminiTools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
 import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock } from "../types.js";
 
-interface GeminiPart {
+type GeminiPart = {
   text?: string;
   inlineData?: { mimeType: string; data: string };
   functionCall?: { name: string; args?: Record<string, unknown> };
   functionResponse?: { name: string; response: Record<string, unknown> };
-}
+};
 
-interface GeminiContent {
+type GeminiContent = {
   role: "user" | "model";
   parts: GeminiPart[];
-}
+};
 
-interface GeminiResponse {
+type GeminiResponse = {
   candidates?: Array<{
     content?: GeminiContent;
     finishReason?: string;
@@ -28,9 +28,9 @@ interface GeminiResponse {
     candidatesTokenCount?: number;
     totalTokenCount?: number;
   };
-}
+};
 
-export interface GeminiOptions {
+export type GeminiOptions = {
   apiKey?: string;
   baseURL?: string;
   contextWindow?: number;
@@ -38,9 +38,9 @@ export interface GeminiOptions {
   maxOutputTokens?: number;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
-}
+};
 
-function convertMessages(messages: Message[]): GeminiContent[] {
+const convertMessages = (messages: Message[]) => {
   const out: GeminiContent[] = [];
   for (const message of messages) {
     if (message.role === "user") {
@@ -79,10 +79,10 @@ function convertMessages(messages: Message[]): GeminiContent[] {
     });
   }
   return out;
-}
+};
 
-function usageFromResponse(response: GeminiResponse, options?: GeminiOptions) {
-  return applyCredits(
+const usageFromResponse = (response: GeminiResponse, options?: GeminiOptions) =>
+  applyCredits(
     makeUsage(
       response.usageMetadata?.promptTokenCount ?? 0,
       response.usageMetadata?.candidatesTokenCount ?? 0,
@@ -90,29 +90,27 @@ function usageFromResponse(response: GeminiResponse, options?: GeminiOptions) {
     options?.creditsPerInputToken,
     options?.creditsPerOutputToken,
   );
-}
 
-function mapFinishReason(reason: string | undefined, hasTools: boolean) {
+const mapFinishReason = (reason: string | undefined, hasTools: boolean) => {
   if (reason === "MAX_TOKENS") return "max_tokens" as const;
   if (hasTools) return "tool_use" as const;
   return "stop" as const;
-}
+};
 
-function createRequestId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `gemini-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
+const createRequestId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `gemini-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-export function gemini(model: string, options?: GeminiOptions): Provider {
+export const gemini = (model: string, options?: GeminiOptions): Provider => {
   const baseURL = (options?.baseURL ?? "https://generativelanguage.googleapis.com/v1beta/models").replace(/\/+$/, "");
   const apiKey = options?.apiKey ?? globalThis.process?.env?.GEMINI_API_KEY ?? globalThis.process?.env?.GOOGLE_API_KEY;
 
-  function urlFor(path: "generateContent" | "streamGenerateContent"): string {
+  const urlFor = (path: "generateContent" | "streamGenerateContent") => {
     const key = apiKey ? `?key=${encodeURIComponent(apiKey)}` : "";
     const alt = path === "streamGenerateContent" ? `${key ? "&" : "?"}alt=sse` : "";
     return `${baseURL}/${model}:${path}${key}${alt}`;
-  }
+  };
 
-  function buildBody(request: GenerateRequest): Record<string, unknown> {
+  const buildBody = (request: GenerateRequest) => {
     const body: Record<string, unknown> = {
       contents: convertMessages(request.messages),
     };
@@ -125,7 +123,7 @@ export function gemini(model: string, options?: GeminiOptions): Provider {
       maxOutputTokens: request.maxOutputTokens ?? options?.maxOutputTokens,
     };
     return body;
-  }
+  };
 
   return {
     name: "gemini",
@@ -148,7 +146,7 @@ export function gemini(model: string, options?: GeminiOptions): Provider {
         body: JSON.stringify(buildBody(request)),
         signal: request.signal,
       }).catch((error: unknown) => {
-        throw new Error(`gemini connection failed: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(formatConnectionError("gemini", error));
       });
 
       if (!response.ok) {
@@ -181,32 +179,16 @@ export function gemini(model: string, options?: GeminiOptions): Provider {
     },
 
     async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
-      let response: Response;
-      try {
-        response = await fetch(urlFor("streamGenerateContent"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildBody(request)),
-          signal: request.signal,
-        });
-      } catch (error) {
-        yield {
-          type: "error",
-          error: `gemini connection failed: ${error instanceof Error ? error.message : String(error)}`,
-          retryable: true,
-        };
-        return;
-      }
+      const result = await openSSEStream(
+        urlFor("streamGenerateContent"),
+        { "Content-Type": "application/json" },
+        buildBody(request),
+        "gemini",
+        request.signal,
+      );
 
-      if (!response.ok) {
-        const normalized = await normalizeHttpError("gemini", response);
-        yield { type: "error", ...normalized };
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        yield { type: "error", error: "gemini response body missing", retryable: false };
+      if (!result.ok) {
+        yield result.error;
         return;
       }
 
@@ -214,7 +196,7 @@ export function gemini(model: string, options?: GeminiOptions): Provider {
       const requestId = createRequestId();
       let latestUsage: ReturnType<typeof usageFromResponse> | undefined;
       let latestFinishReason: GenerateResult["finishReason"] | undefined;
-      for await (const event of parseSSE(reader)) {
+      for await (const event of result.events) {
         if (event.data === "[DONE]") break;
         const payload = safeJsonParse<GeminiResponse>(event.data);
         if (!payload) continue;
@@ -247,4 +229,4 @@ export function gemini(model: string, options?: GeminiOptions): Provider {
       }
     },
   };
-}
+};

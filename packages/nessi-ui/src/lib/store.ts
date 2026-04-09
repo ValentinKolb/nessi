@@ -1,25 +1,68 @@
-import type { Message, StoreEntry, SessionStore } from "nessi-core";
-import { humanId } from "human-id";
+import type { ContentPart, Message, StoreEntry, SessionStore } from "nessi-core";
 import { ensureChatMeta, type ChatMeta, chatMetaKey } from "./chat-storage.js";
 import { readJson, writeJson } from "./json-storage.js";
+import { chatEntriesKey, CHAT_PREFIX, newId } from "./utils.js";
 
-const STORAGE_PREFIX = "chat:";
+export { chatEntriesKey } from "./utils.js";
+
 export type PersistedStoreEntry = StoreEntry & { createdAt?: string };
 
-export function chatEntriesKey(chatId: string): string {
-  return `${STORAGE_PREFIX}${chatId}:entries`;
-}
+export const loadPersistedEntries = (chatId: string) =>
+  readJson<PersistedStoreEntry[]>(chatEntriesKey(chatId), []);
 
-export function loadPersistedEntries(chatId: string): PersistedStoreEntry[] {
-  return readJson<PersistedStoreEntry[]>(chatEntriesKey(chatId), []);
-}
-
-export function savePersistedEntries(chatId: string, entries: PersistedStoreEntry[]) {
+export const savePersistedEntries = (chatId: string, entries: PersistedStoreEntry[]) => {
   writeJson(chatEntriesKey(chatId), entries);
-}
+};
 
-export function forkPersistedChat(sourceChatId: string, upToSeq: number): string {
-  const nextChatId = humanId({ separator: "-", capitalize: false });
+export const truncatePersistedEntries = (chatId: string, beforeSeq: number) => {
+  const entries = loadPersistedEntries(chatId).filter((entry) => entry.seq < beforeSeq);
+  savePersistedEntries(chatId, entries);
+};
+
+const imageOmittedText = (imageCount: number): ContentPart => ({
+  type: "text",
+  text: imageCount === 1
+    ? "User attached an earlier image. The raw image is omitted from follow-up context."
+    : `User attached ${imageCount} earlier images. The raw images are omitted from follow-up context.`,
+});
+
+/**
+ * Strip raw image parts from older user messages before they are sent back to multimodal providers.
+ * This keeps the UI history intact while avoiding repeated image replay on every new user turn.
+ */
+export const stripHistoricalImages = (entries: StoreEntry[], preserveImagesAfterSeq: number) =>
+  entries.map((entry) => {
+    if (entry.seq > preserveImagesAfterSeq || entry.message.role !== "user") return entry;
+
+    const imageCount = entry.message.content.filter(
+      (part) => typeof part !== "string" && part.type === "file",
+    ).length;
+
+    if (imageCount === 0) return entry;
+
+    const content = entry.message.content.filter(
+      (part) => typeof part === "string" || part.type !== "file",
+    );
+
+    const nextContent = content.length > 0 ? [...content, imageOmittedText(imageCount)] : [imageOmittedText(imageCount)];
+    return {
+      ...entry,
+      message: {
+        ...entry.message,
+        content: nextContent,
+      },
+    };
+  });
+
+export const createProviderContextStore = (store: SessionStore, preserveImagesAfterSeq: number): SessionStore => ({
+  async load() {
+    return stripHistoricalImages(await store.load(), preserveImagesAfterSeq);
+  },
+  append: store.append,
+});
+
+export const forkPersistedChat = (sourceChatId: string, upToSeq: number) => {
+  const nextChatId = newId();
   const sourceEntries = loadPersistedEntries(sourceChatId)
     .filter((entry) => entry.seq <= upToSeq)
     .map((entry) => ({ ...entry }));
@@ -47,22 +90,20 @@ export function forkPersistedChat(sourceChatId: string, upToSeq: number): string
   }
 
   return nextChatId;
-}
+};
 
 /**
  * SessionStore backed by localStorage. Conversation history persists across page reloads.
  * Same interface as nessi-core's memoryStore but with persistence.
  */
-export function localStorageStore(chatId: string): SessionStore {
+export const localStorageStore = (chatId: string): SessionStore => {
   let nextSeq = 1;
 
-  function loadRaw(): PersistedStoreEntry[] {
-    return loadPersistedEntries(chatId);
-  }
+  const loadRaw = () => loadPersistedEntries(chatId);
 
-  function saveRaw(entries: PersistedStoreEntry[]) {
+  const saveRaw = (entries: PersistedStoreEntry[]) => {
     savePersistedEntries(chatId, entries);
-  }
+  };
 
   // Initialize nextSeq from existing data
   const existing = loadRaw();
@@ -73,13 +114,7 @@ export function localStorageStore(chatId: string): SessionStore {
   return {
     async load() {
       const entries = loadRaw();
-      let lastSummaryIdx = -1;
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i]?.kind === "summary") {
-          lastSummaryIdx = i;
-          break;
-        }
-      }
+      const lastSummaryIdx = entries.findLastIndex((e) => e.kind === "summary");
       return lastSummaryIdx >= 0 ? entries.slice(lastSummaryIdx) : [...entries];
     },
 
@@ -98,4 +133,4 @@ export function localStorageStore(chatId: string): SessionStore {
       saveRaw(entries);
     },
   };
-}
+};

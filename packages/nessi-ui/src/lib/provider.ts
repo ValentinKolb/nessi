@@ -10,8 +10,8 @@ import {
   type Provider,
   type ProviderCapabilities,
 } from "nessi-ai";
-import { humanId } from "human-id";
 import { readJson, readString, removeKey, writeJson, writeString } from "./json-storage.js";
+import { newId } from "./utils.js";
 
 export type ToolCallIdPolicy = "passthrough" | "strict9";
 export type ProviderType =
@@ -25,7 +25,7 @@ export type ProviderType =
   | "gemini";
 export type ProviderPresetId = Exclude<ProviderType, "openai-compatible">;
 
-export interface ProviderEntry {
+export type ProviderEntry = {
   id: string;
   type: ProviderType;
   name: string;
@@ -33,13 +33,13 @@ export interface ProviderEntry {
   model: string;
   apiKey?: string;
   toolCallIdPolicy: ToolCallIdPolicy;
-}
+};
 
-export interface ProviderPreset {
+export type ProviderPreset = {
   id: ProviderPresetId;
   label: string;
   defaults: Pick<ProviderEntry, "type" | "name" | "baseURL" | "model" | "toolCallIdPolicy">;
-}
+};
 
 const PROVIDERS_KEY = "nessi:providers";
 const ACTIVE_KEY = "nessi:activeProvider";
@@ -140,22 +140,18 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
 ];
 
 /** Return built-in provider presets for quick onboarding. */
-export function getProviderPresets(): ProviderPreset[] {
-  return PROVIDER_PRESETS;
-}
+export const getProviderPresets = () => PROVIDER_PRESETS;
 
 /** Parse tool-call id policy from unknown storage data. */
-function parseToolCallIdPolicy(value: unknown): ToolCallIdPolicy {
-  return value === "strict9" ? "strict9" : "passthrough";
-}
+const parseToolCallIdPolicy = (value: unknown): ToolCallIdPolicy =>
+  value === "strict9" ? "strict9" : "passthrough";
 
-function parseProviderType(value: unknown): ProviderType {
-  return typeof value === "string" && PROVIDER_TYPES.has(value as ProviderType)
+const parseProviderType = (value: unknown): ProviderType =>
+  typeof value === "string" && PROVIDER_TYPES.has(value as ProviderType)
     ? (value as ProviderType)
     : DEFAULT_TYPE;
-}
 
-export function validateProviderEntry(entry: Pick<ProviderEntry, "name" | "baseURL" | "model">): string | null {
+export const validateProviderEntry = (entry: Pick<ProviderEntry, "name" | "baseURL" | "model">) => {
   if (!entry.name.trim()) return "Provider name is required.";
   if (!entry.model.trim()) return "Model is required.";
   if (!entry.baseURL.trim()) return "Base URL is required.";
@@ -166,13 +162,13 @@ export function validateProviderEntry(entry: Pick<ProviderEntry, "name" | "baseU
     return "Base URL must be a valid URL.";
   }
   return null;
-}
+};
 
 /** Normalize unknown provider data into a stable runtime shape. */
-function normalizeProvider(raw: unknown): ProviderEntry | null {
+const normalizeProvider = (raw: unknown): ProviderEntry | null => {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
-  const id = typeof obj.id === "string" && obj.id ? obj.id : humanId({ separator: "-", capitalize: false });
+  const id = typeof obj.id === "string" && obj.id ? obj.id : newId();
   const type = parseProviderType(obj.type);
   const name = typeof obj.name === "string" ? obj.name : "";
   const baseURL = typeof obj.baseURL === "string" && obj.baseURL ? obj.baseURL : DEFAULT_BASE_URL;
@@ -180,16 +176,16 @@ function normalizeProvider(raw: unknown): ProviderEntry | null {
   const apiKey = typeof obj.apiKey === "string" && obj.apiKey ? obj.apiKey : undefined;
   const toolCallIdPolicy = parseToolCallIdPolicy(obj.toolCallIdPolicy);
   return { id, type, name, baseURL, model, apiKey, toolCallIdPolicy };
-}
+};
 
-// Migration: old single-provider format → new multi-provider
-function migrate() {
+// Migration: old single-provider format -> new multi-provider
+const migrate = () => {
   const old = localStorage.getItem(LEGACY_PROVIDER_KEY);
   if (!old) return;
   try {
     const c = JSON.parse(old);
     const entry: ProviderEntry = {
-      id: humanId({ separator: "-", capitalize: false }),
+      id: newId(),
       type: DEFAULT_TYPE,
       name: "Default",
       baseURL: c.baseURL ?? DEFAULT_BASE_URL,
@@ -201,10 +197,10 @@ function migrate() {
     setActiveProviderId(entry.id);
     removeKey(LEGACY_PROVIDER_KEY);
   } catch { /* ignore */ }
-}
+};
 
 /** Load available provider configurations. */
-export function loadProviders(): ProviderEntry[] {
+export const loadProviders = () => {
   migrate();
   const storedRaw = readJson<unknown>(PROVIDERS_KEY, []);
   const stored = Array.isArray(storedRaw) ? storedRaw : [];
@@ -213,26 +209,26 @@ export function loadProviders(): ProviderEntry[] {
     saveProviders(normalized);
   }
   return normalized;
-}
+};
 
 /** Persist provider configurations. */
-export function saveProviders(providers: ProviderEntry[]) {
+export const saveProviders = (providers: ProviderEntry[]) => {
   writeJson(PROVIDERS_KEY, providers);
-}
+};
 
 /** Read currently selected provider id. */
-export function getActiveProviderId(): string | null {
+export const getActiveProviderId = () => {
   const value = readString(ACTIVE_KEY);
   return value || null;
-}
+};
 
 /** Set selected provider id. */
-export function setActiveProviderId(id: string) {
+export const setActiveProviderId = (id: string) => {
   writeString(ACTIVE_KEY, id);
-}
+};
 
 /** Resolve active provider entry or fall back to first configured provider. */
-export function getActiveProviderEntry(): ProviderEntry | null {
+export const getActiveProviderEntry = () => {
   const providers = loadProviders();
   const activeId = getActiveProviderId();
   if (activeId) {
@@ -240,65 +236,62 @@ export function getActiveProviderEntry(): ProviderEntry | null {
     if (found) return found;
   }
   return providers[0] ?? null;
-}
+};
+
+const factories: Record<ProviderType, (providerEntry: ProviderEntry) => Provider> = {
+  openai: (providerEntry) =>
+    openai(providerEntry.model, {
+      baseURL: providerEntry.baseURL,
+      apiKey: providerEntry.apiKey,
+      normalizeToolCallIds: providerEntry.toolCallIdPolicy === "strict9" ? "strict9" : "never",
+    }),
+  openrouter: (providerEntry) =>
+    openrouter(providerEntry.model, {
+      baseURL: providerEntry.baseURL,
+      apiKey: providerEntry.apiKey,
+    }),
+  vllm: (providerEntry) =>
+    vllm(providerEntry.model, {
+      baseURL: providerEntry.baseURL,
+      apiKey: providerEntry.apiKey,
+    }),
+  ollama: (providerEntry) =>
+    ollama(providerEntry.model, {
+      baseURL: providerEntry.baseURL,
+    }),
+  anthropic: (providerEntry) =>
+    anthropic(providerEntry.model, {
+      baseURL: providerEntry.baseURL,
+      apiKey: providerEntry.apiKey,
+    }),
+  mistral: (providerEntry) =>
+    mistral(providerEntry.model, {
+      baseURL: providerEntry.baseURL,
+      apiKey: providerEntry.apiKey,
+      normalizeToolCallIds: providerEntry.toolCallIdPolicy === "strict9" ? "strict9" : "never",
+    }),
+  gemini: (providerEntry) =>
+    gemini(providerEntry.model, {
+      baseURL: providerEntry.baseURL,
+      apiKey: providerEntry.apiKey,
+    }),
+  "openai-compatible": (providerEntry) =>
+    openAICompatible({
+      name: providerEntry.name || "custom-openai-compatible",
+      model: providerEntry.model,
+      baseURL: providerEntry.baseURL,
+      apiKey: providerEntry.apiKey,
+      compat: {
+        toolCallIdPolicy: providerEntry.toolCallIdPolicy,
+        supportsUsageInStreaming: true,
+        thinkingFormat: "none",
+        maxTokensField: "max_completion_tokens",
+      },
+    }),
+};
 
 /** Build provider runtime adapter for nessi-core. */
-export function createProvider(entry: ProviderEntry): Provider {
-  const factories: Record<ProviderType, (providerEntry: ProviderEntry) => Provider> = {
-    openai: (providerEntry) =>
-      openai(providerEntry.model, {
-        baseURL: providerEntry.baseURL,
-        apiKey: providerEntry.apiKey,
-        normalizeToolCallIds: providerEntry.toolCallIdPolicy === "strict9" ? "strict9" : "never",
-      }),
-    openrouter: (providerEntry) =>
-      openrouter(providerEntry.model, {
-        baseURL: providerEntry.baseURL,
-        apiKey: providerEntry.apiKey,
-      }),
-    vllm: (providerEntry) =>
-      vllm(providerEntry.model, {
-        baseURL: providerEntry.baseURL,
-        apiKey: providerEntry.apiKey,
-      }),
-    ollama: (providerEntry) =>
-      ollama(providerEntry.model, {
-        baseURL: providerEntry.baseURL,
-      }),
-    anthropic: (providerEntry) =>
-      anthropic(providerEntry.model, {
-        baseURL: providerEntry.baseURL,
-        apiKey: providerEntry.apiKey,
-      }),
-    mistral: (providerEntry) =>
-      mistral(providerEntry.model, {
-        baseURL: providerEntry.baseURL,
-        apiKey: providerEntry.apiKey,
-        normalizeToolCallIds: providerEntry.toolCallIdPolicy === "strict9" ? "strict9" : "never",
-      }),
-    gemini: (providerEntry) =>
-      gemini(providerEntry.model, {
-        baseURL: providerEntry.baseURL,
-        apiKey: providerEntry.apiKey,
-      }),
-    "openai-compatible": (providerEntry) =>
-      openAICompatible({
-        name: providerEntry.name || "custom-openai-compatible",
-        model: providerEntry.model,
-        baseURL: providerEntry.baseURL,
-        apiKey: providerEntry.apiKey,
-        compat: {
-          toolCallIdPolicy: providerEntry.toolCallIdPolicy,
-          supportsUsageInStreaming: true,
-          thinkingFormat: "none",
-          maxTokensField: "max_completion_tokens",
-        },
-      }),
-  };
+export const createProvider = (entry: ProviderEntry): Provider => factories[entry.type](entry);
 
-  return factories[entry.type](entry);
-}
-
-export function getProviderCapabilities(entry: ProviderEntry): ProviderCapabilities {
-  return createProvider(entry).capabilities;
-}
+export const getProviderCapabilities = (entry: ProviderEntry): ProviderCapabilities =>
+  createProvider(entry).capabilities;
