@@ -1,5 +1,5 @@
 import { defineCommand } from "just-bash";
-import type { ExecResult, Command } from "just-bash";
+import type { ExecResult, Command, CommandContext } from "just-bash";
 import type { CommandHelpers } from "./helpers.js";
 import { createCommandHelpers } from "./helpers.js";
 
@@ -34,7 +34,7 @@ export const positionalArgs = (args: string[]) => {
   return result;
 };
 
-type SubcommandHandler = (args: string[], helpers: CommandHelpers) => Promise<ExecResult> | ExecResult;
+type SubcommandHandler = (args: string[], helpers: CommandHelpers, ctx: CommandContext) => Promise<ExecResult> | ExecResult;
 
 type Subcommand = {
   name: string;
@@ -66,14 +66,20 @@ export const cli = (opts: { name: string; description: string }) => {
         "",
       ].join("\n");
 
-      return defineCommand(opts.name, async (args) => {
+      return defineCommand(opts.name, async (args, ctx) => {
         const sub = args[0];
         if (!sub || sub === "--help" || sub === "-h") return ok(helpText);
 
         const match = subcommands.find((s) => s.name === sub);
         if (!match) return err(`Unknown command: ${sub}. Use '${opts.name} --help' for help.`);
 
-        return match.handler(args.slice(1), h);
+        // --help / -h on any subcommand shows its usage
+        const rest = args.slice(1);
+        if (rest.includes("--help") || rest.includes("-h")) {
+          return ok(`Usage: ${opts.name} ${match.usage}\n`);
+        }
+
+        return match.handler(rest, h, ctx);
       });
     },
   };
