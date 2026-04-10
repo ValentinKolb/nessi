@@ -35,6 +35,7 @@
     "mermaid": "^11.12.2",
     "nessi-ai": "workspace:*",
     "nessi-core": "workspace:*",
+    "read-excel-file": "^8.0.3",
     "sanitize-html": "^2.17.0",
     "solid-js": "^1.9.0",
     "yaml": "^2.8.2",

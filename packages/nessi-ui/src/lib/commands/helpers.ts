@@ -1,5 +1,24 @@
 import { exportPdfText, mergePdfs, splitPdf } from "../pdf-ops.js";
-import { exportTable, getTableColumns, getTableInfo, getTablePreview } from "../table-ops.js";
+import { generateQrSvg } from "../qr.js";
+import type { QrOptions } from "../qr.js";
+import { barChart, lineChart, pieChart } from "../chart.js";
+import type { BarChartData, LineChartData, PieChartData } from "../chart.js";
+import { githubApi } from "../github.js";
+import type { GitHubApi } from "../github.js";
+import { nextcloudApi } from "../nextcloud.js";
+import type { NextcloudApi } from "../nextcloud.js";
+import {
+  exportTable,
+  getTableColumns,
+  getTableInfo,
+  getTablePreview,
+  parseFilterExpr,
+  tableAppendRows,
+  tableFilter,
+  tableReplaceValues,
+  tableToCsv,
+} from "../table-ops.js";
+import type { FilterCondition, TableFilterResult, TableWriteResult } from "../table-ops.js";
 
 export type CommandHelpers = {
   requestApproval: (message: string) => Promise<boolean>;
@@ -35,6 +54,32 @@ export type CommandHelpers = {
       extension: string;
       mimeType: string;
     }>;
+    toCsv: (
+      bytes: Uint8Array,
+      filename: string,
+      options?: { sheet?: string; columns?: string[]; rows?: number },
+    ) => Promise<TableWriteResult>;
+    appendRows: (
+      bytes: Uint8Array,
+      filename: string,
+      newRows: Array<Record<string, string>>,
+      options?: { sheet?: string },
+    ) => Promise<TableWriteResult>;
+    replaceValues: (
+      bytes: Uint8Array,
+      filename: string,
+      column: string,
+      oldValue: string,
+      newValue: string,
+      options?: { sheet?: string },
+    ) => Promise<TableWriteResult>;
+    filter: (
+      bytes: Uint8Array,
+      filename: string,
+      conditions: FilterCondition[],
+      options?: { sheet?: string; columns?: string[]; limit?: number },
+    ) => Promise<TableFilterResult>;
+    parseFilter: (expr: string) => FilterCondition;
   };
   pdf: {
     text: (bytes: Uint8Array, format?: "txt" | "md") => Promise<{
@@ -45,6 +90,16 @@ export type CommandHelpers = {
     split: (bytes: Uint8Array, pages: string) => Promise<Uint8Array>;
     merge: (files: Uint8Array[]) => Promise<Uint8Array>;
   };
+  qr: {
+    svg: (data: string, options?: QrOptions) => string;
+  };
+  chart: {
+    bar: (data: BarChartData) => string;
+    line: (data: LineChartData) => string;
+    pie: (data: PieChartData) => string;
+  };
+  github: GitHubApi;
+  nextcloud: NextcloudApi;
 };
 
 export const createCommandHelpers = (): CommandHelpers => ({
@@ -60,10 +115,25 @@ export const createCommandHelpers = (): CommandHelpers => ({
     columns: getTableColumns,
     peek: getTablePreview,
     export: exportTable,
+    toCsv: tableToCsv,
+    appendRows: tableAppendRows,
+    replaceValues: tableReplaceValues,
+    filter: tableFilter,
+    parseFilter: parseFilterExpr,
   },
   pdf: {
     text: exportPdfText,
     split: splitPdf,
     merge: mergePdfs,
   },
+  qr: {
+    svg: generateQrSvg,
+  },
+  chart: {
+    bar: barChart,
+    line: lineChart,
+    pie: pieChart,
+  },
+  github: githubApi,
+  nextcloud: nextcloudApi,
 });
