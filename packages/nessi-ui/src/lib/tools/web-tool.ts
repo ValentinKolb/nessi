@@ -48,7 +48,7 @@ export const webTool = defineTool({
 }).server(async (input) => {
   const apiKey = getApiKey();
   if (!apiKey) {
-    return { result: "Error: Tavily API key not configured. Please set it in Settings." };
+    return { result: "Error: Tavily API key not configured. The user needs to add their Tavily API key in Settings → API Keys → Tavily. They can get one at tavily.com." };
   }
 
   if (input.action === "search") {

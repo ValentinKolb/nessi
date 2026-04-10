@@ -9,11 +9,15 @@ import type { SkillEntry } from "../../lib/skill-registry.js";
 import type { Prompt } from "../../lib/prompts.js";
 import { SkillEditorView } from "./SkillEditorModal.js";
 import { PromptEditorView } from "./PromptEditorModal.js";
+import { GitHubHelpView } from "./GitHubHelpView.js";
+import { NextcloudHelpView } from "./NextcloudHelpView.js";
 
 type SettingsRoute =
   | { kind: "root" }
   | { kind: "skill-editor"; skill: SkillEntry | null }
-  | { kind: "prompt-editor"; prompt: Prompt | null };
+  | { kind: "prompt-editor"; prompt: Prompt | null }
+  | { kind: "github-help" }
+  | { kind: "nextcloud-help" };
 
 /** Settings dialog that hosts all runtime configuration panels. */
 export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose: () => void }) => {
@@ -37,6 +41,10 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
         return current.skill ? "Edit Skill" : "New Skill";
       case "prompt-editor":
         return current.prompt ? "Edit Prompt" : "New Prompt";
+      case "github-help":
+        return "GitHub Token Setup";
+      case "nextcloud-help":
+        return "Nextcloud App Password Setup";
       default:
         return "Settings";
     }
@@ -92,7 +100,10 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
           <Match when={route().kind === "root"}>
             <div class="hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
               <ProvidersConfig />
-              <ApiKeys />
+              <ApiKeys
+                onShowGitHubHelp={() => setRoute({ kind: "github-help" })}
+                onShowNextcloudHelp={() => setRoute({ kind: "nextcloud-help" })}
+              />
               <SkillsConfig
                 onCreateSkill={() => setRoute({ kind: "skill-editor", skill: null })}
                 onEditSkill={(skill) => setRoute({ kind: "skill-editor", skill })}
@@ -122,6 +133,12 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
                 onDone={backToRoot}
               />
             </div>
+          </Match>
+          <Match when={route().kind === "github-help"}>
+            <GitHubHelpView />
+          </Match>
+          <Match when={route().kind === "nextcloud-help"}>
+            <NextcloudHelpView />
           </Match>
         </Switch>
       </div>
