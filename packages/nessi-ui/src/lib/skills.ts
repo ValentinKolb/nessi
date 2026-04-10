@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineTool } from "nessi-core";
 import type { Tool } from "nessi-core";
 import { Bash, defineCommand } from "just-bash";
+import type { IFileSystem } from "just-bash";
 import type { ExecResult, Command, InitialFiles } from "just-bash";
 import { cli, ok, err, parseArgs, positionalArgs } from "./commands/cli.js";
 import type { CliBuilder } from "./commands/cli.js";
@@ -9,6 +10,9 @@ import type { CommandHelpers } from "./commands/helpers.js";
 import { createCommandHelpers } from "./commands/helpers.js";
 import { memoryTool } from "./tools/memory-tool.js";
 import { webTool } from "./tools/web-tool.js";
+import { createPresentTool } from "./tools/present-tool.js";
+import { nextcloudApi } from "./nextcloud.js";
+import { createNextcloudFs } from "./nextcloud-fs.js";
 import { getEnabledSkills, loadSkills, skillPath, type SkillEntry } from "./skill-registry.js";
 import type { ChatFileService } from "./file-service.js";
 import { extractPdfText } from "./pdf-text.js";
@@ -72,7 +76,7 @@ const bashToolDef = defineTool({
     stderr: z.string(),
     exitCode: z.number(),
   }),
-  needsApproval: true,
+  needsApproval: false,
 });
 
 const listFilesToolDef = defineTool({
@@ -286,6 +290,48 @@ const buildSkillCommands = (skills: SkillEntry[], helpers: CommandHelpers) => {
   });
 };
 
+/** Wrap a bash fs to route /nextcloud/ paths to NextcloudFs. */
+const wrapWithNextcloud = (base: IFileSystem): IFileSystem => {
+  let ncFs: IFileSystem | null = null;
+  try {
+    nextcloudApi.user(); // check if configured
+    ncFs = createNextcloudFs(nextcloudApi);
+  } catch {
+    return base; // not configured, no wrapping
+  }
+
+  const NC = "/nextcloud";
+  const isNc = (p: string) => p === NC || p.startsWith(NC + "/");
+  const ncPath = (p: string) => p.slice(NC.length) || "/";
+
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      const val = Reflect.get(target, prop, receiver);
+      if (typeof val !== "function" || !ncFs) return val;
+
+      return (...args: unknown[]) => {
+        const path = typeof args[0] === "string" ? args[0] : null;
+        if (path && isNc(path)) {
+          const ncArgs = [ncPath(path), ...args.slice(1)] as Parameters<typeof val>;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (ncFs as any)[prop as string](...ncArgs);
+        }
+        // Special: readdir at root should include "nextcloud"
+        if (prop === "readdir" && path === "/") {
+          return (val as (...a: unknown[]) => Promise<string[]>)(...args).then((entries: string[]) =>
+            entries.includes("nextcloud") ? entries : [...entries, "nextcloud"],
+          );
+        }
+        if (prop === "exists" && path === NC) return Promise.resolve(true);
+        if (prop === "stat" && path === NC) return Promise.resolve({ isFile: false, isDirectory: true, isSymbolicLink: false, mode: 0o755, size: 0, mtime: new Date() });
+        // resolvePath is not async
+        if (prop === "resolvePath") return val.call(target, ...args);
+        return val.call(target, ...args);
+      };
+    },
+  });
+};
+
 /** Create a Bash instance exposing only the selected skills. */
 export const createBashWithSkills = (
   skillIds: string[],
@@ -307,11 +353,16 @@ export const createBashWithSkills = (
 
   const skillCommands = buildSkillCommands(skills, helpers);
 
-  return new Bash({
+  const bash = new Bash({
     files,
     cwd: "/home/user",
     customCommands: [...skillCommands, ...(extraCommands ?? [])],
   });
+
+  // Mount Nextcloud at /nextcloud/ via fs proxy
+  (bash as { fs: IFileSystem }).fs = wrapWithNextcloud(bash.fs);
+
+  return bash;
 };
 
 /** Create the nessi-core tool wrapper for one bash runtime. */
@@ -390,7 +441,7 @@ export const createMainBashRuntime = (options?: {
     tools: [
       memoryTool,
       webTool,
-      ...(options?.fileService ? createFileTools(options.fileService) : []),
+      ...(options?.fileService ? [...createFileTools(options.fileService), createPresentTool(options.fileService)] : []),
       createBashToolWithHook(bash, helpers, options?.afterExec),
     ] satisfies Tool[],
   };

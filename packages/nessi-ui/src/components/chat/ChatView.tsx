@@ -955,7 +955,7 @@ export const ChatView = (props: { chatId: string; providerId: string; onOpenSett
       systemPrompt: prompt,
       store,
       tools: ensured.runtime.tools,
-      maxTurns: 10,
+      maxTurns: 40,
       compact: ensured.runtime.compactFn,
     });
 

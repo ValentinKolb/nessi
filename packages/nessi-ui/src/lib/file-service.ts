@@ -11,7 +11,7 @@ import { extractPdfText } from "./pdf-text.js";
 
 const DEFAULT_READ_LIMIT = 200;
 const MAX_READ_LIMIT = 400;
-const READ_ROOTS = ["/input", "/output"];
+const READ_ROOTS = ["/input", "/output", "/nextcloud"];
 const WRITE_ROOTS = ["/output"];
 
 export type FileListScope = "input" | "output" | "all";
@@ -236,6 +236,24 @@ export const createChatFileService = (options: {
     },
     async readBytes(path) {
       const normalized = validateMountedPath(path, READ_ROOTS);
+
+      // Nextcloud paths: read directly from bash VFS (MountableFs → NextcloudFs)
+      if (normalized.startsWith("/nextcloud/")) {
+        const bash = options.getBash();
+        if (!bash) throw new Error("Nextcloud filesystem not available.");
+        const bytes = await bash.fs.readFileBuffer(normalized);
+        const ext = normalized.split(".").pop()?.toLowerCase() ?? "";
+        const mimeMap: Record<string, string> = {
+          csv: "text/csv", tsv: "text/tab-separated-values", txt: "text/plain",
+          md: "text/markdown", json: "application/json", xml: "text/xml", html: "text/html",
+          svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+          gif: "image/gif", webp: "image/webp", pdf: "application/pdf",
+          xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          xls: "application/vnd.ms-excel",
+        };
+        return { mimeType: mimeMap[ext] ?? "application/octet-stream", bytes };
+      }
+
       const { meta, bytes } = await readBytesFromMountedPath(options.getChatId(), normalized, options.getBash());
       return { mimeType: meta.mimeType, bytes };
     },

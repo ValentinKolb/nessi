@@ -9,6 +9,16 @@ import pdfDoc from "../assets/skills/pdf/SKILL.md?raw";
 import pdfCode from "../assets/skills/pdf/skill.ts?raw";
 import tableDoc from "../assets/skills/table/SKILL.md?raw";
 import tableCode from "../assets/skills/table/skill.ts?raw";
+import qrDoc from "../assets/skills/qr/SKILL.md?raw";
+import qrCode from "../assets/skills/qr/skill.ts?raw";
+import calcDoc from "../assets/skills/calc/SKILL.md?raw";
+import calcCode from "../assets/skills/calc/skill.ts?raw";
+import chartDoc from "../assets/skills/chart/SKILL.md?raw";
+import chartCode from "../assets/skills/chart/skill.ts?raw";
+import githubDoc from "../assets/skills/github/SKILL.md?raw";
+import githubCode from "../assets/skills/github/skill.ts?raw";
+import nextcloudDoc from "../assets/skills/nextcloud/SKILL.md?raw";
+import nextcloudCode from "../assets/skills/nextcloud/skill.ts?raw";
 
 const DIRECT_TOOL_SKILL_IDS = new Set(["web"]);
 
@@ -43,6 +53,11 @@ const STATIC_BUILTIN_SKILL_DOCS: Record<string, string> = {
   "../assets/skills/web/SKILL.md": webDoc,
   "../assets/skills/pdf/SKILL.md": pdfDoc,
   "../assets/skills/table/SKILL.md": tableDoc,
+  "../assets/skills/qr/SKILL.md": qrDoc,
+  "../assets/skills/calc/SKILL.md": calcDoc,
+  "../assets/skills/chart/SKILL.md": chartDoc,
+  "../assets/skills/github/SKILL.md": githubDoc,
+  "../assets/skills/nextcloud/SKILL.md": nextcloudDoc,
 };
 
 const STATIC_BUILTIN_SKILL_SOURCES: Record<string, string> = {
@@ -50,6 +65,11 @@ const STATIC_BUILTIN_SKILL_SOURCES: Record<string, string> = {
   "../assets/skills/web/skill.ts": webCode,
   "../assets/skills/pdf/skill.ts": pdfCode,
   "../assets/skills/table/skill.ts": tableCode,
+  "../assets/skills/qr/skill.ts": qrCode,
+  "../assets/skills/calc/skill.ts": calcCode,
+  "../assets/skills/chart/skill.ts": chartCode,
+  "../assets/skills/github/skill.ts": githubCode,
+  "../assets/skills/nextcloud/skill.ts": nextcloudCode,
 };
 
 const ALL_BUILTIN_SKILL_DOCS = {
