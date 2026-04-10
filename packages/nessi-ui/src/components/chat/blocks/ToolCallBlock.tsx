@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { UIToolCallBlock } from "../types.js";
+import { isPresentResult, PresentContent } from "./PresentContent.js";
 
 const stringArg = (args: Record<string, unknown> | undefined, key: string, fallback: string) =>
   typeof args?.[key] === "string" ? args[key] : fallback;
@@ -7,6 +8,8 @@ const stringArg = (args: Record<string, unknown> | undefined, key: string, fallb
 /** Collapsible shell command block with approval controls and command output. */
 export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (callId: string, action: "deny" | "allow" | "always") => void }) => {
   const [expanded, setExpanded] = createSignal(false);
+
+  const isPresent = () => props.block.name === "present";
 
   const formatValue = (value: unknown): string => {
     if (Array.isArray(value)) return value.map((item) => formatValue(item)).join(", ");
@@ -31,6 +34,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
         const action = stringArg(args, "action", "search");
         return action === "extract" ? `web extract ${stringArg(args, "url", "")}` : `web search "${stringArg(args, "query", "")}"`;
       },
+      present: () => `${stringArg(args, "path", "")}`,
       file_read: () => `read ${stringArg(args, "path", "")}`,
       file_write: () => `write ${stringArg(args, "path", "")}`,
       file_edit: () => `edit ${stringArg(args, "path", "")}`,
@@ -43,7 +47,8 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
 
   const leadingIconClass = () => {
     if (props.block.isError) return "ti-exclamation-circle";
-    if (props.block.name === "bash") return "ti-circle-chevron-right";
+    if (props.block.name === "present") return "ti-folder-open";
+    if (props.block.name === "bash") return "ti-tool";
     if (props.block.name === "web") return "ti-search";
     if (props.block.name === "memory") return "ti-brain";
     if (props.block.name === "list_files" || props.block.name === "read_file") return "ti-file-search";
@@ -99,6 +104,11 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
     return formatValue(result);
   };
 
+  const presentResult = () => {
+    const r = props.block.result;
+    return isPresentResult(r) ? r : null;
+  };
+
   const hasResult = () => props.block.result !== undefined;
   const isRunning = () => !hasResult() && props.block.approval !== "pending";
   const isPending = () => props.block.approval === "pending";
@@ -107,7 +117,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
     <div class="ui-panel text-xs overflow-hidden tool-call-block rounded-md">
       <button
         class="w-full flex items-center gap-1.5 px-2 py-1 bg-gh-overlay hover:bg-gh-muted text-left tool-call-head"
-        onClick={() => setExpanded(!expanded())}
+        onClick={() => !isPresent() && setExpanded(!expanded())}
       >
         <Show
           when={leadingIconClass()}
@@ -121,7 +131,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
         <Show when={isRunning()}>
           <span class="text-gh-fg-subtle animate-pulse">...</span>
         </Show>
-        <Show when={hasResult() || props.block.args !== undefined}>
+        <Show when={!isPresent() && (hasResult() || props.block.args !== undefined)}>
           <span class={`i ti ti-chevron-${expanded() ? "up" : "down"} text-gh-fg-subtle text-xs`} />
         </Show>
       </button>
@@ -138,7 +148,14 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
           </button>
         </div>
       </Show>
-      <Show when={expanded()}>
+
+      {/* Present: inline content, no collapsible */}
+      <Show when={isPresent() && presentResult()}>
+        {(pr) => <PresentContent result={pr()} />}
+      </Show>
+
+      {/* Other tools: collapsible details */}
+      <Show when={!isPresent() && expanded()}>
         <div class="px-2 py-2 space-y-2">
           <Show when={props.block.args !== undefined}>
             <div class="space-y-1">
