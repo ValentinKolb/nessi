@@ -1,9 +1,147 @@
-import { For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import type { ChatFileMeta } from "../../lib/chat-files.js";
 import { formatFileSize } from "../../lib/chat-files.js";
+import { getFileIcon } from "../../lib/file-icons.js";
 
-const sectionTitle = (kind: "input" | "output", count: number) =>
-  `${count} ${kind} file${count === 1 ? "" : "s"}`;
+/* ── Tree data structure ── */
+
+type TreeNode = {
+  name: string;
+  /** Set on leaf nodes (files). */
+  meta?: ChatFileMeta;
+  children: TreeNode[];
+};
+
+/** Build a tree from flat mount paths. Returns root-level nodes (e.g. "input", "output"). */
+const buildTree = (files: ChatFileMeta[]): TreeNode[] => {
+  const root: TreeNode = { name: "", children: [] };
+
+  for (const file of files) {
+    const parts = file.mountPath.split("/").filter(Boolean);
+    let current = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]!;
+      let child = current.children.find((c) => c.name === part);
+      if (!child) {
+        child = { name: part, children: [] };
+        current.children.push(child);
+      }
+      if (i === parts.length - 1) child.meta = file;
+      current = child;
+    }
+  }
+
+  return root.children;
+};
+
+const countFiles = (node: TreeNode): number => {
+  if (node.meta) return 1;
+  return node.children.reduce((sum, child) => sum + countFiles(child), 0);
+};
+
+const isFolder = (node: TreeNode) => !node.meta && node.children.length > 0;
+
+/** Truncate from the middle, preserving start and extension: "LongFileName.xlsx" -> "LongFi...e.xlsx" */
+const middleTruncate = (name: string, max = 28) => {
+  if (name.length <= max) return name;
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot) : "";
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const keep = max - ext.length - 3;
+  if (keep < 4) return name.slice(0, max - 3) + "...";
+  const front = Math.ceil(keep * 0.6);
+  const back = keep - front;
+  return stem.slice(0, front) + "..." + stem.slice(-back) + ext;
+};
+
+/** Indent step per depth level in px. */
+const INDENT = 14;
+
+/* ── Components ── */
+
+const FolderRow = (props: {
+  node: TreeNode;
+  depth: number;
+  onAction: (file: ChatFileMeta) => void;
+  actionIcon: string;
+}) => {
+  const [open, setOpen] = createSignal(true);
+  const count = () => countFiles(props.node);
+
+  return (
+    <>
+      <button
+        class="w-full flex items-center gap-1.5 py-1 text-left text-[13px] text-gh-fg-secondary hover:text-gh-fg transition-colors pr-2"
+        style={{ "padding-left": `${props.depth * INDENT + 4}px` }}
+        onClick={() => setOpen(!open())}
+      >
+        <span class={`i ti ${open() ? "ti-chevron-down" : "ti-chevron-right"} text-[10px] text-gh-fg-subtle`} />
+        <span class="i ti ti-folder text-gh-fg-subtle text-sm" />
+        <span class="truncate">{props.node.name}</span>
+        <span class="text-[11px] text-gh-fg-subtle shrink-0">({count()})</span>
+      </button>
+      <Show when={open()}>
+        <div class="relative">
+          <div
+            class="absolute top-0 bottom-0 border-l border-gh-border-muted"
+            style={{ left: `${props.depth * INDENT + 9}px` }}
+          />
+          <For each={props.node.children}>
+            {(child) => (
+              <Show
+                when={isFolder(child)}
+                fallback={
+                  <FileRow
+                    node={child}
+                    depth={props.depth + 1}
+                    onAction={props.onAction}
+                    actionIcon={props.actionIcon}
+                  />
+                }
+              >
+                <FolderRow
+                  node={child}
+                  depth={props.depth + 1}
+                  onAction={props.onAction}
+                  actionIcon={props.actionIcon}
+                />
+              </Show>
+            )}
+          </For>
+        </div>
+      </Show>
+    </>
+  );
+};
+
+const FileRow = (props: {
+  node: TreeNode;
+  depth: number;
+  onAction: (file: ChatFileMeta) => void;
+  actionIcon: string;
+}) => {
+  const meta = () => props.node.meta!;
+
+  return (
+    <div
+      class="group flex items-center gap-1.5 py-0.5 text-[13px] pr-2"
+      style={{ "padding-left": `${props.depth * INDENT + 4}px` }}
+    >
+      <span class={`i ti ${getFileIcon(props.node.name)} text-sm text-gh-fg-subtle shrink-0`} />
+      <span class="text-gh-fg-muted min-w-0" title={props.node.name}>{middleTruncate(props.node.name)}</span>
+      <span class="text-[11px] text-gh-fg-subtle shrink-0 tabular-nums">{formatFileSize(meta().size)}</span>
+      <div class="flex-1" />
+      <button
+        class="shrink-0 text-gh-fg-subtle hover:text-gh-fg opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={() => props.onAction(meta())}
+      >
+        <span class={`i ti ${props.actionIcon} text-sm`} />
+      </button>
+    </div>
+  );
+};
+
+/* ── Modal ── */
 
 export const ChatFilesModal = (props: {
   open: boolean;
@@ -13,66 +151,45 @@ export const ChatFilesModal = (props: {
   onDeleteInput: (file: ChatFileMeta) => void;
   onDownloadOutput: (file: ChatFileMeta) => void;
 }) => {
-  const Section = (sectionProps: {
-    title: string;
-    files: ChatFileMeta[];
-    empty: string;
-    actionLabel: string;
-    onAction: (file: ChatFileMeta) => void;
-  }) => (
-    <div class="space-y-2">
-      <div class="text-xs font-bold uppercase tracking-wider text-gh-fg-secondary">{sectionProps.title}</div>
-      <Show when={sectionProps.files.length > 0} fallback={<div class="text-xs text-gh-fg-subtle">{sectionProps.empty}</div>}>
-        <div class="ui-list">
-          <For each={sectionProps.files}>
-            {(file) => (
-              <div class="ui-row flex items-center gap-3">
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-sm text-gh-fg-secondary">{file.name}</div>
-                  <div class="truncate text-[10px] text-gh-fg-subtle">
-                    {file.mountPath} · {file.mimeType || file.sourceType} · {formatFileSize(file.size)}
-                  </div>
-                </div>
-                <button
-                  class="btn-secondary shrink-0"
-                  onClick={() => sectionProps.onAction(file)}
-                >
-                  {sectionProps.actionLabel}
-                </button>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
-  );
+  const tree = () => buildTree([...props.inputFiles, ...props.outputFiles]);
+
+  const inputRoot = () => tree().find((n) => n.name === "input");
+  const outputRoot = () => tree().find((n) => n.name === "output");
+  const empty = () => props.inputFiles.length === 0 && props.outputFiles.length === 0;
 
   return (
     <Show when={props.open}>
       <div class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4" onClick={props.onClose}>
-        <div class="ui-panel hide-scrollbar max-h-[82vh] w-[min(720px,94vw)] overflow-y-auto p-3 space-y-4" onClick={(event) => event.stopPropagation()}>
-          <div class="flex items-center gap-2">
-            <div class="flex-1 text-xs font-bold uppercase tracking-wider text-gh-fg-secondary">Chat files</div>
-            <button class="p-0.5 text-gh-fg-subtle hover:text-gh-fg" onClick={props.onClose}>
-              <span class="i ti ti-x text-base" />
+        <div
+          class="bg-gh-surface rounded-xl shadow-lg hide-scrollbar max-h-[82vh] w-[min(480px,94vw)] overflow-y-auto"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {/* Header */}
+          <div class="flex items-center gap-2 px-3 py-2.5">
+            <span class="i ti ti-files text-gh-fg-subtle" />
+            <span class="flex-1 text-[13px] font-semibold text-gh-fg">Files</span>
+            <button class="flex h-6 w-6 items-center justify-center rounded-md nav-icon" onClick={props.onClose}>
+              <span class="i ti ti-x text-sm" />
             </button>
           </div>
 
-          <Section
-            title={sectionTitle("input", props.inputFiles.length)}
-            files={props.inputFiles}
-            empty="No input files."
-            actionLabel="delete"
-            onAction={props.onDeleteInput}
-          />
-
-          <Section
-            title={sectionTitle("output", props.outputFiles.length)}
-            files={props.outputFiles}
-            empty="No output files."
-            actionLabel="download"
-            onAction={props.onDownloadOutput}
-          />
+          {/* Tree */}
+          <div class="px-1 pb-2">
+            <Show when={!empty()} fallback={
+              <div class="px-3 py-6 text-center text-[13px] text-gh-fg-subtle">No files yet</div>
+            }>
+              <Show when={inputRoot()}>
+                {(node) => (
+                  <FolderRow node={node()} depth={0} onAction={props.onDeleteInput} actionIcon="ti-x" />
+                )}
+              </Show>
+              <Show when={outputRoot()}>
+                {(node) => (
+                  <FolderRow node={node()} depth={0} onAction={props.onDownloadOutput} actionIcon="ti-download" />
+                )}
+              </Show>
+            </Show>
+          </div>
         </div>
       </div>
     </Show>

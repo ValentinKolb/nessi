@@ -1,9 +1,55 @@
-import { For, Show, createEffect, onCleanup, onMount } from "solid-js";
-import type { UIMessage } from "./types.js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import type { UIMessage, UIAssistantMessage } from "./types.js";
+import { isAssistantMessage } from "./guards.js";
 import { Message } from "./Message.js";
+
+/** Live elapsed-time counter that appears after a 3s delay. */
+const WorkingTimer = (props: { startedAt?: string }) => {
+  const [elapsed, setElapsed] = createSignal(0);
+  const [visible, setVisible] = createSignal(false);
+  let interval: ReturnType<typeof setInterval> | undefined;
+  let delayTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const start = () => {
+    if (!props.startedAt) return Date.now();
+    return new Date(props.startedAt).getTime();
+  };
+
+  onMount(() => {
+    // Show after 3s delay to avoid flicker on fast responses
+    delayTimer = setTimeout(() => setVisible(true), 3000);
+
+    interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - start()) / 1000));
+    }, 1000);
+  });
+
+  onCleanup(() => {
+    if (interval) clearInterval(interval);
+    if (delayTimer) clearTimeout(delayTimer);
+  });
+
+  const label = () => {
+    const s = elapsed();
+    if (s < 60) return `${s}s`;
+    const min = Math.floor(s / 60);
+    const sec = s % 60;
+    return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+  };
+
+  return (
+    <div class="px-3 py-2 text-[12px] text-gh-fg-subtle flex items-center gap-1.5">
+      <span class="animate-pulse">...</span>
+      <Show when={visible()}>
+        <span class="tabular-nums select-none">Working for {label()}</span>
+      </Show>
+    </div>
+  );
+};
 
 /** Scrollable message viewport that auto-follows streaming updates. */
 export const MessageList = (props: {
+  chatId: string;
   messages: UIMessage[];
   streaming: boolean;
   canRetryMessage?: (message: UIMessage) => boolean;
@@ -13,6 +59,12 @@ export const MessageList = (props: {
 }) => {
   let containerRef!: HTMLDivElement;
   let observer: MutationObserver | null = null;
+  let following = true;
+
+  const isNearBottom = () => {
+    const { scrollTop, scrollHeight, clientHeight } = containerRef;
+    return scrollHeight - scrollTop - clientHeight < 80;
+  };
 
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
@@ -20,17 +72,20 @@ export const MessageList = (props: {
     });
   };
 
+  const handleScroll = () => {
+    following = isNearBottom();
+  };
+
   createEffect(() => {
-    // New top-level messages should always jump to bottom.
     props.messages.length;
     props.streaming;
     scrollToBottom();
+    following = true;
   });
 
   onMount(() => {
     observer = new MutationObserver(() => {
-      // Covers streaming text/tool updates without tracking deep state manually.
-      scrollToBottom();
+      if (following) scrollToBottom();
     });
     observer.observe(containerRef, {
       childList: true,
@@ -40,17 +95,26 @@ export const MessageList = (props: {
     scrollToBottom();
   });
 
-  onCleanup(() => {
-    observer?.disconnect();
-  });
+  onCleanup(() => { observer?.disconnect(); });
+
+  /** Get startedAt from the last assistant message (the one currently streaming). */
+  const streamingStartedAt = () => {
+    if (!props.streaming) return undefined;
+    for (let i = props.messages.length - 1; i >= 0; i--) {
+      const msg = props.messages[i]!;
+      if (isAssistantMessage(msg)) return (msg as UIAssistantMessage).meta?.startedAt;
+    }
+    return undefined;
+  };
 
   return (
-    <div ref={containerRef} class="flex-1 overflow-y-auto">
+    <div ref={containerRef} class="flex-1 overflow-y-auto" onScroll={handleScroll}>
       <Show
         when={props.messages.length > 0}
         fallback={
-          <div class="flex items-center justify-center h-full text-gh-fg-subtle text-sm">
-            <span class="select-none">$ <span class="animate-pulse">_</span></span>
+          <div class="flex flex-col items-center justify-center h-full gap-1.5 select-none">
+            <img src="/logo.svg" alt="" class="h-7 w-7 opacity-20" />
+            <span class="text-[15px] text-gh-fg-subtle">What can I help with?</span>
           </div>
         }
       >
@@ -58,6 +122,7 @@ export const MessageList = (props: {
           <For each={props.messages}>
             {(msg) => (
               <Message
+                chatId={props.chatId}
                 message={msg}
                 canRetryLastUserMessage={props.canRetryMessage?.(msg)}
                 onRetryLastUserMessage={() => props.onRetryMessage?.(msg)}
@@ -67,9 +132,7 @@ export const MessageList = (props: {
             )}
           </For>
           <Show when={props.streaming}>
-            <div class="px-3 py-2 text-gh-fg-muted text-sm">
-              <span class="animate-pulse">...</span>
-            </div>
+            <WorkingTimer startedAt={streamingStartedAt()} />
           </Show>
         </div>
       </Show>

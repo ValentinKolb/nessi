@@ -20,6 +20,8 @@ export type PendingChatFile = {
   id: string;
   file: File;
   name: string;
+  /** Folder-relative path, e.g. "my-folder/sub/file.txt". Set from webkitRelativePath. */
+  relativePath?: string;
   mimeType: string;
   size: number;
   sourceType: Extract<ChatFileSourceType, "text" | "pdf" | "table">;
@@ -126,27 +128,34 @@ export const classifyPendingChatFile = (file: File): PendingChatFile | null => {
   return null;
 };
 
-const safeName = (name: string) =>
-  name
+const safeSegment = (segment: string) =>
+  segment
     .trim()
     .replace(/[\\/:*?"<>|]+/g, "-")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
   || "file";
 
+/** Sanitize a path that may contain folder segments: "folder/sub/file.txt" */
+const safePath = (path: string) =>
+  path.split("/").map(safeSegment).filter(Boolean).join("/");
+
 const uniqueMountPath = (chatId: string, kind: ChatFileKind, name: string, excludeId?: string) => {
   const metas = listChatFiles(chatId).filter((meta) => meta.kind === kind && meta.id !== excludeId);
   const baseDir = kind === "input" ? "/input" : "/output";
-  const sanitized = safeName(name);
-  const dot = sanitized.lastIndexOf(".");
-  const stem = dot > 0 ? sanitized.slice(0, dot) : sanitized;
-  const ext = dot > 0 ? sanitized.slice(dot) : "";
+  const sanitized = safePath(name);
+  const lastSlash = sanitized.lastIndexOf("/");
+  const dir = lastSlash >= 0 ? sanitized.slice(0, lastSlash + 1) : "";
+  const filename = lastSlash >= 0 ? sanitized.slice(lastSlash + 1) : sanitized;
+  const dot = filename.lastIndexOf(".");
+  const stem = dot > 0 ? filename.slice(0, dot) : filename;
+  const ext = dot > 0 ? filename.slice(dot) : "";
 
   let candidate = `${baseDir}/${sanitized}`;
   let suffix = 2;
   const used = new Set(metas.map((meta) => meta.mountPath));
   while (used.has(candidate)) {
-    candidate = `${baseDir}/${stem}-${suffix}${ext}`;
+    candidate = `${baseDir}/${dir}${stem}-${suffix}${ext}`;
     suffix += 1;
   }
   return candidate;
@@ -345,6 +354,7 @@ const getBinaryStore = async () => {
 };
 
 export const putInputFile = async (chatId: string, pending: PendingChatFile) => {
+  const pathName = pending.relativePath || pending.name;
   const meta: ChatFileMeta = {
     id: newId(),
     chatId,
@@ -353,7 +363,7 @@ export const putInputFile = async (chatId: string, pending: PendingChatFile) => 
     size: pending.size,
     kind: "input",
     sourceType: pending.sourceType,
-    mountPath: uniqueMountPath(chatId, "input", pending.name),
+    mountPath: uniqueMountPath(chatId, "input", pathName),
     createdAt: new Date().toISOString(),
   };
 
@@ -439,6 +449,12 @@ export const downloadChatFile = async (meta: ChatFileMeta) => {
   }
 };
 
+export const downloadChatFileByPath = async (chatId: string, mountPath: string) => {
+  const meta = getChatFileByPath(chatId, mountPath);
+  if (!meta) throw new Error(`File not found: ${mountPath}`);
+  await downloadChatFile(meta);
+};
+
 export const deleteAllChatFiles = async (chatId: string) => {
   const metas = listChatFiles(chatId);
   await Promise.all(metas.map((meta) => removeChatFile(chatId, meta.id)));
@@ -452,14 +468,14 @@ export const clearMessageFileRefs = (chatId: string, seq: number) => {
 const fileInfoLine = (meta: ChatFileMeta) =>
   `- ${meta.mountPath} (${meta.mimeType || meta.sourceType}, ${formatFileSize(meta.size)})`;
 
-const section = (title: string, items: ChatFileMeta[], limit = 25) => {
-  if (items.length === 0) return [title, "- none", ""];
+const fileSection = (title: string, items: ChatFileMeta[], limit = 15) => {
+  if (items.length === 0) return [];
   const shown = items.slice(0, limit).map(fileInfoLine);
   const hidden = items.length - shown.length;
   return [
-    title,
+    `**${title}:**`,
     ...shown,
-    ...(hidden > 0 ? [`- ... and ${hidden} more files`] : []),
+    ...(hidden > 0 ? [`- ... and ${hidden} more — run \`list_files /input\` to see all.`] : []),
     "",
   ];
 };
@@ -467,11 +483,29 @@ const section = (title: string, items: ChatFileMeta[], limit = 25) => {
 export const buildFileInfo = (newFiles: ChatFileMeta[], allFiles: ChatFileMeta[]) => {
   const inputFiles = allFiles.filter((meta) => meta.kind === "input");
   const outputFiles = allFiles.filter((meta) => meta.kind === "output");
-  return [
-    "# File mounts",
+
+  if (inputFiles.length === 0 && outputFiles.length === 0 && newFiles.length === 0) return "";
+
+  const lines: string[] = [
+    "# Chat files",
     "",
-    ...section("New files in this turn", newFiles),
-    ...section("Mounted input files", inputFiles),
-    ...section("Mounted output files", outputFiles),
-  ].join("\n").trim();
+    "The user has uploaded local files to this chat. They are available at `/input/`.",
+    "Use file tools (read_file, list_files, etc.), bash, or your skills to process them.",
+    "Write results to `/output/` and call `present` to show them inline with a direct download button.",
+    "",
+    "These are **local uploads** — not Nextcloud files. Only use `/nextcloud/` when the user explicitly mentions Nextcloud.",
+    "",
+  ];
+
+  if (newFiles.length > 0) {
+    lines.push(...fileSection("New files in this message", newFiles));
+  }
+
+  lines.push(...fileSection("All input files", inputFiles));
+
+  if (outputFiles.length > 0) {
+    lines.push(...fileSection("Output files", outputFiles));
+  }
+
+  return lines.join("\n").trim();
 };

@@ -52,8 +52,8 @@ export const SurveyBlock = (props: {
   };
 
   return (
-    <div class="my-1 ui-panel overflow-hidden text-xs">
-      <div class="flex items-start gap-3 px-3 py-2 bg-gh-overlay">
+    <div class="my-1 ui-panel overflow-hidden text-[13px]">
+      <div class="flex items-start gap-3 px-3 py-2 bg-gh-muted">
         <div class="min-w-0 flex-1">
           <Show when={props.block.title}>
             <div class="font-bold text-gh-fg-secondary">{props.block.title}</div>
@@ -64,14 +64,14 @@ export const SurveyBlock = (props: {
                 {currentQuestion()?.question}
               </div>
               <Show when={totalSteps() > 0}>
-                <div class="shrink-0 text-[10px] uppercase tracking-[0.12em] text-gh-fg-subtle">
+                <div class="shrink-0 text-[11px] uppercase tracking-[0.1em] text-gh-fg-subtle">
                   {step() + 1}/{totalSteps()}
                 </div>
               </Show>
             </div>
           </Show>
           <Show when={props.block.submitted}>
-            <div class="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-gh-fg-subtle">Submitted</div>
+            <div class="mt-0.5 text-[11px] uppercase tracking-[0.1em] text-gh-fg-subtle">Submitted</div>
           </Show>
         </div>
       </div>

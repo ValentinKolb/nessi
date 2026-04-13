@@ -9,9 +9,16 @@ metadata:
 
 # Nextcloud
 
+## Important: local files vs. Nextcloud files
+
+- **Local files** uploaded in the chat are at `/input/`. Use file tools or bash to work with them.
+- **Nextcloud files** are at `/nextcloud/`. Only access this when the user explicitly mentions Nextcloud or refers to files stored there.
+
+If unclear whether the user means a local upload or a Nextcloud file, **ask before assuming**. Never default to `/nextcloud/` for files the user uploaded in the chat.
+
 ## Files
 
-Files are at `/nextcloud/`. Just use normal commands:
+Nextcloud files are at `/nextcloud/`. Just use normal commands:
 
 ```bash
 ls /nextcloud/

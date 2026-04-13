@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
+import { downloadChatFileByPath } from "../../../lib/chat-files.js";
 import { Portal } from "solid-js/web";
 import { getFileIcon } from "../../../lib/file-icons.js";
 
@@ -161,12 +162,29 @@ const DataTable = (props: { data: TableData }) => {
 export const isPresentResult = (result: unknown): result is PresentResult =>
   Boolean(result) && typeof result === "object" && "contentType" in (result as Record<string, unknown>);
 
-export const PresentContent = (props: { result: PresentResult }) => {
+export const PresentContent = (props: { result: PresentResult; chatId?: string }) => {
   const [fullscreen, setFullscreen] = createSignal(false);
 
   const ct = () => props.result.contentType;
   const content = () => props.result.content ?? "";
   const name = () => props.result.name;
+  const canDownloadFromChatFile = () => /^(\/input|\/output)\//.test(props.result.path);
+
+  const handleDownload = async () => {
+    if (props.chatId && canDownloadFromChatFile()) {
+      await downloadChatFileByPath(props.chatId, props.result.path);
+      return;
+    }
+
+    if (ct() === "svg") {
+      downloadBlob(content(), name(), "image/svg+xml");
+      return;
+    }
+
+    if (ct() === "image") {
+      downloadDataUrl(content(), name());
+    }
+  };
 
   return (
     <div class="px-2 py-2 space-y-2">
@@ -174,7 +192,7 @@ export const PresentContent = (props: { result: PresentResult }) => {
         <div class="bg-white rounded p-2 flex flex-col items-center gap-2">
           <div class="max-w-md mx-auto w-full" innerHTML={content()} />
           <div class="flex items-center gap-1.5">
-            <DownloadButton name={name()} onClick={() => downloadBlob(content(), name(), "image/svg+xml")} />
+            <DownloadButton name={name()} onClick={() => void handleDownload()} />
             <MaximizeButton onClick={() => setFullscreen(true)} />
           </div>
         </div>
@@ -183,7 +201,7 @@ export const PresentContent = (props: { result: PresentResult }) => {
           onClose={() => setFullscreen(false)}
           name={name()}
           svgContent={content()}
-          onDownload={() => downloadBlob(content(), name(), "image/svg+xml")}
+          onDownload={() => void handleDownload()}
         />
       </Show>
 
@@ -191,7 +209,7 @@ export const PresentContent = (props: { result: PresentResult }) => {
         <div class="bg-white rounded p-2 flex flex-col items-center gap-2">
           <img src={content()} alt={name()} class="max-w-full rounded" />
           <div class="flex items-center gap-1.5">
-            <DownloadButton name={name()} onClick={() => downloadDataUrl(content(), name())} />
+            <DownloadButton name={name()} onClick={() => void handleDownload()} />
             <MaximizeButton onClick={() => setFullscreen(true)} />
           </div>
         </div>
@@ -200,24 +218,43 @@ export const PresentContent = (props: { result: PresentResult }) => {
           onClose={() => setFullscreen(false)}
           name={name()}
           imageSrc={content()}
-          onDownload={() => downloadDataUrl(content(), name())}
+          onDownload={() => void handleDownload()}
         />
       </Show>
 
       <Show when={ct() === "table" && props.result.tableData}>
-        <DataTable data={props.result.tableData!} />
+        <div class="space-y-2">
+          <DataTable data={props.result.tableData!} />
+          <Show when={props.chatId && canDownloadFromChatFile()}>
+            <div class="flex justify-end">
+              <DownloadButton name={name()} onClick={() => void handleDownload()} />
+            </div>
+          </Show>
+        </div>
       </Show>
 
       <Show when={ct() === "text"}>
-        <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-xs text-gh-fg-muted bg-gh-surface rounded p-2 border border-gh-border-muted">
-          {content()}
-        </pre>
+        <div class="space-y-2">
+          <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-xs text-gh-fg-muted bg-gh-surface rounded p-2 border border-gh-border-muted">
+            {content()}
+          </pre>
+          <Show when={props.chatId && canDownloadFromChatFile()}>
+            <div class="flex justify-end">
+              <DownloadButton name={name()} onClick={() => void handleDownload()} />
+            </div>
+          </Show>
+        </div>
       </Show>
 
       <Show when={ct() === "download"}>
-        <div class="flex items-center gap-2 py-1 text-gh-fg-muted">
-          <span class={`i ti ${getFileIcon(name())} text-base`} />
-          <span class="text-xs">{name()}</span>
+        <div class="flex items-center justify-between gap-3 py-1 text-gh-fg-muted">
+          <div class="flex min-w-0 items-center gap-2">
+            <span class={`i ti ${getFileIcon(name())} text-base shrink-0`} />
+            <span class="text-xs truncate">{name()}</span>
+          </div>
+          <Show when={props.chatId && canDownloadFromChatFile()}>
+            <DownloadButton name={name()} onClick={() => void handleDownload()} />
+          </Show>
         </div>
       </Show>
     </div>

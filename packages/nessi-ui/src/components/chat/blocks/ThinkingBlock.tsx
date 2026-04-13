@@ -6,7 +6,7 @@ export const ThinkingBlock = (props: { block: UIThinkingBlock }) => {
   const [expanded, setExpanded] = createSignal(false);
 
   return (
-    <div class="my-1 text-xs">
+    <div class="my-1 text-[13px]">
       <button
         class="flex items-center gap-1 text-gh-fg-subtle hover:text-gh-fg-muted"
         onClick={() => setExpanded(!expanded())}

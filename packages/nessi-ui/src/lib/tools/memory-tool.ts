@@ -1,43 +1,64 @@
 import { z } from "zod";
 import { defineTool } from "nessi-core";
-import { readString, removeKey, writeString } from "../json-storage.js";
+import { addMemory, removeMemory, replaceMemory, formatAll } from "../memory.js";
 
-const STORAGE_KEY = "nessi:memory";
-
-const read = () => readString(STORAGE_KEY);
-
-const write = (text: string) => {
-  if (text.trim()) writeString(STORAGE_KEY, text.trim());
-  else removeKey(STORAGE_KEY);
-};
-
-export const memoryTool = defineTool({
-  name: "memory",
+export const memoryAddTool = defineTool({
+  name: "memory_add",
   description:
-    "Manage your long-term memory. Use 'recall' at the start of every conversation to know who you're talking to. Use 'append' immediately when you learn something new. Use 'clear' only when the user explicitly asks for it. Example inputs: {\"action\":\"recall\"} or {\"action\":\"append\",\"text\":\"Prefers German\"}.",
+    "Save a new memory. Write the full line including [category] tag and optional date. " +
+    "Categories: [fact], [preference], [project], [person], [followup]. " +
+    'Example: {"text":"[fact] Name is Valentin"}',
   inputSchema: z.object({
-    action: z.enum(["recall", "append", "clear"]).describe(
-      "Required action. recall: read all memory. append: add new information. clear: erase all memory. Example: 'recall'",
-    ),
-    text: z.string().optional().describe(
-      "Text to append. Required when action is 'append'. Example: 'User's name is Valentin'",
-    ),
+    text: z.string().describe('The memory line to save. Example: "[preference] Speaks German"'),
   }),
-  outputSchema: z.object({
-    result: z.string(),
-  }),
+  outputSchema: z.object({ status: z.string(), total: z.number() }),
 }).server(async (input) => {
-  switch (input.action) {
-    case "recall":
-      return { result: read() || "No memories stored." };
-    case "append": {
-      if (!input.text) return { result: "Error: text is required for append." };
-      const current = read();
-      write(current ? current + "\n" + input.text : input.text);
-      return { result: "Memory updated." };
-    }
-    case "clear":
-      write("");
-      return { result: "Memory cleared." };
+  const { total } = addMemory(input.text);
+  return { status: `Saved: ${input.text}`, total };
+});
+
+export const memoryRemoveTool = defineTool({
+  name: "memory_remove",
+  description:
+    "Remove a memory by its line number from the memories list in the system prompt. " +
+    'Example: {"id":3}',
+  inputSchema: z.object({
+    id: z.coerce.number().int().positive().describe("Line number of the memory to remove."),
+  }),
+  outputSchema: z.object({ status: z.string() }),
+}).server(async (input) => {
+  try {
+    const { removed, remaining } = removeMemory(input.id);
+    return { status: `Removed line ${input.id}: ${removed} (${remaining} remaining)` };
+  } catch (e) {
+    return { status: `Error: ${e instanceof Error ? e.message : "unknown"}` };
   }
 });
+
+export const memoryReplaceTool = defineTool({
+  name: "memory_replace",
+  description:
+    "Update a memory by its line number. Give the line number and the new full text. " +
+    'Example: {"id":3,"text":"[fact] Now CTO at Kolb Antik"}',
+  inputSchema: z.object({
+    id: z.coerce.number().int().positive().describe("Line number of the memory to update."),
+    text: z.string().describe("New text for this memory line."),
+  }),
+  outputSchema: z.object({ status: z.string() }),
+}).server(async (input) => {
+  try {
+    const { updated, total } = replaceMemory(input.id, input.text);
+    return { status: `Updated line ${input.id}: ${updated} (${total} total)` };
+  } catch (e) {
+    return { status: `Error: ${e instanceof Error ? e.message : "unknown"}` };
+  }
+});
+
+export const memoryRecallTool = defineTool({
+  name: "memory_recall",
+  description:
+    "Retrieve all memories including those not shown in the system prompt due to token budget. " +
+    "Only use this when the memories list says some entries were not shown.",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ memories: z.string() }),
+}).server(async () => ({ memories: formatAll() }));

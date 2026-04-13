@@ -17,23 +17,31 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
       || props.block.error,
   );
 
+  let headRef!: HTMLButtonElement;
+
+  const toggle = () => {
+    if (!hasDetails()) return;
+    setExpanded(!expanded());
+    requestAnimationFrame(() => headRef.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  };
+
   return (
     <div
-      class="overflow-hidden rounded-md border text-xs"
+      class="overflow-hidden rounded-md text-[13px]"
       style={{
         "background-color": "color-mix(in oklab, #efe9ff 52%, white)",
-        "border-color": "color-mix(in oklab, #8b5cf6 24%, white)",
       }}
     >
       <button
+        ref={headRef}
         class="w-full flex items-center gap-2 px-2 py-1.5 bg-transparent text-left"
         style={{ "background-color": "color-mix(in oklab, #ede5ff 65%, white)" }}
-        onClick={() => hasDetails() && setExpanded(!expanded())}
+        onClick={toggle}
       >
         <span class="i ti ti-fold text-[13px]" style={{ color: "#7c3aed" }} />
         <div class="flex-1 min-w-0 text-gh-fg-secondary truncate">{props.block.message}</div>
         <Show when={props.block.entriesBefore !== undefined && props.block.entriesAfter !== undefined}>
-          <span class="shrink-0 text-[10px]" style={{ color: "#7c3aed" }}>
+          <span class="shrink-0 text-[11px]" style={{ color: "#7c3aed" }}>
             {props.block.entriesBefore}{" -> "}{props.block.entriesAfter}
           </span>
         </Show>
@@ -44,10 +52,9 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
 
       <Show when={expanded() && hasDetails()}>
         <div
-          class="space-y-2 border-t px-2 py-2 text-gh-fg-muted"
+          class="space-y-2 px-2 py-2 text-gh-fg-muted"
           style={{
             "background-color": "color-mix(in oklab, #f6f1ff 74%, white)",
-            "border-color": "color-mix(in oklab, #8b5cf6 18%, white)",
           }}
         >
           <div>Session: <span class="text-gh-fg-secondary">{props.block.sessionName}</span></div>

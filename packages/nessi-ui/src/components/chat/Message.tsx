@@ -10,6 +10,7 @@ const hasAssistantText = (message: UIAssistantMessage) =>
 
 /** Render one chat message row (user bubble or assistant block list). */
 export const Message = (props: {
+  chatId: string;
   message: UIMessage;
   canRetryLastUserMessage?: boolean;
   onRetryLastUserMessage?: () => void;
@@ -34,11 +35,12 @@ export const Message = (props: {
       </Show>
       <Show when={assistantMessage()}>
         {(msg) => (
-          <div class="space-y-1">
+          <div class="space-y-0.5">
             <For each={msg().blocks}>
               {(block) => (
                 <BlockRenderer
                   block={block}
+                  chatId={props.chatId}
                   onApproval={props.onApproval}
                   onSurveySubmit={props.onSurveySubmit}
                 />

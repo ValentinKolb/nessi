@@ -3,6 +3,7 @@ import type { SkillEntry } from "../../lib/skill-registry.js";
 import { ensureUniqueSkillId, loadSkills, saveSkills } from "../../lib/skill-registry.js";
 import { createSkillDocTemplate, readSkillDocMeta, syncSkillDoc } from "../../lib/skill-doc.js";
 import { SNIPPET_TEMPLATE } from "../../lib/skill-templates.js";
+import { createCopyAction } from "../../lib/clipboard.js";
 
 type SkillEditorDraft = {
   id: string;
@@ -39,6 +40,7 @@ export const SkillEditorView = (props: {
 }) => {
   const [draft, setDraft] = createSignal<SkillEditorDraft>(toDraft(props.skill));
   const [tab, setTab] = createSignal<"definition" | "implementation">("definition");
+  const { copy: copyExport, copied: exportCopied } = createCopyAction();
 
   createEffect(() => {
     setDraft(toDraft(props.skill));
@@ -46,7 +48,7 @@ export const SkillEditorView = (props: {
   });
 
   const isExisting = () => Boolean(draft().id);
-  const panelClass = "flex h-full min-h-0 flex-col gap-2";
+  const panelClass = "flex h-full min-h-0 flex-col gap-3";
   const editorClass = "ui-input hide-scrollbar h-full min-h-0 flex-1 resize-none overflow-y-auto font-mono";
 
   const save = () => {
@@ -88,11 +90,27 @@ export const SkillEditorView = (props: {
     props.onDone();
   };
 
+  const exportSkill = () => {
+    const current = draft();
+    const exported: Record<string, unknown> = {
+      name: current.name,
+      doc: current.doc,
+    };
+    if (current.code.trim()) exported.code = current.code;
+    const parsed = readSkillDocMeta(current.doc);
+    if (parsed) {
+      exported.description = parsed.description;
+      exported.command = parsed.command;
+      exported.enabled = parsed.enabled;
+    }
+    copyExport(JSON.stringify(exported, null, 2));
+  };
+
   return (
-    <div class="flex h-full min-h-0 flex-col gap-4">
-      <div class="space-y-4">
-        <div class="space-y-1">
-          <label class="text-[10px] font-bold uppercase tracking-wider text-gh-fg-muted">Skill Name</label>
+    <div class="flex h-full min-h-0 flex-col gap-3">
+      <div class="space-y-3">
+        <div class="space-y-1.5">
+          <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Skill Name</label>
           <input
             class="ui-input"
             value={draft().name}
@@ -100,18 +118,32 @@ export const SkillEditorView = (props: {
           />
         </div>
 
-        <div class="flex gap-2">
+        <div class="flex border-b border-gh-border-muted">
           <button
-            class={tab() === "definition" ? "btn-primary" : "btn-secondary"}
+            class={`px-3 py-1.5 text-[13px] font-medium transition-colors relative ${
+              tab() === "definition"
+                ? "text-gh-fg"
+                : "text-gh-fg-subtle hover:text-gh-fg-muted"
+            }`}
             onClick={() => setTab("definition")}
           >
-            skill definition
+            Definition
+            <Show when={tab() === "definition"}>
+              <span class="absolute bottom-0 left-0 right-0 h-[2px] bg-gh-accent rounded-full" />
+            </Show>
           </button>
           <button
-            class={tab() === "implementation" ? "btn-primary" : "btn-secondary"}
+            class={`px-3 py-1.5 text-[13px] font-medium transition-colors relative ${
+              tab() === "implementation"
+                ? "text-gh-fg"
+                : "text-gh-fg-subtle hover:text-gh-fg-muted"
+            }`}
             onClick={() => setTab("implementation")}
           >
-            code impl
+            Code
+            <Show when={tab() === "implementation"}>
+              <span class="absolute bottom-0 left-0 right-0 h-[2px] bg-gh-accent rounded-full" />
+            </Show>
           </button>
         </div>
       </div>
@@ -151,10 +183,13 @@ export const SkillEditorView = (props: {
         </Show>
       </div>
 
-      <div class="flex items-center gap-2 pt-2">
+      <div class="flex items-center gap-2">
         <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
         <button class="btn-primary" onClick={save}>save</button>
         <div class="flex-1" />
+        <button class="btn-secondary" onClick={exportSkill}>
+          {exportCopied() ? "copied!" : "export"}
+        </button>
         <Show when={isExisting() && !draft().builtin}>
           <button class="btn-secondary danger-text" onClick={remove}>
             delete

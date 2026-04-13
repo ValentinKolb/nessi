@@ -6,7 +6,7 @@ export const ApprovalBlock = (props: {
   block: UIApprovalBlock;
   onApproval?: (callId: string, action: "deny" | "allow" | "always") => void;
 }) => (
-  <div class="my-1 text-xs ui-panel px-3 py-2">
+  <div class="my-1 text-[13px] ui-panel px-3 py-2">
     <p class="text-gh-fg-secondary">{props.block.message}</p>
     <Switch>
       <Match when={props.block.status === "pending"}>

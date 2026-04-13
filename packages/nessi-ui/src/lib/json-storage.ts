@@ -11,7 +11,11 @@ export const readJson = <T>(key: string, fallback: T): T => {
 
 /** Write JSON to localStorage. */
 export const writeJson = (key: string, value: unknown) => {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.warn(`[nessi] localStorage write failed for "${key}":`, err instanceof Error ? err.message : err);
+  }
 };
 
 /** Read a plain string from localStorage with fallback. */
@@ -20,7 +24,11 @@ export const readString = (key: string, fallback = "") =>
 
 /** Write a plain string to localStorage. */
 export const writeString = (key: string, value: string) => {
-  localStorage.setItem(key, value);
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    console.warn(`[nessi] localStorage write failed for "${key}":`, err instanceof Error ? err.message : err);
+  }
 };
 
 /** Remove a localStorage key. */

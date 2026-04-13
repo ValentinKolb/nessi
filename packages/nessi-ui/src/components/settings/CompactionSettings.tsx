@@ -31,17 +31,17 @@ export const CompactionSettings = () => {
 
   return (
     <div class="ui-panel p-3 space-y-2">
-      <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
-        <span class="i ti ti-fold text-sm" />
+      <h3 class="settings-heading">
+        <span class="i ti ti-fold" />
         <span>Compaction</span>
       </h3>
-      <p class="text-[10px] text-gh-fg-subtle leading-tight">
+      <p class="settings-desc">
         Automatic checkpoint summaries are based on user and assistant messages, not tool child entries.
       </p>
       <div class="ui-subpanel p-2 space-y-2">
         <label class="block">
-          <span class="text-xs text-gh-fg-muted">Auto-compact after messages</span>
-          <p class="text-[10px] text-gh-fg-subtle leading-tight mt-0.5">
+          <span class="text-[13px] text-gh-fg-muted">Auto-compact after messages</span>
+          <p class="settings-desc mt-0.5">
             Default is 30. Higher values keep more raw history before a checkpoint summary is created.
           </p>
           <select

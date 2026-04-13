@@ -1,17 +1,7 @@
 import { For, Show } from "solid-js";
-import dayjs from "dayjs";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
 import { formatFileSize } from "../../lib/chat-files.js";
-
-const formatTime = (ts?: string) => {
-  if (!ts) return "";
-  const d = dayjs(ts);
-  const now = dayjs();
-  if (now.diff(d, "hour") < 24) {
-    return d.format("HH:mm");
-  }
-  return d.format("DD MMM YYYY");
-};
+import { messageTime } from "../../lib/date-format.js";
 
 /** Render right-aligned user text bubble with optional timestamp metadata. */
 export const UserBubble = (props: {
@@ -55,14 +45,14 @@ export const UserBubble = (props: {
         </div>
       </Show>
       <Show when={textParts().length > 0}>
-        <div class="ui-panel max-w-[80%] px-3 py-1.5 text-sm text-gh-fg-secondary">
+        <div class="ui-panel max-w-[80%] px-3 py-1.5 text-[15px] text-gh-fg-secondary">
           <For each={textParts()}>{(part) => <span>{part.text}</span>}</For>
         </div>
       </Show>
       <Show when={props.showMeta}>
-        <div class="flex items-center gap-1 text-[10px] text-gh-fg-subtle">
+        <div class="flex items-center gap-1 text-[11px] text-gh-fg-subtle">
           <span>
-            You{props.timestamp ? <> · {formatTime(props.timestamp)}</> : null}
+            You{props.timestamp ? <> · {messageTime(props.timestamp)}</> : null}
           </span>
           <Show when={props.canRetry}>
             <button

@@ -8,7 +8,7 @@ const AXIS_COLOR = "#d4d4d8";
 const LABEL_COLOR = "#52525b";
 const TITLE_COLOR = "#18181b";
 const BG_COLOR = "#ffffff";
-const FONT = "'JetBrains Mono Variable', ui-monospace, monospace";
+const FONT = "ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 

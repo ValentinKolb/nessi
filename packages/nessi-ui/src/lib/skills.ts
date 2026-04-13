@@ -8,7 +8,7 @@ import { cli, ok, err, parseArgs, positionalArgs } from "./commands/cli.js";
 import type { CliBuilder } from "./commands/cli.js";
 import type { CommandHelpers } from "./commands/helpers.js";
 import { createCommandHelpers } from "./commands/helpers.js";
-import { memoryTool } from "./tools/memory-tool.js";
+import { memoryAddTool, memoryRemoveTool, memoryReplaceTool, memoryRecallTool } from "./tools/memory-tool.js";
 import { webTool } from "./tools/web-tool.js";
 import { createPresentTool } from "./tools/present-tool.js";
 import { nextcloudApi } from "./nextcloud.js";
@@ -387,7 +387,7 @@ const createBashToolWithHook = (
 export const createToolsForSkills = (skillIds: string[]): Tool[] => {
   const helpers = createCommandHelpers();
   const bash = createBashWithSkills(skillIds, helpers, [createPdfToTextCommand()]);
-  return [memoryTool, webTool, createBashToolWithHook(bash, helpers)];
+  return [memoryAddTool, memoryRemoveTool, memoryReplaceTool, memoryRecallTool, webTool, createBashToolWithHook(bash, helpers)];
 };
 
 /** Build skill list text used in system prompts (`{{skills}}`). */
@@ -416,7 +416,7 @@ export const createMainTools = (): Tool[] => {
   const helpers = createCommandHelpers();
   const enabledSkillIds = getEnabledSkills().map((skill) => skill.id);
   const bash = createBashWithSkills(enabledSkillIds, helpers, [createPdfToTextCommand()]);
-  return [memoryTool, webTool, createBashToolWithHook(bash, helpers)];
+  return [memoryAddTool, memoryRemoveTool, memoryReplaceTool, memoryRecallTool, webTool, createBashToolWithHook(bash, helpers)];
 };
 
 export const createMainBashRuntime = (options?: {
@@ -439,7 +439,10 @@ export const createMainBashRuntime = (options?: {
   return {
     bash,
     tools: [
-      memoryTool,
+      memoryAddTool,
+      memoryRemoveTool,
+      memoryReplaceTool,
+      memoryRecallTool,
       webTool,
       ...(options?.fileService ? [...createFileTools(options.fileService), createPresentTool(options.fileService)] : []),
       createBashToolWithHook(bash, helpers, options?.afterExec),

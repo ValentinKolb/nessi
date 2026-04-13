@@ -7,6 +7,11 @@ export type ChatMeta = {
   title: string;
   createdAt: string;
   titleSource?: "fallback" | "generated";
+  description?: string;
+  topics?: string[];
+  lastIndexedAt?: string;
+  /** Entry count when last background-processed — used for dirty detection. */
+  lastIndexedEntryCount?: number;
 };
 
 const CHAT_INDEX_KEY = "nessi:chat-index";
@@ -34,6 +39,10 @@ export const listChatMetas = () => {
   chats.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return chats;
 };
+
+/** Read metadata for a single chat id. */
+export const getChatMeta = (chatId: string): ChatMeta | null =>
+  readJson<ChatMeta | null>(chatMetaKey(chatId), null);
 
 /** Remove all persisted records for a given chat id. */
 export const deleteChat = (chatId: string) => {
@@ -87,3 +96,33 @@ export const updateChatTitle = (chatId: string, title: string, titleSource: Chat
 };
 
 export const needsGeneratedTitle = (meta: ChatMeta) => meta.titleSource !== "generated";
+
+/** Generic partial update for chat metadata. */
+export const updateChatMeta = (
+  chatId: string,
+  patch: Partial<Pick<ChatMeta, "title" | "titleSource" | "description" | "topics" | "lastIndexedAt" | "lastIndexedEntryCount">>,
+) => {
+  const key = chatMetaKey(chatId);
+  const current = readJson<ChatMeta | null>(key, null);
+  if (!current) return;
+  writeJson(key, { ...current, ...patch });
+  emitStorage(key);
+};
+
+const getChatEntries = (chatId: string) =>
+  readJson<Array<{ createdAt?: string }>>(`${CHAT_PREFIX}${chatId}:entries`, []);
+
+/** Check if a chat has new messages since its last background processing. */
+export const isChatDirty = (meta: ChatMeta): boolean => {
+  const entries = getChatEntries(meta.id);
+  if (meta.lastIndexedAt === undefined || meta.lastIndexedEntryCount === undefined) return entries.length > 0;
+
+  const latestEntryAt = entries[entries.length - 1]?.createdAt;
+  if (entries.length !== meta.lastIndexedEntryCount) return true;
+  if (latestEntryAt && latestEntryAt > meta.lastIndexedAt) return true;
+  return false;
+};
+
+/** Get the current entry count for a chat. */
+export const getChatEntryCount = (chatId: string): number =>
+  getChatEntries(chatId).length;

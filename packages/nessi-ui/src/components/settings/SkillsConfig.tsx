@@ -1,6 +1,6 @@
 import { createSignal, For, Show, onMount } from "solid-js";
-import { createCopyAction } from "../../lib/clipboard.js";
 import {
+  ensureUniqueSkillId,
   loadSkills,
   saveSkills,
   type SkillEntry,
@@ -14,7 +14,6 @@ export const SkillsConfig = (props: {
   const [skills, setSkills] = createSignal<SkillEntry[]>([]);
   const [importing, setImporting] = createSignal(false);
   const [importText, setImportText] = createSignal("");
-  const { copy, copied } = createCopyAction();
 
   const refresh = () => {
     setSkills(loadSkills());
@@ -22,48 +21,53 @@ export const SkillsConfig = (props: {
 
   onMount(refresh);
 
-  const exportBundle = () => {
-    copy(JSON.stringify({ version: 2, skills: skills() }, null, 2));
-  };
-
-  const importBundle = () => {
+  const importSkill = () => {
     try {
-      const parsed = JSON.parse(importText()) as { skills?: SkillEntry[] };
-      if (!Array.isArray(parsed.skills)) {
-        throw new Error("Missing skills array");
+      const parsed = JSON.parse(importText()) as Partial<SkillEntry>;
+      if (typeof parsed.name !== "string" || typeof parsed.doc !== "string") {
+        throw new Error("Invalid skill: name and doc are required");
       }
+      const existing = loadSkills();
+      const id = ensureUniqueSkillId(parsed.name, existing);
+      const skill: SkillEntry = {
+        id,
+        name: parsed.name,
+        description: parsed.description ?? "",
+        command: parsed.command ?? parsed.name,
+        enabled: parsed.enabled ?? true,
+        doc: parsed.doc,
+        code: parsed.code,
+        builtin: false,
+      };
+      saveSkills([...existing, skill]);
       setImporting(false);
       setImportText("");
-      saveSkills(parsed.skills);
       refresh();
     } catch {
-      alert("Invalid skills bundle JSON.");
+      alert("Invalid skill JSON. Must contain at least name and doc.");
     }
   };
 
   return (
-    <div class="ui-panel p-3 space-y-3">
+    <div class="ui-panel p-3 space-y-2">
       <div class="flex items-center justify-between">
-        <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
-          <span class="i ti ti-forklift text-sm" />
+        <h3 class="settings-heading">
+          <span class="i ti ti-forklift" />
           <span>Skills</span>
         </h3>
         <div class="flex items-center gap-2">
           <button class="btn-secondary" onClick={() => setImporting((value) => !value)}>
-            {importing() ? "close import" : "import"}
-          </button>
-          <button class="btn-secondary" onClick={exportBundle}>
-            {copied() ? "copied!" : "export"}
+            {importing() ? "close" : "import"}
           </button>
           <button class="btn-secondary" onClick={props.onCreateSkill}>+ add skill</button>
         </div>
       </div>
 
-      <p class="text-[10px] leading-tight text-gh-fg-subtle">
+      <p class="settings-desc">
         Each skill owns its markdown definition and optional code implementation directly.
       </p>
 
-      <div class="flex flex-wrap items-center gap-1.5 text-[10px]">
+      <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
         <span class="text-gh-fg-subtle">Native tools:</span>
         <For each={NATIVE_TOOLS}>
           {(tool) => (
@@ -79,13 +83,13 @@ export const SkillsConfig = (props: {
           <textarea
             class="ui-input min-h-24 resize-y font-mono"
             rows={6}
-            placeholder="Paste skills bundle JSON"
+            placeholder="Paste single skill JSON..."
             value={importText()}
             onInput={(e) => setImportText(e.currentTarget.value)}
           />
           <div class="flex gap-2">
             <button class="btn-secondary" onClick={() => setImporting(false)}>cancel</button>
-            <button class="btn-primary" onClick={importBundle}>import</button>
+            <button class="btn-primary" onClick={importSkill}>import</button>
           </div>
         </div>
       </Show>
@@ -97,8 +101,12 @@ export const SkillsConfig = (props: {
               <div class="flex items-center gap-2 min-w-0">
                 <span class="shrink-0 text-gh-fg-secondary">{skill.command}</span>
                 <span class="flex-1 min-w-0 truncate text-gh-fg-muted">{skill.description}</span>
-                <span class="shrink-0 text-[10px] text-gh-fg-subtle">{skill.code?.trim() ? "code" : "docs-only"}</span>
-                <span class="shrink-0 text-[10px] text-gh-fg-subtle">{skill.enabled ? "enabled" : "disabled"}</span>
+                <span class={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
+                  skill.code?.trim() ? "bg-sky-50 text-sky-700" : "bg-gh-overlay text-gh-fg-subtle"
+                }`}>{skill.code?.trim() ? "code" : "docs-only"}</span>
+                <Show when={skill.enabled}>
+                  <span class="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">enabled</span>
+                </Show>
               </div>
             </div>
           )}

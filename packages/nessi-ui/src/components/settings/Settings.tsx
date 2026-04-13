@@ -5,6 +5,8 @@ import { SystemPrompt } from "./SystemPrompt.js";
 import { MemoryEditor } from "./MemoryEditor.js";
 import { SkillsConfig } from "./SkillsConfig.js";
 import { CompactionSettings } from "./CompactionSettings.js";
+import { BackgroundLogsView, BackgroundTasks } from "./BackgroundTasks.js";
+import { BackgroundPromptEditor } from "./BackgroundPromptEditor.js";
 import type { SkillEntry } from "../../lib/skill-registry.js";
 import type { Prompt } from "../../lib/prompts.js";
 import { SkillEditorView } from "./SkillEditorModal.js";
@@ -17,7 +19,9 @@ type SettingsRoute =
   | { kind: "skill-editor"; skill: SkillEntry | null }
   | { kind: "prompt-editor"; prompt: Prompt | null }
   | { kind: "github-help" }
-  | { kind: "nextcloud-help" };
+  | { kind: "nextcloud-help" }
+  | { kind: "bg-prompt-editor" }
+  | { kind: "bg-logs" };
 
 /** Settings dialog that hosts all runtime configuration panels. */
 export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose: () => void }) => {
@@ -45,6 +49,10 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
         return "GitHub Token Setup";
       case "nextcloud-help":
         return "Nextcloud App Password Setup";
+      case "bg-prompt-editor":
+        return "Background Prompts";
+      case "bg-logs":
+        return "Background Logs";
       default:
         return "Settings";
     }
@@ -78,17 +86,17 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
         <div class="flex items-center gap-2 px-4 py-3 bg-gh-overlay rounded-t-md">
           <Show when={route().kind !== "root"}>
             <button
-              class="p-0.5 text-gh-fg-subtle hover:text-gh-fg cursor-pointer"
+              class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"
               onClick={backToRoot}
               title="Back"
             >
               <span class="i ti ti-arrow-left text-base" />
             </button>
           </Show>
-          <h2 class="text-sm font-bold uppercase tracking-wider text-gh-fg-secondary flex-1">{title()}</h2>
+          <h2 class="text-[15px] font-semibold text-gh-fg flex-1">{title()}</h2>
           <Show when={route().kind === "root"}>
             <button
-              class="p-0.5 text-gh-fg-subtle hover:text-gh-fg cursor-pointer"
+              class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"
               onClick={close}
               title="Close"
             >
@@ -113,11 +121,15 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
                 onEditPrompt={(prompt) => setRoute({ kind: "prompt-editor", prompt })}
               />
               <CompactionSettings />
+              <BackgroundTasks
+                onEditPrompts={() => setRoute({ kind: "bg-prompt-editor" })}
+                onOpenLogs={() => setRoute({ kind: "bg-logs" })}
+              />
               <MemoryEditor />
             </div>
           </Match>
           <Match when={route().kind === "skill-editor"}>
-            <div class="min-h-0 flex-1 overflow-hidden px-4 pb-5 pt-3">
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
               <SkillEditorView
                 skill={currentSkill()}
                 onCancel={backToRoot}
@@ -126,12 +138,22 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
             </div>
           </Match>
           <Match when={route().kind === "prompt-editor"}>
-            <div class="min-h-0 flex-1 overflow-hidden px-4 pb-5 pt-3">
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
               <PromptEditorView
                 prompt={currentPrompt()}
                 onCancel={backToRoot}
                 onDone={backToRoot}
               />
+            </div>
+          </Match>
+          <Match when={route().kind === "bg-prompt-editor"}>
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+              <BackgroundPromptEditor onDone={backToRoot} />
+            </div>
+          </Match>
+          <Match when={route().kind === "bg-logs"}>
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+              <BackgroundLogsView />
             </div>
           </Match>
           <Match when={route().kind === "github-help"}>

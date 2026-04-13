@@ -11,7 +11,7 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const presentToolDef = defineTool({
   name: "present",
   description:
-    "Display a file inline in the chat. Use this after creating or receiving a file to show it to the user. " +
+    "Display a file inline in the chat. Use this after creating or receiving a file to show it to the user and give them a direct download button. " +
     "Supports SVG, images, CSV/XLSX tables, and text files. Example: {\"path\":\"/output/chart.svg\"}.",
   inputSchema: z.object({
     path: z.string().describe("Absolute file path to present, e.g. '/output/chart.svg' or '/input/data.csv'."),

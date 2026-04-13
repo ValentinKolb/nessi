@@ -179,7 +179,7 @@ export const ProvidersConfig = () => {
     const capabilities = () => getProviderCapabilities(draft());
     return (
       <div class="ui-subpanel p-2 space-y-2">
-        <div class="grid grid-cols-3 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <select class={"ui-input"} value={draft().type} onInput={(e) => applyProviderType(e.currentTarget.value as ProviderType)}>
             <For each={PRESETS}>
               {(preset) => <option value={preset.id}>{preset.label}</option>}
@@ -189,7 +189,7 @@ export const ProvidersConfig = () => {
           <input class={"ui-input"} placeholder="Name" value={draft().name} onInput={(e) => updateDraft("name", e.currentTarget.value)} />
           <input class={"ui-input"} placeholder="Model" value={draft().model} onInput={(e) => updateDraft("model", e.currentTarget.value)} />
         </div>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <input class={"ui-input"} placeholder="Base URL" value={draft().baseURL} onInput={(e) => updateDraft("baseURL", e.currentTarget.value)} />
           <select class={"ui-input"} value={draft().toolCallIdPolicy} onInput={(e) => updateDraftPolicy(e.currentTarget.value)}>
             <For each={POLICY_OPTIONS}>
@@ -198,7 +198,7 @@ export const ProvidersConfig = () => {
           </select>
         </div>
         <input type="password" class={"ui-input"} placeholder="API Key (optional)" value={draft().apiKey ?? ""} onInput={(e) => updateDraft("apiKey", e.currentTarget.value)} />
-        <div class="flex items-center gap-2 text-[10px] text-gh-fg-subtle">
+        <div class="flex items-center gap-2 text-[11px] text-gh-fg-subtle">
           <span class={`rounded-full px-2 py-0.5 ${capabilities().images ? "bg-emerald-50 text-emerald-700" : "bg-gh-surface text-gh-fg-subtle"}`}>
             {capabilities().images ? "supports images" : "text only"}
           </span>
@@ -206,7 +206,7 @@ export const ProvidersConfig = () => {
             {capabilities().tools ? "supports tools" : "no tools"}
           </span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <button class="btn-secondary" onClick={cancel}>cancel</button>
           <button class="btn-primary" onClick={save}>save</button>
           <div class="flex-1" />
@@ -226,18 +226,18 @@ export const ProvidersConfig = () => {
   return (
     <div class="ui-panel p-3 space-y-2">
       <div class="flex items-center justify-between">
-      <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
-        <span class="i ti ti-sparkles-2 text-sm" />
-        <span>Providers</span>
-      </h3>
+        <h3 class="settings-heading">
+          <span class="i ti ti-sparkles-2" />
+          <span>Providers</span>
+        </h3>
         <div class="flex gap-2">
           <button class="btn-secondary" onClick={() => { setImporting(!importing()); setImportText(""); }}>import</button>
           <button class="btn-secondary" onClick={startAdd}>+ add</button>
         </div>
       </div>
 
-      <p class="text-[10px] text-gh-fg-subtle leading-tight">
-        Choose one provider type, then adjust model and base URL as needed. Existing entries without a type are treated as custom OpenAI-compatible endpoints.
+      <p class="settings-desc">
+        Choose one provider type, then adjust model and base URL as needed.
       </p>
 
       <Show when={importing()}>
@@ -265,32 +265,40 @@ export const ProvidersConfig = () => {
               fallback={<EditForm />}
             >
               <div
-                class={`ui-row cursor-pointer ${
-                  activeId() === p.id ? "ui-row-active" : ""
-                }`}
+                class="ui-row cursor-pointer group"
                 onClick={() => startEdit(p)}
               >
                 <div class="flex items-center gap-2 min-w-0">
                   <span class="shrink-0 text-gh-fg-secondary">{p.name}</span>
                   <span class="flex-1 min-w-0 truncate text-gh-fg-muted">{p.model} · {p.type}</span>
-                  <Show when={getProviderCapabilities(p).images}>
-                    <span class="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">images</span>
+                  <Show when={activeId() !== p.id}>
+                    <button
+                      class="btn-minimal shrink-0 opacity-0 group-hover:opacity-100"
+                      onClick={(e) => { e.stopPropagation(); activate(p.id); }}
+                    >
+                      set active
+                    </button>
                   </Show>
-                  <button
-                    class="shrink-0 text-[10px] text-gh-fg-subtle hover:text-gh-fg"
-                    onClick={(e) => { e.stopPropagation(); activate(p.id); }}
-                    title="Set active"
-                  >
-                    {activeId() === p.id ? "active" : "inactive"}
-                  </button>
+                  <Show when={activeId() === p.id}>
+                    <span class="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">active</span>
+                  </Show>
+                  <Show when={getProviderCapabilities(p).images}>
+                    <span class="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700">images</span>
+                  </Show>
                 </div>
               </div>
             </Show>
           )}
         </For>
         <Show when={providers().length === 0 && !editingId()}>
-          <div class="px-2 py-3 text-xs text-gh-fg-muted text-center">
-            no providers configured
+          <div class="rounded-lg border border-gh-danger/20 bg-red-50 px-3 py-4 text-center space-y-2">
+            <div class="flex items-center justify-center gap-2 text-gh-danger">
+              <span class="i ti ti-alert-circle text-lg" />
+              <span class="text-[13px] font-medium">No providers configured</span>
+            </div>
+            <p class="text-[12px] text-gh-fg-muted leading-relaxed max-w-sm mx-auto">
+              You need at least one provider to start chatting. Click <strong>+ add</strong> above to connect an LLM endpoint like Ollama, OpenAI, or any OpenAI-compatible API.
+            </p>
           </div>
         </Show>
       </div>

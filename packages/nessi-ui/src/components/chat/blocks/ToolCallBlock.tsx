@@ -6,7 +6,7 @@ const stringArg = (args: Record<string, unknown> | undefined, key: string, fallb
   typeof args?.[key] === "string" ? args[key] : fallback;
 
 /** Collapsible shell command block with approval controls and command output. */
-export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (callId: string, action: "deny" | "allow" | "always") => void }) => {
+export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; onApproval?: (callId: string, action: "deny" | "allow" | "always") => void }) => {
   const [expanded, setExpanded] = createSignal(false);
 
   const isPresent = () => props.block.name === "present";
@@ -29,7 +29,10 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
 
     const headlineMap: Record<string, () => string> = {
       bash: () => stringArg(args, "command", "bash"),
-      memory: () => `memory ${stringArg(args, "action", "")}`,
+      memory_add: () => `remember ${stringArg(args, "text", "")}`.slice(0, 60),
+      memory_remove: () => `forget #${stringArg(args, "id", "?")}`,
+      memory_replace: () => `update #${stringArg(args, "id", "?")}`,
+      memory_recall: () => "recall all memories",
       web: () => {
         const action = stringArg(args, "action", "search");
         return action === "extract" ? `web extract ${stringArg(args, "url", "")}` : `web search "${stringArg(args, "query", "")}"`;
@@ -50,7 +53,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
     if (props.block.name === "present") return "ti-folder-open";
     if (props.block.name === "bash") return "ti-tool";
     if (props.block.name === "web") return "ti-search";
-    if (props.block.name === "memory") return "ti-brain";
+    if (props.block.name.startsWith("memory_")) return "ti-brain";
     if (props.block.name === "list_files" || props.block.name === "read_file") return "ti-file-search";
     if (props.block.name === "write_file" || props.block.name === "edit_file") return "ti-file-text-spark";
     return "";
@@ -113,11 +116,20 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
   const isRunning = () => !hasResult() && props.block.approval !== "pending";
   const isPending = () => props.block.approval === "pending";
 
+  let headRef!: HTMLButtonElement;
+
+  const toggle = () => {
+    if (isPresent()) return;
+    setExpanded(!expanded());
+    requestAnimationFrame(() => headRef.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  };
+
   return (
-    <div class="ui-panel text-xs overflow-hidden tool-call-block rounded-md">
+    <div class="ui-panel text-[13px] overflow-hidden tool-call-block rounded-md">
       <button
-        class="w-full flex items-center gap-1.5 px-2 py-1 bg-gh-overlay hover:bg-gh-muted text-left tool-call-head"
-        onClick={() => !isPresent() && setExpanded(!expanded())}
+        ref={headRef}
+        class="w-full flex items-center gap-1.5 px-2 py-1 bg-gh-muted hover:bg-gh-subtle text-left tool-call-head"
+        onClick={toggle}
       >
         <Show
           when={leadingIconClass()}
@@ -151,7 +163,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
 
       {/* Present: inline content, no collapsible */}
       <Show when={isPresent() && presentResult()}>
-        {(pr) => <PresentContent result={pr()} />}
+        {(pr) => <PresentContent result={pr()} chatId={props.chatId} />}
       </Show>
 
       {/* Other tools: collapsible details */}
@@ -159,11 +171,11 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
         <div class="px-2 py-2 space-y-2">
           <Show when={props.block.args !== undefined}>
             <div class="space-y-1">
-              <div class="text-[10px] uppercase tracking-[0.12em] text-gh-fg-subtle">{argsTitle()}</div>
+              <div class="text-[11px] uppercase tracking-[0.1em] text-gh-fg-subtle font-medium">{argsTitle()}</div>
               <Show
                 when={props.block.name === "bash"}
                 fallback={
-                  <div class="space-y-1 text-xs text-gh-fg-muted">
+                  <div class="space-y-1 text-[12px] text-gh-fg-muted">
                     <For each={argsEntries()}>
                       {(entry) => (
                         <div class="flex items-start gap-2">
@@ -175,7 +187,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
                   </div>
                 }
               >
-                <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-32 overflow-y-auto text-xs text-gh-fg-muted tool-call-output">
+                <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-32 overflow-y-auto text-[12px] text-gh-fg-muted tool-call-output">
                   {commandBody()}
                 </pre>
               </Show>
@@ -183,7 +195,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; onApproval?: (cal
           </Show>
           <Show when={hasResult()}>
             <div class="space-y-1">
-              <div class={`text-[10px] uppercase tracking-[0.12em] ${props.block.isError ? "text-gh-danger" : "text-gh-fg-subtle"}`}>
+              <div class={`text-[11px] uppercase tracking-[0.1em] font-medium ${props.block.isError ? "text-gh-danger" : "text-gh-fg-subtle"}`}>
                 {detailTitle()}
               </div>
               <pre class={`overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-xs tool-call-output ${props.block.isError ? "text-gh-danger" : "text-gh-fg-muted"}`}>

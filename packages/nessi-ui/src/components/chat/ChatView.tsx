@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { humanId } from "human-id";
 import { compact, nessi } from "nessi-core";
@@ -23,11 +23,34 @@ import { createProvider, getActiveProviderEntry } from "../../lib/provider.js";
 import { contentPartsToUIContent, uiContentText, type UIUserContentPart } from "../../lib/chat-content.js";
 import { createProviderContextStore, loadPersistedEntries, localStorageStore, truncatePersistedEntries } from "../../lib/store.js";
 import { isAlwaysAllowed, setAlwaysAllowed } from "../../lib/tool-approvals.js";
+import { getTopicSuggestions } from "../../lib/memory.js";
+import type { UIMessage as UIMsg } from "./types.js";
+
+const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
+  const topics = () => props.messages.length === 0 ? getTopicSuggestions() : [];
+  return (
+    <Show when={topics().length > 0}>
+      <div class="px-3 pb-1">
+        <div class="max-w-4xl mx-auto flex flex-wrap gap-1.5">
+          <For each={topics()}>
+            {(topic) => (
+              <button
+                class="text-[11px] text-gh-fg-muted hover:text-gh-fg px-2.5 py-1 rounded-lg bg-gh-overlay hover:bg-gh-muted transition-all truncate max-w-52"
+                onClick={() => props.onSelect(topic)}
+              >
+                {topic}
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
+    </Show>
+  );
+};
 import { ensureChatMeta } from "../../lib/chat-storage.js";
 import { registerCommand } from "../../lib/slash-commands.js";
 import { createDefaultCompactFn } from "../../lib/compaction.js";
 import { loadCompactionSettings } from "../../lib/compaction-settings.js";
-import { refreshChatTitlesInBackground } from "../../lib/chat-titles.js";
 import { prepareImageUpload } from "../../lib/image-resize.js";
 import { createChatFileService } from "../../lib/file-service.js";
 import {
@@ -217,7 +240,16 @@ type Runtime = {
 };
 
 /** Main chat runtime built directly on nessi-core loop (single main session, no subagents). */
-export const ChatView = (props: { chatId: string; providerId: string; onOpenSettings?: () => void }) => {
+import type { ProviderEntry } from "../../lib/provider.js";
+
+export const ChatView = (props: {
+  chatId: string;
+  providerId: string;
+  providers?: ProviderEntry[];
+  activeProviderId?: string;
+  onProviderChange?: (id: string) => void;
+  onOpenSettings?: () => void;
+}) => {
   const [state, setState] = createStore<ChatState>({ messages: [], streaming: false });
   const [pendingImages, setPendingImages] = createSignal<Array<Extract<UIUserContentPart, { type: "image" }>>>([]);
   const [pendingFiles, setPendingFiles] = createSignal<PendingChatFile[]>([]);
@@ -453,7 +485,13 @@ export const ChatView = (props: { chatId: string; providerId: string; onOpenSett
     const incoming = Array.from(files);
     const images = incoming.filter((file) => file.type.startsWith("image/"));
     const documents = incoming
-      .map(classifyPendingChatFile)
+      .map((file) => {
+        const pending = classifyPendingChatFile(file);
+        if (pending && file.webkitRelativePath) {
+          pending.relativePath = file.webkitRelativePath;
+        }
+        return pending;
+      })
       .filter((file): file is PendingChatFile => Boolean(file));
 
     const unsupportedCount = incoming.length - images.length - documents.length;
@@ -976,7 +1014,6 @@ export const ChatView = (props: { chatId: string; providerId: string; onOpenSett
       setState("streaming", false);
       runtime = null;
       refreshChatFiles();
-      void refreshChatTitlesInBackground(1);
     }
   };
 
@@ -1100,19 +1137,8 @@ export const ChatView = (props: { chatId: string; providerId: string; onOpenSett
           drop files to attach
         </div>
       </Show>
-      <Show when={!getActiveProviderEntry()}>
-        <div class="mx-3 mt-2 px-3 py-2 ui-subpanel text-xs text-gh-fg-muted flex items-center gap-2">
-          <span class="i ti ti-alert-triangle text-gh-danger" />
-          <span>
-            No provider configured.{" "}
-            <button class="underline text-gh-fg-secondary hover:text-gh-fg cursor-pointer" onClick={() => props.onOpenSettings?.()}>
-              Open Settings
-            </button>
-            {" "}or type <code class="text-gh-fg-subtle">/settings</code> to add one.
-          </span>
-        </div>
-      </Show>
       <MessageList
+        chatId={props.chatId}
         messages={state.messages}
         streaming={state.streaming}
         canRetryMessage={canRetryMessage}
@@ -1120,25 +1146,34 @@ export const ChatView = (props: { chatId: string; providerId: string; onOpenSett
         onApproval={handleApproval}
         onSurveySubmit={handleSurveySubmit}
       />
-      <Show when={inputFiles().length > 0 || outputFiles().length > 0}>
-        <div class="px-3 pt-2">
-          <div class="max-w-4xl mx-auto">
-            <button
-              class="ui-subpanel w-full px-3 py-2 text-left text-xs text-gh-fg-secondary hover:text-gh-fg"
-              onClick={() => setFilesModalOpen(true)}
-            >
-              {inputFiles().length} input file{inputFiles().length === 1 ? "" : "s"} · {outputFiles().length} output file{outputFiles().length === 1 ? "" : "s"}
-            </button>
+      <Show when={!getActiveProviderEntry()}>
+        <div class="px-3 pb-1">
+          <div class="max-w-4xl mx-auto px-3 py-2.5 rounded-lg border border-gh-danger/20 bg-red-50 text-[13px] text-gh-fg-muted flex items-center gap-2">
+            <span class="i ti ti-alert-circle text-gh-danger text-base shrink-0" />
+            <span>
+              No provider configured.{" "}
+              <button class="underline text-gh-accent hover:text-gh-fg cursor-pointer font-medium" onClick={() => props.onOpenSettings?.()}>
+                Open Settings
+              </button>
+              {" "}to add one.
+            </span>
           </div>
         </div>
       </Show>
+      <TopicSuggestions messages={state.messages} onSelect={handleSend} />
       <MessageInput
         onSend={handleSend}
         onAddFiles={addPendingFiles}
         onRemoveImage={removePendingImage}
         onRemovePendingFile={removePendingFile}
+        onProviderChange={props.onProviderChange}
+        onOpenFiles={() => setFilesModalOpen(true)}
         images={pendingImages()}
         files={pendingFiles()}
+        providers={props.providers}
+        activeProviderId={props.activeProviderId}
+        inputFileCount={inputFiles().length}
+        outputFileCount={outputFiles().length}
         dropActive={dropActive()}
         disabled={state.streaming}
       />

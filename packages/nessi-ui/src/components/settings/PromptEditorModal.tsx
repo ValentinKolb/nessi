@@ -51,8 +51,8 @@ export const PromptEditorView = (props: {
 
   return (
     <div class="flex h-full min-h-0 flex-col gap-3">
-      <div class="space-y-1">
-        <label class="text-[10px] font-bold uppercase tracking-wider text-gh-fg-muted">Prompt Name</label>
+      <div class="space-y-1.5">
+        <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Prompt Name</label>
         <input
           class="ui-input"
           value={draft().name}
@@ -60,9 +60,9 @@ export const PromptEditorView = (props: {
         />
       </div>
       <div class="min-h-0 flex-1 space-y-3">
-        <p class="text-[10px] leading-tight text-gh-fg-subtle">
+        <p class="settings-desc">
           Supported placeholders: <code>{"{{date}}"}</code>, <code>{"{{weekday}}"}</code>, <code>{"{{model}}"}</code>,
-          <code>{" {{skills}}"}</code>, <code>{" {{file_info}}"}</code>.
+          <code>{" {{skills}}"}</code>, <code>{" {{file_info}}"}</code>, <code>{" {{memories}}"}</code>.
         </p>
         <textarea
           class="ui-input hide-scrollbar h-[calc(100%-1.75rem)] min-h-0 resize-none overflow-y-auto"
@@ -71,7 +71,7 @@ export const PromptEditorView = (props: {
           onInput={(e) => setDraft((prev) => ({ ...prev, content: e.currentTarget.value }))}
         />
       </div>
-      <div class="flex items-center gap-2 pt-2">
+      <div class="flex items-center gap-2">
         <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
         <button class="btn-secondary" onClick={() => {
           const all = loadPrompts();

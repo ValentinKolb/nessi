@@ -75,16 +75,16 @@ export const ApiKeys = (props: {
 
   return (
     <div class="ui-panel p-3 space-y-2">
-      <h3 class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gh-fg-muted">
-        <span class="i ti ti-key text-sm" />
+      <h3 class="settings-heading">
+        <span class="i ti ti-key" />
         <span>API Keys</span>
       </h3>
 
       {/* Tavily */}
       <div class="ui-subpanel p-2 space-y-2">
         <label class="block">
-          <span class="text-xs text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-world-search text-sm" />Tavily</span>
-          <p class="text-[10px] text-gh-fg-subtle leading-tight mt-0.5">
+          <span class="text-[13px] text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-world-search text-sm" />Tavily</span>
+          <p class="settings-desc mt-0.5">
             Get a Tavily API key at <span class="text-gh-fg-muted">tavily.com</span> to enable web search.
           </p>
           <input
@@ -106,14 +106,14 @@ export const ApiKeys = (props: {
       <div class="ui-subpanel p-2 space-y-2">
         <label class="block">
           <div class="flex items-center justify-between">
-            <span class="text-xs text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-brand-github text-sm" />GitHub</span>
+            <span class="text-[13px] text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-brand-github text-sm" />GitHub</span>
             <Show when={props.onShowGitHubHelp}>
-              <button class="text-[10px] text-gh-fg-subtle hover:text-gh-fg-muted cursor-pointer" onClick={props.onShowGitHubHelp}>
+              <button class="btn-minimal" onClick={props.onShowGitHubHelp}>
                 how to get a token?
               </button>
             </Show>
           </div>
-          <p class="text-[10px] text-gh-fg-subtle leading-tight mt-0.5">
+          <p class="settings-desc mt-0.5">
             Personal Access Token for reading repos, issues, and PRs.
           </p>
           <input
@@ -134,14 +134,14 @@ export const ApiKeys = (props: {
       {/* Nextcloud */}
       <div class="ui-subpanel p-2 space-y-2">
         <div class="flex items-center justify-between">
-          <div class="text-xs text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-brand-nextcloud text-sm" />Nextcloud</div>
+          <div class="text-[13px] text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-brand-nextcloud text-sm" />Nextcloud</div>
           <Show when={props.onShowNextcloudHelp}>
-            <button class="text-[10px] text-gh-fg-subtle hover:text-gh-fg-muted cursor-pointer" onClick={props.onShowNextcloudHelp}>
+            <button class="btn-minimal" onClick={props.onShowNextcloudHelp}>
               how to get an app password?
             </button>
           </Show>
         </div>
-        <p class="text-[10px] text-gh-fg-subtle leading-tight">
+        <p class="settings-desc">
           Connect your Nextcloud for file access, calendar events, and Talk messages.
         </p>
         <input
