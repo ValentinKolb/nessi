@@ -1,4 +1,3 @@
-// @ts-nocheck
 export default function create(api) {
   const { cli, ok, err, positionalArgs, parseArgs } = api;
 

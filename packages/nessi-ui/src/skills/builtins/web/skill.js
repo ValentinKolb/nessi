@@ -1,4 +1,3 @@
-// @ts-nocheck
 export default function create(api) {
   const { cli, ok, err, parseArgs, positionalArgs } = api;
   const STORAGE_KEY = "nessi:tavily";

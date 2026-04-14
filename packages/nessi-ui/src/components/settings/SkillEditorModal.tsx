@@ -1,6 +1,6 @@
 import { createEffect, createSignal, Show } from "solid-js";
 import type { SkillEntry } from "../../lib/skill-registry.js";
-import { ensureUniqueSkillId, loadSkills, saveSkills } from "../../lib/skill-registry.js";
+import { ensureUniqueSkillId, listSkills, saveSkills } from "../../lib/skill-registry.js";
 import { createSkillDocTemplate, readSkillDocMeta, syncSkillDoc } from "../../lib/skill-doc.js";
 import { SNIPPET_TEMPLATE } from "../../lib/skill-templates.js";
 import { createCopyAction } from "../../lib/clipboard.js";
@@ -40,28 +40,30 @@ export const SkillEditorView = (props: {
 }) => {
   const [draft, setDraft] = createSignal<SkillEditorDraft>(toDraft(props.skill));
   const [tab, setTab] = createSignal<"definition" | "implementation">("definition");
+  const [error, setError] = createSignal("");
   const { copy: copyExport, copied: exportCopied } = createCopyAction();
 
   createEffect(() => {
     setDraft(toDraft(props.skill));
     setTab("definition");
+    setError("");
   });
 
   const isExisting = () => Boolean(draft().id);
   const panelClass = "flex h-full min-h-0 flex-col gap-3";
   const editorClass = "ui-input hide-scrollbar h-full min-h-0 flex-1 resize-none overflow-y-auto font-mono";
 
-  const save = () => {
+  const save = async () => {
     const current = draft();
     const nextDoc = syncSkillDoc(current.doc, { name: current.name });
     const parsed = readSkillDocMeta(nextDoc);
     if (!parsed) {
       setTab("definition");
-      alert("Invalid SKILL.md frontmatter: name and description are required.");
+      setError("Invalid SKILL.md frontmatter: name and description are required.");
       return;
     }
 
-    const existingSkills = loadSkills();
+    const existingSkills = await listSkills();
     const id = current.id || ensureUniqueSkillId(parsed.name, existingSkills);
     const nextSkill: SkillEntry = {
       id,
@@ -79,14 +81,16 @@ export const SkillEditorView = (props: {
       ? existingSkills.map((skill) => (skill.id === id ? { ...skill, ...nextSkill } : skill))
       : [...existingSkills, nextSkill];
 
-    saveSkills(next);
+    await saveSkills(next);
+    setError("");
     props.onDone();
   };
 
-  const remove = () => {
+  const remove = async () => {
     const current = draft();
     if (!current.id || current.builtin) return;
-    saveSkills(loadSkills().filter((skill) => skill.id !== current.id));
+    const existingSkills = await listSkills();
+    await saveSkills(existingSkills.filter((skill) => skill.id !== current.id));
     props.onDone();
   };
 
@@ -109,12 +113,15 @@ export const SkillEditorView = (props: {
   return (
     <div class="flex h-full min-h-0 flex-col gap-3">
       <div class="space-y-3">
+        <Show when={error()}>
+          <p class="text-[12px] text-gh-danger">{error()}</p>
+        </Show>
         <div class="space-y-1.5">
           <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Skill Name</label>
           <input
             class="ui-input"
             value={draft().name}
-            onInput={(e) => setDraft((prev) => ({ ...prev, name: e.currentTarget.value }))}
+            onInput={(e) => { setDraft((prev) => ({ ...prev, name: e.currentTarget.value })); if (error()) setError(""); }}
           />
         </div>
 
@@ -160,7 +167,7 @@ export const SkillEditorView = (props: {
               class={editorClass}
               rows={20}
               value={draft().doc}
-              onInput={(e) => setDraft((prev) => ({ ...prev, doc: e.currentTarget.value }))}
+              onInput={(e) => { setDraft((prev) => ({ ...prev, doc: e.currentTarget.value })); if (error()) setError(""); }}
             />
           </div>
         </Show>
@@ -177,7 +184,7 @@ export const SkillEditorView = (props: {
               rows={20}
               placeholder={SNIPPET_TEMPLATE}
               value={draft().code}
-              onInput={(e) => setDraft((prev) => ({ ...prev, code: e.currentTarget.value }))}
+              onInput={(e) => { setDraft((prev) => ({ ...prev, code: e.currentTarget.value })); if (error()) setError(""); }}
             />
           </div>
         </Show>
@@ -185,13 +192,13 @@ export const SkillEditorView = (props: {
 
       <div class="flex items-center gap-2">
         <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
-        <button class="btn-primary" onClick={save}>save</button>
+        <button class="btn-primary" onClick={() => void save()}>save</button>
         <div class="flex-1" />
         <button class="btn-secondary" onClick={exportSkill}>
           {exportCopied() ? "copied!" : "export"}
         </button>
         <Show when={isExisting() && !draft().builtin}>
-          <button class="btn-secondary danger-text" onClick={remove}>
+          <button class="btn-secondary danger-text" onClick={() => void remove()}>
             delete
           </button>
         </Show>

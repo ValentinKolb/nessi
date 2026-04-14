@@ -9,13 +9,14 @@ import type { CliBuilder } from "./commands/cli.js";
 import type { CommandHelpers } from "./commands/helpers.js";
 import { createCommandHelpers } from "./commands/helpers.js";
 import { memoryAddTool, memoryRemoveTool, memoryReplaceTool, memoryRecallTool } from "./tools/memory-tool.js";
-import { webTool } from "./tools/web-tool.js";
 import { createPresentTool } from "./tools/present-tool.js";
 import { nextcloudApi } from "./nextcloud.js";
 import { createNextcloudFs } from "./nextcloud-fs.js";
-import { getEnabledSkills, loadSkills, skillPath, type SkillEntry } from "./skill-registry.js";
+import { listCachedSkills, listEnabledCachedSkills, skillPath, type SkillEntry } from "./skill-registry.js";
 import type { ChatFileService } from "./file-service.js";
-import { extractPdfText } from "./pdf-text.js";
+import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
+import { webTool } from "../skills/builtins/web/web-tool.js";
+import { skillRuntime } from "../skills/core/index.js";
 import { truncateText } from "./utils.js";
 
 const MAX_OUTPUT_LENGTH = 30_000;
@@ -42,25 +43,6 @@ const isCliBuilder = (value: unknown): value is CliBuilder =>
   Boolean(value)
   && typeof value === "object"
   && typeof (value as { build?: unknown }).build === "function";
-
-const generateReadme = (skills: SkillEntry[]) => {
-  const skillLines = skills.map((skill) => {
-    const state = skill.code?.trim() ? "ready" : "docs-only";
-    return `- ${skill.command}: ${skill.description} (${state}) -> \`cat ${skillPath(skill.id)}\``;
-  });
-
-  return [
-    "# Skills",
-    "",
-    "Chat files are mounted under `/input`.",
-    "Generated files should be written under `/output`.",
-    "Built-in command: `pdf2text /input/file.pdf > /output/file.txt`.",
-    "",
-    ...skillLines,
-    "",
-    "Every command supports `--help`.",
-  ].join("\n");
-};
 
 const bashToolDef = defineTool({
   name: "bash",
@@ -313,8 +295,10 @@ const wrapWithNextcloud = (base: IFileSystem): IFileSystem => {
         const path = typeof args[0] === "string" ? args[0] : null;
         if (path && isNc(path)) {
           const ncArgs = [ncPath(path), ...args.slice(1)] as Parameters<typeof val>;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return (ncFs as any)[prop as string](...ncArgs);
+          const ncMethod = Reflect.get(ncFs, prop);
+          if (typeof ncMethod === "function") {
+            return ncMethod.call(ncFs, ...ncArgs);
+          }
         }
         // Special: readdir at root should include "nextcloud"
         if (prop === "readdir" && path === "/") {
@@ -339,12 +323,12 @@ export const createBashWithSkills = (
   extraCommands?: Command[],
   initialFiles?: InitialFiles,
 ) => {
-  const allSkills = loadSkills();
+  const allSkills = listCachedSkills();
   const skills = allSkills.filter((skill) => skillIds.includes(skill.id));
 
   const files: InitialFiles = {
     ...(initialFiles ?? {}),
-    "/skills/README.md": generateReadme(skills),
+    "/skills/README.md": skillRuntime.buildReadme(skillIds),
   };
 
   for (const skill of skills) {
@@ -383,42 +367,6 @@ const createBashToolWithHook = (
     };
   });
 
-/** Create bash + survey + memory tools for a specific skill subset. */
-export const createToolsForSkills = (skillIds: string[]): Tool[] => {
-  const helpers = createCommandHelpers();
-  const bash = createBashWithSkills(skillIds, helpers, [createPdfToTextCommand()]);
-  return [memoryAddTool, memoryRemoveTool, memoryReplaceTool, memoryRecallTool, webTool, createBashToolWithHook(bash, helpers)];
-};
-
-/** Build skill list text used in system prompts (`{{skills}}`). */
-export const getSkillsSummary = (skillIds?: string[]) => {
-  const all = loadSkills();
-  const selected = skillIds
-    ? all.filter((skill) => skillIds.includes(skill.id))
-    : all.filter((skill) => skill.enabled);
-
-  if (selected.length === 0) return "No skills available.";
-
-  const lines = [
-    "Available skills (bash commands):",
-    "",
-    ...[...selected].sort((a, b) => a.command.localeCompare(b.command))
-      .map((skill) => `- ${skill.command}: ${skill.description}`),
-    "",
-    "Before using a skill for the first time, read its docs: `cat /skills/<name>/SKILL.md`",
-  ];
-
-  return lines.join("\n");
-};
-
-/** Tools for the main agent (enabled skills only). */
-export const createMainTools = (): Tool[] => {
-  const helpers = createCommandHelpers();
-  const enabledSkillIds = getEnabledSkills().map((skill) => skill.id);
-  const bash = createBashWithSkills(enabledSkillIds, helpers, [createPdfToTextCommand()]);
-  return [memoryAddTool, memoryRemoveTool, memoryReplaceTool, memoryRecallTool, webTool, createBashToolWithHook(bash, helpers)];
-};
-
 export const createMainBashRuntime = (options?: {
   initialFiles?: InitialFiles;
   afterExec?: (bash: Bash) => Promise<void> | void;
@@ -428,7 +376,7 @@ export const createMainBashRuntime = (options?: {
   if (options?.fileService) {
     helpers.files.readBytes = async (path) => (await options.fileService!.readBytes(path)).bytes;
   }
-  const enabledSkillIds = getEnabledSkills().map((skill) => skill.id);
+  const enabledSkillIds = listEnabledCachedSkills().map((skill) => skill.id);
   const bash = createBashWithSkills(
     enabledSkillIds,
     helpers,

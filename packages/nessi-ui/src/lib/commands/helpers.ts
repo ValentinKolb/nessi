@@ -1,8 +1,8 @@
-import { exportPdfText, mergePdfs, splitPdf } from "../pdf-ops.js";
+import { exportPdfText, mergePdfs, splitPdf } from "../../skills/builtins/pdf/pdf-ops.js";
 import { generateQrSvg } from "../qr.js";
 import type { QrOptions } from "../qr.js";
-import { barChart, lineChart, pieChart } from "../chart.js";
-import type { BarChartData, LineChartData, PieChartData } from "../chart.js";
+import { barChart, lineChart, pieChart } from "../../skills/builtins/chart/chart.js";
+import type { BarChartData, LineChartData, PieChartData } from "../../skills/builtins/chart/chart.js";
 import { githubApi } from "../github.js";
 import type { GitHubApi } from "../github.js";
 import { nextcloudApi } from "../nextcloud.js";
@@ -17,8 +17,8 @@ import {
   tableFilter,
   tableReplaceValues,
   tableToCsv,
-} from "../table-ops.js";
-import type { FilterCondition, TableFilterResult, TableWriteResult } from "../table-ops.js";
+} from "../../skills/builtins/table/table-ops.js";
+import type { FilterCondition, TableFilterResult, TableWriteResult } from "../../skills/builtins/table/table-ops.js";
 
 export type CommandHelpers = {
   requestApproval: (message: string) => Promise<boolean>;

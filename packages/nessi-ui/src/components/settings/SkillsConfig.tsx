@@ -1,7 +1,8 @@
 import { createSignal, For, Show, onMount } from "solid-js";
 import {
   ensureUniqueSkillId,
-  loadSkills,
+  listCachedSkills,
+  listSkills,
   saveSkills,
   type SkillEntry,
 } from "../../lib/skill-registry.js";
@@ -14,20 +15,23 @@ export const SkillsConfig = (props: {
   const [skills, setSkills] = createSignal<SkillEntry[]>([]);
   const [importing, setImporting] = createSignal(false);
   const [importText, setImportText] = createSignal("");
+  const [error, setError] = createSignal("");
 
-  const refresh = () => {
-    setSkills(loadSkills());
+  const refresh = async () => {
+    setSkills(await listSkills());
   };
 
-  onMount(refresh);
+  onMount(() => {
+    void refresh();
+  });
 
-  const importSkill = () => {
+  const importSkill = async () => {
     try {
       const parsed = JSON.parse(importText()) as Partial<SkillEntry>;
       if (typeof parsed.name !== "string" || typeof parsed.doc !== "string") {
         throw new Error("Invalid skill: name and doc are required");
       }
-      const existing = loadSkills();
+      const existing = listCachedSkills();
       const id = ensureUniqueSkillId(parsed.name, existing);
       const skill: SkillEntry = {
         id,
@@ -39,12 +43,13 @@ export const SkillsConfig = (props: {
         code: parsed.code,
         builtin: false,
       };
-      saveSkills([...existing, skill]);
+      await saveSkills([...existing, skill]);
+      setError("");
       setImporting(false);
       setImportText("");
-      refresh();
+      await refresh();
     } catch {
-      alert("Invalid skill JSON. Must contain at least name and doc.");
+      setError("Invalid skill JSON. Must contain at least name and doc.");
     }
   };
 
@@ -80,16 +85,19 @@ export const SkillsConfig = (props: {
 
       <Show when={importing()}>
         <div class="ui-subpanel p-2 space-y-2">
+          <Show when={error()}>
+            <p class="text-[12px] text-gh-danger">{error()}</p>
+          </Show>
           <textarea
             class="ui-input min-h-24 resize-y font-mono"
             rows={6}
             placeholder="Paste single skill JSON..."
             value={importText()}
-            onInput={(e) => setImportText(e.currentTarget.value)}
+            onInput={(e) => { setImportText(e.currentTarget.value); if (error()) setError(""); }}
           />
           <div class="flex gap-2">
-            <button class="btn-secondary" onClick={() => setImporting(false)}>cancel</button>
-            <button class="btn-primary" onClick={importSkill}>import</button>
+            <button class="btn-secondary" onClick={() => { setImporting(false); setError(""); }}>cancel</button>
+            <button class="btn-primary" onClick={() => void importSkill()}>import</button>
           </div>
         </div>
       </Show>

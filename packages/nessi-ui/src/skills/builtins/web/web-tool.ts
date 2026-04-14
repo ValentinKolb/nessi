@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defineTool } from "nessi-core";
-import { readJson } from "../json-storage.js";
-import { truncateText } from "../utils.js";
+import { readJson } from "../../../lib/json-storage.js";
+import { truncateText } from "../../../lib/utils.js";
 
 const STORAGE_KEY = "nessi:tavily";
 const MAX_EXTRACT_CONTENT = 15_000;
