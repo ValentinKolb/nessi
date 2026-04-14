@@ -9,6 +9,44 @@ afterEach(() => {
 });
 
 describe("anthropic provider", () => {
+  it("batches consecutive tool results into a single user message and preserves temperature 0", async () => {
+    let capturedBody: any;
+    globalThis.fetch = (async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return jsonResponse({
+        id: "msg_123",
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+    }) as typeof fetch;
+
+    const provider = anthropic("claude-sonnet", { temperature: 0.7 });
+    await provider.complete({
+      temperature: 0,
+      messages: [
+        { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "search", args: { q: "one" } }] },
+        { role: "tool_result", callId: "call-1", name: "search", result: { ok: 1 } },
+        { role: "tool_result", callId: "call-2", name: "lookup", result: { ok: 2 } },
+      ],
+    });
+
+    expect(capturedBody.temperature).toBe(0);
+    expect(capturedBody.messages).toEqual([
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call-1", name: "search", input: { q: "one" } }],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "call-1", content: "{\"ok\":1}" },
+          { type: "tool_result", tool_use_id: "call-2", content: "{\"ok\":2}" },
+        ],
+      },
+    ]);
+  });
+
   it("maps complete tool_use blocks", async () => {
     globalThis.fetch = (async () => jsonResponse(await fixtureJson("../fixtures/anthropic/complete.json"))) as typeof fetch;
 
@@ -29,5 +67,30 @@ describe("anthropic provider", () => {
     expect(events.some((event) => event.type === "tool_delta")).toBe(true);
     expect(events.some((event) => event.type === "tool_call")).toBe(true);
     expect(events.some((event) => event.type === "usage")).toBe(true);
+  });
+
+  it("merges streaming usage chunks instead of overwriting prior input tokens", async () => {
+    globalThis.fetch = (async () =>
+      textResponse(
+        [
+          "event: message_start",
+          'data: {"message":{"usage":{"input_tokens":11}}}',
+          "",
+          "event: message_delta",
+          'data: {"usage":{"output_tokens":7},"delta":{"stop_reason":"end_turn"}}',
+          "",
+        ].join("\n"),
+        "text/event-stream",
+      )) as typeof fetch;
+
+    const provider = anthropic("claude-sonnet");
+    const events = [];
+    for await (const event of provider.stream({ messages: [] })) events.push(event);
+
+    const usageEvent = events.find((event) => event.type === "usage");
+    expect(usageEvent && usageEvent.type === "usage" ? usageEvent.finishReason : undefined).toBe("stop");
+    expect(usageEvent && usageEvent.type === "usage" ? usageEvent.usage.input : undefined).toBe(11);
+    expect(usageEvent && usageEvent.type === "usage" ? usageEvent.usage.output : undefined).toBe(7);
+    expect(usageEvent && usageEvent.type === "usage" ? usageEvent.usage.total : undefined).toBe(18);
   });
 });

@@ -99,6 +99,7 @@ const toolCallsFromResponse = (response: OllamaResponse): ToolCallBlock[] =>
 export const ollama = (model: string, options?: OllamaOptions): Provider => {
   const baseURL = (options?.baseURL ?? "http://localhost:11434").replace(/\/+$/, "");
   const contextWindow = options?.contextWindow ?? 128_000;
+  const resolveTemperature = (request: GenerateRequest) => request.temperature ?? options?.temperature;
 
   return {
     name: "ollama",
@@ -120,7 +121,8 @@ export const ollama = (model: string, options?: OllamaOptions): Provider => {
         stream: false,
       };
       if (request.tools?.length) body.tools = toOllamaTools(request.tools);
-      if (request.temperature ?? options?.temperature) body.options = { temperature: request.temperature ?? options?.temperature };
+      const temperature = resolveTemperature(request);
+      if (temperature !== undefined) body.options = { temperature };
 
       const response = await fetch(`${baseURL}/api/chat`, {
         method: "POST",
@@ -157,7 +159,8 @@ export const ollama = (model: string, options?: OllamaOptions): Provider => {
         stream: true,
       };
       if (request.tools?.length) body.tools = toOllamaTools(request.tools);
-      if (request.temperature ?? options?.temperature) body.options = { temperature: request.temperature ?? options?.temperature };
+      const temperature = resolveTemperature(request);
+      if (temperature !== undefined) body.options = { temperature };
 
       let response: Response;
       try {

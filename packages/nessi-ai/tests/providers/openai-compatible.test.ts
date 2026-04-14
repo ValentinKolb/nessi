@@ -74,4 +74,23 @@ describe("openAICompatible provider", () => {
     expect(events.some((event) => event.type === "thinking")).toBe(true);
     expect(events.some((event) => event.type === "text")).toBe(true);
   });
+
+  it("sends temperature 0 explicitly", async () => {
+    let capturedBody: any;
+    globalThis.fetch = (async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return jsonResponse(await fixtureJson("../fixtures/openai/complete.json"));
+    }) as typeof fetch;
+
+    const provider = openAICompatible({
+      name: "custom",
+      model: "gpt-test",
+      baseURL: "https://example.com/v1",
+      temperature: 0.7,
+      compat: { supportsUsageInStreaming: true, thinkingFormat: "none" },
+    });
+
+    await provider.complete({ messages: [], temperature: 0 });
+    expect(capturedBody.temperature).toBe(0);
+  });
 });

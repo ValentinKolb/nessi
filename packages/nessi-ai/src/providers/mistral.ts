@@ -133,6 +133,7 @@ export type MistralOptions = {
 
 export const mistral = (model: string, options?: MistralOptions): Provider => {
   const baseURL = (options?.baseURL ?? "https://api.mistral.ai/v1").replace(/\/+$/, "");
+  const resolveTemperature = (request: GenerateRequest) => request.temperature ?? options?.temperature;
 
   return {
     name: "mistral",
@@ -157,7 +158,8 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
         body.tools = toOpenAITools(request.tools);
         body.parallel_tool_calls = true;
       }
-      if (request.temperature ?? options?.temperature) body.temperature = request.temperature ?? options?.temperature;
+      const temperature = resolveTemperature(request);
+      if (temperature !== undefined) body.temperature = temperature;
       if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens;
 
       const response = await fetch(`${baseURL}/chat/completions`, {
@@ -207,7 +209,8 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
         body.tools = toOpenAITools(request.tools);
         body.parallel_tool_calls = true;
       }
-      if (request.temperature ?? options?.temperature) body.temperature = request.temperature ?? options?.temperature;
+      const temperature = resolveTemperature(request);
+      if (temperature !== undefined) body.temperature = temperature;
       if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens;
 
       const result = await openSSEStream(

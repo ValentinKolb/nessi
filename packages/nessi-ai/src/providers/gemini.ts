@@ -118,10 +118,12 @@ export const gemini = (model: string, options?: GeminiOptions): Provider => {
       body.systemInstruction = { parts: [{ text: request.systemPrompt }] };
     }
     if (request.tools?.length) body.tools = toGeminiTools(request.tools);
-    body.generationConfig = {
-      temperature: request.temperature ?? options?.temperature,
-      maxOutputTokens: request.maxOutputTokens ?? options?.maxOutputTokens,
-    };
+    const generationConfig: Record<string, unknown> = {};
+    const temperature = request.temperature ?? options?.temperature;
+    if (temperature !== undefined) generationConfig.temperature = temperature;
+    const maxOutputTokens = request.maxOutputTokens ?? options?.maxOutputTokens;
+    if (maxOutputTokens !== undefined) generationConfig.maxOutputTokens = maxOutputTokens;
+    if (Object.keys(generationConfig).length > 0) body.generationConfig = generationConfig;
     return body;
   };
 

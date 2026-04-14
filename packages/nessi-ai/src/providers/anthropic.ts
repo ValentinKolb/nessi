@@ -71,6 +71,15 @@ const mapFinishReason = (reason: string | null | undefined, hasTools: boolean) =
   return "stop" as const;
 };
 
+const pushMessage = (messages: AnthropicMessage[], next: AnthropicMessage) => {
+  const last = messages[messages.length - 1];
+  if (last?.role === next.role) {
+    last.content.push(...next.content);
+    return;
+  }
+  messages.push(next);
+};
+
 const convertMessages = (messages: Message[]) => {
   const out: AnthropicMessage[] = [];
   for (const message of messages) {
@@ -85,7 +94,7 @@ const convertMessages = (messages: Message[]) => {
           source: { type: "base64", media_type: part.mediaType, data: part.data },
         });
       }
-      out.push({ role: "user", content });
+      pushMessage(out, { role: "user", content });
       continue;
     }
 
@@ -102,11 +111,11 @@ const convertMessages = (messages: Message[]) => {
           });
         }
       }
-      out.push({ role: "assistant", content });
+      pushMessage(out, { role: "assistant", content });
       continue;
     }
 
-    out.push({
+    pushMessage(out, {
       role: "user",
       content: [{
         type: "tool_result",
@@ -119,6 +128,9 @@ const convertMessages = (messages: Message[]) => {
   return out;
 };
 
+const resolveTemperature = (request: GenerateRequest, options?: AnthropicOptions) =>
+  request.temperature ?? options?.temperature;
+
 const usageFromValue = (
   usage: { input_tokens?: number; output_tokens?: number } | undefined,
   options?: AnthropicOptions,
@@ -128,6 +140,22 @@ const usageFromValue = (
     options?.creditsPerInputToken,
     options?.creditsPerOutputToken,
   );
+
+const mergeUsage = (
+  current: ReturnType<typeof makeUsage>,
+  usage: { input_tokens?: number; output_tokens?: number } | undefined,
+  options?: AnthropicOptions,
+) => {
+  if (!usage) return current;
+  return applyCredits(
+    makeUsage(
+      usage.input_tokens ?? current.input,
+      usage.output_tokens ?? current.output,
+    ),
+    options?.creditsPerInputToken,
+    options?.creditsPerOutputToken,
+  );
+};
 
 export const anthropic = (model: string, options?: AnthropicOptions): Provider => {
   const baseURL = (options?.baseURL ?? "https://api.anthropic.com").replace(/\/+$/, "");
@@ -155,7 +183,8 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         max_tokens: request.maxOutputTokens ?? maxOutputTokens,
       };
       if (request.tools?.length) body.tools = toAnthropicTools(request.tools);
-      if (request.temperature ?? options?.temperature) body.temperature = request.temperature ?? options?.temperature;
+      const temperature = resolveTemperature(request, options);
+      if (temperature !== undefined) body.temperature = temperature;
 
       const response = await fetch(`${baseURL}/v1/messages`, {
         method: "POST",
@@ -209,7 +238,8 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         stream: true,
       };
       if (request.tools?.length) body.tools = toAnthropicTools(request.tools);
-      if (request.temperature ?? options?.temperature) body.temperature = request.temperature ?? options?.temperature;
+      const temperature = resolveTemperature(request, options);
+      if (temperature !== undefined) body.temperature = temperature;
 
       const result = await openSSEStream(
         `${baseURL}/v1/messages`,
@@ -240,7 +270,7 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         if (!payload) continue;
 
         if (event.event === "message_start" && payload.message?.usage) {
-          latestUsage = usageFromValue(payload.message.usage, options);
+          latestUsage = mergeUsage(latestUsage, payload.message.usage, options);
         }
 
         if (event.event === "content_block_start" && payload.content_block?.type === "tool_use") {
@@ -288,7 +318,7 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         }
 
         if (event.event === "message_delta" && payload.usage) {
-          latestUsage = usageFromValue(payload.usage, options);
+          latestUsage = mergeUsage(latestUsage, payload.usage, options);
         }
         if (event.event === "message_delta" && payload.delta?.stop_reason) {
           latestFinishReason = mapFinishReason(payload.delta.stop_reason, sawToolCall || toolBuffers.size > 0);

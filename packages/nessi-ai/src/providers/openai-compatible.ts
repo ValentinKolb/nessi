@@ -204,6 +204,7 @@ const parseCompletionResponse = async (response: Response, config: OpenAICompati
 export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
   const baseURL = config.baseURL.replace(/\/+$/, "");
   const contextWindow = config.contextWindow ?? 128_000;
+  const resolveTemperature = (request: GenerateRequest) => request.temperature ?? config.temperature;
 
   const provider: Provider = {
     name: config.name,
@@ -230,7 +231,8 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
       if (request.maxOutputTokens !== undefined) {
         body[config.compat?.maxTokensField ?? "max_completion_tokens"] = request.maxOutputTokens;
       }
-      if (request.temperature ?? config.temperature) body.temperature = request.temperature ?? config.temperature;
+      const temperature = resolveTemperature(request);
+      if (temperature !== undefined) body.temperature = temperature;
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -268,7 +270,8 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         body.stream_options = { include_usage: true };
       }
       if (tools) body.tools = tools;
-      if (request.temperature ?? config.temperature) body.temperature = request.temperature ?? config.temperature;
+      const temperature = resolveTemperature(request);
+      if (temperature !== undefined) body.temperature = temperature;
       if (request.maxOutputTokens !== undefined) {
         body[config.compat?.maxTokensField ?? "max_completion_tokens"] = request.maxOutputTokens;
       }

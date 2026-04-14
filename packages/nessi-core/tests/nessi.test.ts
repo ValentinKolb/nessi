@@ -130,6 +130,28 @@ describe("nessi core loop", () => {
     expect(done.reason).toBe("stop");
   });
 
+  it("stores the provider model name on assistant messages", async () => {
+    const provider = {
+      ...mockProvider([
+        { type: "text" as const, delta: "Hello model" },
+        { type: "usage" as const, usage: { input: 10, output: 5, total: 15 } },
+      ], { name: "openai" }),
+      model: "gpt-4o-mini",
+    };
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store: memoryStore(),
+        input: "Hi",
+      }),
+    );
+
+    const turnEnd = events.find((event) => event.type === "turn_end");
+    expect(turnEnd && turnEnd.type === "turn_end" ? turnEnd.message.model : undefined).toBe("gpt-4o-mini");
+  });
+
   it("handles thinking events", async () => {
     const events = await collectEvents(
       nessi({

@@ -372,7 +372,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       const assistantMessage: AssistantMessage = {
         role: "assistant",
         content: assistantBlocks,
-        model: provider.name,
+        model: provider.model,
         usage: turnUsage,
         stopReason,
       };
