@@ -1,5 +1,7 @@
 import { createSignal, Match, Show, Switch } from "solid-js";
+import { humanId } from "human-id";
 import { ProvidersConfig } from "./ProvidersConfig.js";
+import { ProviderEditorView } from "./ProviderEditorView.js";
 import { ApiKeys } from "./ApiKeys.js";
 import { SystemPrompt } from "./SystemPrompt.js";
 import { MemoryEditor } from "./MemoryEditor.js";
@@ -10,8 +12,16 @@ import { BackgroundPromptEditor } from "./BackgroundPromptEditor.js";
 import { GeneralSettings } from "./GeneralSettings.js";
 import type { SkillEntry } from "../../lib/skill-registry.js";
 import type { Prompt } from "../../lib/prompts.js";
+import {
+  loadProviders,
+  saveProviders,
+  getActiveProviderId,
+  setActiveProviderId,
+  type ProviderEntry,
+} from "../../lib/provider.js";
 import { SkillEditorView } from "./SkillEditorModal.js";
 import { PromptEditorView } from "./PromptEditorModal.js";
+import { CompactionPromptEditor } from "./CompactionPromptEditor.js";
 import { GitHubHelpView } from "./GitHubHelpView.js";
 import { NextcloudHelpView } from "./NextcloudHelpView.js";
 
@@ -19,10 +29,12 @@ type SettingsRoute =
   | { kind: "root" }
   | { kind: "skill-editor"; skill: SkillEntry | null }
   | { kind: "prompt-editor"; prompt: Prompt | null }
+  | { kind: "provider-editor"; provider: ProviderEntry | null }
   | { kind: "github-help" }
   | { kind: "nextcloud-help" }
   | { kind: "bg-prompt-editor" }
-  | { kind: "bg-logs" };
+  | { kind: "bg-logs" }
+  | { kind: "compaction-prompt-editor" };
 
 /** Settings dialog that hosts all runtime configuration panels. */
 export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose: () => void }) => {
@@ -46,6 +58,8 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
         return current.skill ? "Edit Skill" : "New Skill";
       case "prompt-editor":
         return current.prompt ? "Edit Prompt" : "New Prompt";
+      case "provider-editor":
+        return current.provider ? "Edit Provider" : "New Provider";
       case "github-help":
         return "GitHub Token Setup";
       case "nextcloud-help":
@@ -54,6 +68,8 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
         return "Background Prompts";
       case "bg-logs":
         return "Background Logs";
+      case "compaction-prompt-editor":
+        return "Compaction Prompt";
       default:
         return "Settings";
     }
@@ -67,6 +83,54 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
   const currentPrompt = () => {
     const current = route();
     return current.kind === "prompt-editor" ? current.prompt : null;
+  };
+
+  const currentProvider = () => {
+    const current = route();
+    return current.kind === "provider-editor" ? current.provider : null;
+  };
+
+  const isNewProvider = () => {
+    const current = route();
+    if (current.kind !== "provider-editor") return false;
+    if (!current.provider) return true;
+    return !loadProviders().some((p) => p.id === current.provider!.id);
+  };
+
+  const handleProviderSave = (entry: ProviderEntry) => {
+    const list = loadProviders();
+    const idx = list.findIndex((p) => p.id === entry.id);
+    const updated = idx >= 0
+      ? list.map((p) => (p.id === entry.id ? entry : p))
+      : [...list, entry];
+    saveProviders(updated);
+    // Auto-activate if it's the only provider
+    if (updated.length === 1 || !getActiveProviderId()) {
+      setActiveProviderId(entry.id);
+    }
+    backToRoot();
+  };
+
+  const handleProviderDelete = (id: string) => {
+    const filtered = loadProviders().filter((p) => p.id !== id);
+    saveProviders(filtered);
+    if (getActiveProviderId() === id) {
+      const next = filtered[0]?.id;
+      if (next) setActiveProviderId(next);
+    }
+    backToRoot();
+  };
+
+  const handleCreateProvider = () => {
+    const entry: ProviderEntry = {
+      id: humanId({ separator: "-", capitalize: false }),
+      type: "openai-compatible",
+      name: "",
+      baseURL: "http://localhost:11434/v1",
+      model: "",
+      toolCallIdPolicy: "passthrough",
+    };
+    setRoute({ kind: "provider-editor", provider: entry });
   };
 
   return (
@@ -109,7 +173,10 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
           <Match when={route().kind === "root"}>
             <div class="hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
               <GeneralSettings />
-              <ProvidersConfig />
+              <ProvidersConfig
+                onCreateProvider={handleCreateProvider}
+                onEditProvider={(provider) => setRoute({ kind: "provider-editor", provider })}
+              />
               <ApiKeys
                 onShowGitHubHelp={() => setRoute({ kind: "github-help" })}
                 onShowNextcloudHelp={() => setRoute({ kind: "nextcloud-help" })}
@@ -122,12 +189,23 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
                 onCreatePrompt={() => setRoute({ kind: "prompt-editor", prompt: null })}
                 onEditPrompt={(prompt) => setRoute({ kind: "prompt-editor", prompt })}
               />
-              <CompactionSettings />
+              <CompactionSettings onEditPrompt={() => setRoute({ kind: "compaction-prompt-editor" })} />
               <BackgroundTasks
                 onEditPrompts={() => setRoute({ kind: "bg-prompt-editor" })}
                 onOpenLogs={() => setRoute({ kind: "bg-logs" })}
               />
               <MemoryEditor />
+            </div>
+          </Match>
+          <Match when={route().kind === "provider-editor"}>
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+              <ProviderEditorView
+                provider={currentProvider()}
+                isNew={isNewProvider()}
+                onCancel={backToRoot}
+                onSave={handleProviderSave}
+                onDelete={handleProviderDelete}
+              />
             </div>
           </Match>
           <Match when={route().kind === "skill-editor"}>
@@ -156,6 +234,11 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
           <Match when={route().kind === "bg-logs"}>
             <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
               <BackgroundLogsView />
+            </div>
+          </Match>
+          <Match when={route().kind === "compaction-prompt-editor"}>
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+              <CompactionPromptEditor onDone={backToRoot} />
             </div>
           </Match>
           <Match when={route().kind === "github-help"}>

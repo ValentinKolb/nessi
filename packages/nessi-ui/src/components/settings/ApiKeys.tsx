@@ -85,7 +85,7 @@ export const ApiKeys = (props: {
         <label class="block">
           <span class="text-[13px] text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-world-search text-sm" />Tavily</span>
           <p class="settings-desc mt-0.5">
-            Get a Tavily API key at <span class="text-gh-fg-muted">tavily.com</span> to enable web search.
+            Get a Tavily API key at <a href="https://tavily.com" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-gh-fg">tavily.com</a> to enable web search.
           </p>
           <input
             type="password"

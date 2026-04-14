@@ -14,7 +14,7 @@ export const GitHubHelpView = () => (
         </div>
         <p class="text-[11px] text-gh-fg-muted ml-7">
           Go to{" "}
-          <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" class="underline text-gh-fg-secondary hover:text-gh-fg">
+          <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-gh-fg">
             github.com/settings/tokens
           </a>
           {" "}and click <strong>"Generate new token (classic)"</strong>.

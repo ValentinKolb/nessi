@@ -55,7 +55,7 @@ RewriteCond %{ENV:CORS_ORIGIN} .+
 RewriteRule ^(.*)$ $1 [R=204,L]`}
           </pre>
           <p class="mt-1">Then reload: <code class="bg-gh-overlay px-1 rounded">sudo systemctl reload httpd</code> (or <code class="bg-gh-overlay px-1 rounded">apache2</code>)</p>
-          <p class="mt-1">Key: uses <code class="bg-gh-overlay px-1 rounded">merge</code> instead of <code class="bg-gh-overlay px-1 rounded">set</code> to avoid breaking Nextcloud's own headers.</p>
+          <p class="mt-1">Important: use <code class="bg-gh-overlay px-1 rounded">merge</code> instead of <code class="bg-gh-overlay px-1 rounded">set</code> to avoid breaking Nextcloud's own headers!</p>
         </div>
       </div>
 
