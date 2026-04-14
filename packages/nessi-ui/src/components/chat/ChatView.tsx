@@ -27,7 +27,7 @@ import { getTopicSuggestions } from "../../lib/memory.js";
 import { ensureChatMeta } from "../../lib/chat-storage.js";
 import { registerCommand } from "../../lib/slash-commands.js";
 import { createDefaultCompactFn } from "../../lib/compaction.js";
-import { loadCompactionSettings } from "../../lib/compaction-settings.js";
+import { loadCompactionSettings, getCompactionPrompt } from "../../lib/compaction-settings.js";
 import { prepareImageUpload } from "../../lib/image-resize.js";
 import { createChatFileService } from "../../lib/file-service.js";
 import {
@@ -479,6 +479,7 @@ export const ChatView = (props: {
 
     if (!runtime) {
       const initialFiles = await buildRuntimeInitialFiles(props.chatId);
+      const settings = await loadCompactionSettings();
       const bashRuntime = createMainBashRuntime({
         initialFiles,
         fileService,
@@ -490,7 +491,11 @@ export const ChatView = (props: {
         store: persistentSessionStore(props.chatId),
         tools: bashRuntime.tools,
         compactFn: createDefaultCompactFn({
-          minMessages: (await loadCompactionSettings()).autoCompactAfterMessages,
+          minMessages: settings.autoCompactAfterMessages,
+          keepRecentLoops: settings.keepRecentLoops,
+          maxToolChars: settings.maxToolChars,
+          maxSourceChars: settings.maxSourceChars,
+          compactionPrompt: await getCompactionPrompt(),
         }),
         bash: bashRuntime.bash,
       };
