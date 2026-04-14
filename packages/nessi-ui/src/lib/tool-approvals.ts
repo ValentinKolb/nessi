@@ -1,15 +1,4 @@
-import { readJson, writeJson } from "./json-storage.js";
+import { settingsRepo } from "../domains/settings/index.js";
 
-const STORAGE_KEY = "nessi:tool-approvals";
-
-const load = () => readJson<Record<string, boolean>>(STORAGE_KEY, {});
-
-/** Check whether a tool was permanently approved by the user. */
-export const isAlwaysAllowed = (toolName: string) => load()[toolName] === true;
-
-/** Mark a tool as permanently approved by the user. */
-export const setAlwaysAllowed = (toolName: string) => {
-  const data = load();
-  data[toolName] = true;
-  writeJson(STORAGE_KEY, data);
-};
+export const isAlwaysAllowed = async (toolName: string) => (await settingsRepo.loadToolApprovals())[toolName] === true;
+export const setAlwaysAllowed = (toolName: string) => settingsRepo.setAlwaysAllowed(toolName);

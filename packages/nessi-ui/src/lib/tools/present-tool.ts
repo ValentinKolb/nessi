@@ -2,7 +2,7 @@ import { z } from "zod";
 import { defineTool } from "nessi-core";
 import type { Tool } from "nessi-core";
 import type { ChatFileService } from "../file-service.js";
-import { getTablePreview } from "../table-ops.js";
+import { getTablePreview } from "../../skills/builtins/table/table-ops.js";
 
 const MAX_TEXT_LENGTH = 15_000;
 const MAX_TABLE_ROWS = 200;

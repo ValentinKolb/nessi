@@ -39,14 +39,15 @@ export const SystemPrompt = (props: {
   const [activeId, setActiveId] = createSignal("default");
   const [importing, setImporting] = createSignal(false);
   const [importText, setImportText] = createSignal("");
+  const [error, setError] = createSignal("");
 
   onMount(() => {
-    setPrompts(loadPrompts());
+    void refreshPrompts();
     setActiveId(getActivePromptId());
   });
 
-  const refreshPrompts = () => {
-    setPrompts(loadPrompts());
+  const refreshPrompts = async () => {
+    setPrompts(await loadPrompts());
   };
 
   const activate = (id: string) => {
@@ -54,16 +55,18 @@ export const SystemPrompt = (props: {
     setActivePromptId(id);
   };
 
-  const submitImport = () => {
+  const submitImport = async () => {
     const entry = fromImport(importText());
     if (!entry) {
-      alert("Invalid prompt config.");
+      setError("Invalid prompt config.");
       return;
     }
-    saveUserPrompts([...loadUserPrompts(), entry]);
+    const current = await loadUserPrompts();
+    await saveUserPrompts([...current, entry]);
+    setError("");
     setImporting(false);
     setImportText("");
-    refreshPrompts();
+    await refreshPrompts();
   };
 
   return (
@@ -87,16 +90,19 @@ export const SystemPrompt = (props: {
 
       <Show when={importing()}>
         <div class="ui-subpanel p-2 space-y-2">
+          <Show when={error()}>
+            <p class="text-[12px] text-gh-danger">{error()}</p>
+          </Show>
           <input
             class="ui-input"
             placeholder="Paste JSON..."
             value={importText()}
-            onInput={(e) => setImportText(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submitImport(); }}
+            onInput={(e) => { setImportText(e.currentTarget.value); if (error()) setError(""); }}
+            onKeyDown={(e) => { if (e.key === "Enter") void submitImport(); }}
           />
           <div class="flex gap-2">
-            <button class="btn-secondary" onClick={() => { setImporting(false); setImportText(""); }}>cancel</button>
-            <button class="btn-primary" onClick={submitImport}>import</button>
+            <button class="btn-secondary" onClick={() => { setImporting(false); setImportText(""); setError(""); }}>cancel</button>
+            <button class="btn-primary" onClick={() => void submitImport()}>import</button>
           </div>
         </div>
       </Show>

@@ -61,6 +61,7 @@ export const ProvidersConfig = () => {
   const [draft, setDraft] = createSignal<ProviderEntry>(newEntry());
   const [importing, setImporting] = createSignal(false);
   const [importText, setImportText] = createSignal("");
+  const [error, setError] = createSignal("");
   const { copy: copyExport, copied: exportCopied } = createCopyAction();
 
   onMount(() => {
@@ -77,22 +78,28 @@ export const ProvidersConfig = () => {
     const entry = newEntry();
     setDraft(entry);
     setEditingId(entry.id);
+    setError("");
   };
 
   const startEdit = (entry: ProviderEntry) => {
     setDraft({ ...entry });
     setEditingId(entry.id);
+    setError("");
   };
 
-  const cancel = () => { setEditingId(null); };
+  const cancel = () => {
+    setEditingId(null);
+    setError("");
+  };
 
   const save = () => {
     const d = draft();
     const validationError = validateProviderEntry(d);
     if (validationError) {
-      alert(validationError);
+      setError(validationError);
       return;
     }
+    setError("");
     const list = providers();
     const idx = list.findIndex((p) => p.id === d.id);
     if (idx >= 0) {
@@ -161,8 +168,12 @@ export const ProvidersConfig = () => {
 
   const submitImport = () => {
     const entry = fromImport(importText());
-    if (!entry) { alert("Invalid provider config."); return; }
+    if (!entry) {
+      setError("Invalid provider config.");
+      return;
+    }
     persist([...providers(), entry]);
+    setError("");
     if (!activeId()) {
       setActiveId(entry.id);
       setActiveProviderId(entry.id);
@@ -179,6 +190,9 @@ export const ProvidersConfig = () => {
     const capabilities = () => getProviderCapabilities(draft());
     return (
       <div class="ui-subpanel p-2 space-y-2">
+        <Show when={error()}>
+          <p class="text-[12px] text-gh-danger">{error()}</p>
+        </Show>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <select class={"ui-input"} value={draft().type} onInput={(e) => applyProviderType(e.currentTarget.value as ProviderType)}>
             <For each={PRESETS}>
@@ -242,16 +256,19 @@ export const ProvidersConfig = () => {
 
       <Show when={importing()}>
         <div class="ui-subpanel p-2 space-y-2">
+          <Show when={error()}>
+            <p class="text-[12px] text-gh-danger">{error()}</p>
+          </Show>
           <input
             class={"ui-input"}
             placeholder="Paste JSON..."
             value={importText()}
-            onInput={(e) => setImportText(e.currentTarget.value)}
+            onInput={(e) => { setImportText(e.currentTarget.value); if (error()) setError(""); }}
             onKeyDown={(e) => { if (e.key === "Enter") submitImport(); }}
             autofocus
           />
           <div class="flex gap-2">
-            <button class="btn-secondary" onClick={() => { setImporting(false); setImportText(""); }}>cancel</button>
+            <button class="btn-secondary" onClick={() => { setImporting(false); setImportText(""); setError(""); }}>cancel</button>
             <button class="btn-primary" onClick={submitImport}>import</button>
           </div>
         </div>

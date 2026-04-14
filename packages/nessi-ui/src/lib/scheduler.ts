@@ -1,79 +1,20 @@
 import { createLocalStorageStore, scheduler, type Scheduler } from "@valentinkolb/sync-browser";
 import { refreshMetadataJob } from "./jobs/refresh-metadata.js";
 import { consolidateMemoryJob, incrementChatsSinceConsolidation } from "./jobs/consolidate-memory.js";
-import { readJson, writeJson } from "./json-storage.js";
-
-// ---------------------------------------------------------------------------
-// Console logging
-// ---------------------------------------------------------------------------
+import { schedulerRepo, type SchedulerRun } from "../domains/scheduler/index.js";
 
 const PREFIX = "[nessi:bg]";
-const RUN_LOG_KEY = "nessi:bg:run-log";
-const TEXT_LOG_KEY = "nessi:bg:text-log";
-const MAX_RUN_LOG_ENTRIES = 20;
-const MAX_TEXT_LOG_ENTRIES = 200;
 
-/** Log a background task debug message to console. */
+export type JobRunLog = SchedulerRun;
+
 export const log = (msg: string) => {
   console.debug(`${PREFIX} ${msg}`);
-  textLog.push(`[${new Date().toISOString()}] ${msg}`);
-  if (textLog.length > MAX_TEXT_LOG_ENTRIES) textLog.shift();
-  persistTextLog();
+  void schedulerRepo.pushLog(`[${new Date().toISOString()}] ${msg}`);
 };
 
-// ---------------------------------------------------------------------------
-// Job run log (in-memory ring buffer for Settings UI)
-// ---------------------------------------------------------------------------
-
-export type JobRunLog = {
-  jobId: string;
-  startedAt: string;
-  finishedAt?: string;
-  status: "running" | "success" | "error";
-  result?: string;
-  error?: string;
-};
-
-const runLog = readJson<JobRunLog[]>(RUN_LOG_KEY, []);
-const textLog = readJson<string[]>(TEXT_LOG_KEY, []);
-
-const persistRunLog = () => {
-  writeJson(RUN_LOG_KEY, runLog);
-};
-
-const persistTextLog = () => {
-  writeJson(TEXT_LOG_KEY, textLog);
-};
-
-/** Push a new log entry (called from job process functions). */
-export const pushJobLog = (entry: JobRunLog) => {
-  runLog.push(entry);
-  if (runLog.length > MAX_RUN_LOG_ENTRIES) runLog.shift();
-  persistRunLog();
-};
-
-/** Persist mutations after a run log entry has been updated in place. */
-export const syncJobLog = () => {
-  persistRunLog();
-};
-
-/** Get the full run log for the Settings UI. */
-export const getRunLog = (): readonly JobRunLog[] => runLog;
-
-/** Get background text logs for the Settings UI. */
-export const getBackgroundLogs = (): readonly string[] => textLog;
-
-/** Get the latest log entry for a specific job. */
-export const getLatestRun = (jobId: string): JobRunLog | undefined => {
-  for (let i = runLog.length - 1; i >= 0; i--) {
-    if (runLog[i]!.jobId === jobId) return runLog[i];
-  }
-  return undefined;
-};
-
-// ---------------------------------------------------------------------------
-// Scheduler singleton
-// ---------------------------------------------------------------------------
+export const pushJobLog = (entry: JobRunLog) => schedulerRepo.pushRun(entry);
+export const getRunLog = () => schedulerRepo.listRuns();
+export const getBackgroundLogs = () => schedulerRepo.listLogs();
 
 let instance: Scheduler | null = null;
 
@@ -129,7 +70,6 @@ export const stopScheduler = async () => {
   log("scheduler stopped");
 };
 
-/** Trigger metadata refresh immediately via scheduler. */
 export const triggerMetadataRefresh = async () => {
   if (!instance) return;
   try {

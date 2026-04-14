@@ -8,19 +8,22 @@ export const CompactionSettings = () => {
   const [initial, setInitial] = createSignal(30);
   const [saved, setSaved] = createSignal(false);
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
-
-  onMount(() => {
-    const settings = loadCompactionSettings();
+  const loadSettings = async () => {
+    const settings = await loadCompactionSettings();
     setAutoCompactAfterMessages(settings.autoCompactAfterMessages);
     setInitial(settings.autoCompactAfterMessages);
+  };
+
+  onMount(() => {
+    void loadSettings();
   });
 
   onCleanup(() => {
     if (savedTimer) clearTimeout(savedTimer);
   });
 
-  const handleSave = () => {
-    saveCompactionSettings({ autoCompactAfterMessages: autoCompactAfterMessages() });
+  const handleSave = async () => {
+    await saveCompactionSettings({ autoCompactAfterMessages: autoCompactAfterMessages() });
     setInitial(autoCompactAfterMessages());
     setSaved(true);
     if (savedTimer) clearTimeout(savedTimer);
@@ -55,7 +58,7 @@ export const CompactionSettings = () => {
           </select>
         </label>
         <Show when={dirty() || saved()}>
-          <button class="btn-primary" onClick={handleSave}>
+          <button class="btn-primary" onClick={() => void handleSave()}>
             {saved() ? "saved!" : "save"}
           </button>
         </Show>

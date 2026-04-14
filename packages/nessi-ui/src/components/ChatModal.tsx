@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import { deleteChat as deleteChatData, listChatMetas, type ChatMeta } from "../lib/chat-storage.js";
 import { timeAgo } from "../lib/date-format.js";
+import { dbEvents } from "../shared/db/db-events.js";
 
 /** Chat switcher modal — doubles as mobile menu with settings + new chat. */
 export const ChatModal = (props: {
@@ -14,7 +15,7 @@ export const ChatModal = (props: {
   const [chats, setChats] = createSignal<ChatMeta[]>([]);
   const [query, setQuery] = createSignal("");
 
-  const refresh = () => setChats(listChatMetas());
+  const refresh = async () => setChats(await listChatMetas());
 
   const filteredChats = createMemo(() => {
     const q = query().trim().toLowerCase();
@@ -31,15 +32,16 @@ export const ChatModal = (props: {
   });
 
   onMount(() => {
-    refresh();
-    window.addEventListener("storage", refresh);
+    void refresh();
     props.onReady?.({ open });
+    const unsubscribe = dbEvents.subscribe((event) => {
+      if (event.scope === "chats") void refresh();
+    });
+    onCleanup(unsubscribe);
   });
 
-  onCleanup(() => window.removeEventListener("storage", refresh));
-
   const open = () => {
-    refresh();
+    void refresh();
     setQuery("");
     dialogRef.showModal();
   };
@@ -57,8 +59,8 @@ export const ChatModal = (props: {
   };
 
   const deleteChat = (id: string) => {
-    deleteChatData(id);
-    refresh();
+    void deleteChatData(id);
+    void refresh();
     if (id === props.activeChatId) newChat();
   };
 

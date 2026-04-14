@@ -1,5 +1,11 @@
 import { render } from "solid-js/web";
-import { App } from "./components/App";
+import { appBoot } from "./app/boot/init.js";
+import { App } from "./app/shell/App.js";
 import "./styles/global.css";
 
-render(() => <App />, document.getElementById("app")!);
+const main = async () => {
+  await appBoot.init();
+  render(() => <App />, document.getElementById("app")!);
+};
+
+void main();

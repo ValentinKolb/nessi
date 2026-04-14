@@ -2,19 +2,19 @@ import { z } from "zod";
 import { job } from "@valentinkolb/sync-browser";
 import type { StoreEntry } from "nessi-core";
 import { listChatMetas, isChatDirty, updateChatMeta, getChatEntryCount } from "../chat-storage.js";
-import { readJson } from "../json-storage.js";
-import { chatEntriesKey, contentPartsToText } from "../utils.js";
+import { contentPartsToText } from "../utils.js";
 import { createProvider, getActiveProviderEntry } from "../provider.js";
-import { formatAll, getMemoryLines, addMemory, removeMemory, replaceMemory } from "../memory.js";
+import { formatAll, getMemoryLines, writeMemories } from "../memory.js";
 import { getBackgroundPrompt } from "./background-prompt.js";
 import { parseBackgroundOutput, applyMemoryOps } from "./parse-background-output.js";
-import { log, pushJobLog, syncJobLog, type JobRunLog } from "../scheduler.js";
+import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
+import { loadPersistedEntries } from "../store.js";
 
 const MAX_TRANSCRIPT_CHARS = 4000;
 const MAX_MESSAGES = 50;
 
-const buildTranscript = (chatId: string): string => {
-  const entries = readJson<StoreEntry[]>(chatEntriesKey(chatId), []);
+const buildTranscript = async (chatId: string): Promise<string> => {
+  const entries = await loadPersistedEntries(chatId) as StoreEntry[];
   if (entries.length === 0) return "";
 
   // Always include first message for context, then last N messages
@@ -55,11 +55,11 @@ const processChat = async (
   const providerEntry = getActiveProviderEntry();
   if (!providerEntry) throw new Error("No provider configured");
 
-  const transcript = buildTranscript(chatId);
+  const transcript = await buildTranscript(chatId);
   if (!transcript) return { memoryOps: 0 };
 
-  const memories = formatAll();
-  const promptTemplate = getBackgroundPrompt();
+  const memories = await formatAll();
+  const promptTemplate = await getBackgroundPrompt();
   const systemPrompt = promptTemplate.replaceAll("{{memories}}", memories);
 
   const provider = createProvider(providerEntry);
@@ -83,13 +83,13 @@ const processChat = async (
   const parsed = parseBackgroundOutput(responseText, fallbackTitle);
 
   // Update chat metadata
-  updateChatMeta(chatId, {
+  await updateChatMeta(chatId, {
     title: parsed.title,
     titleSource: "generated",
     description: parsed.description,
     topics: parsed.topics,
     lastIndexedAt: new Date().toISOString(),
-    lastIndexedEntryCount: getChatEntryCount(chatId),
+    lastIndexedEntryCount: await getChatEntryCount(chatId),
   });
 
   log(`indexed "${parsed.title}" — ${parsed.topics.length} topics, ${parsed.memoryOps.length} memory ops`);
@@ -99,13 +99,11 @@ const processChat = async (
   // Apply memory operations
   let memoryOpsApplied = 0;
   if (parsed.memoryOps.length > 0) {
-    const currentLines = getMemoryLines();
+    const currentLines = await getMemoryLines();
     const { lines, applied, skipped } = applyMemoryOps(currentLines, parsed.memoryOps);
 
     if (applied > 0) {
-      // Write the complete memory file
-      const { writeMemories } = await import("../memory.js");
-      writeMemories(lines.join("\n"));
+      await writeMemories(lines.join("\n"));
       memoryOpsApplied = applied;
 
       for (const op of parsed.memoryOps) {
@@ -126,8 +124,13 @@ export const runMetadataRefresh = async (signal?: AbortSignal): Promise<{ proces
   if (!providerEntry) return { processed: 0, memoryOps: 0, summary: "no provider configured" };
 
   // Find dirty chats, sorted chronologically (oldest first)
-  const candidates = listChatMetas()
-    .filter((meta) => isChatDirty(meta))
+  const metas = await listChatMetas();
+  const candidates: typeof metas = [];
+  for (const meta of metas) {
+    if (await isChatDirty(meta)) candidates.push(meta);
+  }
+
+  candidates
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   if (candidates.length === 0) {
@@ -151,9 +154,9 @@ export const runMetadataRefresh = async (signal?: AbortSignal): Promise<{ proces
       const msg = err instanceof Error ? err.message : String(err);
       log(`failed for chat "${meta.title}": ${msg}`);
       // Mark as indexed anyway to prevent infinite retries on malformed chats
-      updateChatMeta(meta.id, {
+      await updateChatMeta(meta.id, {
         lastIndexedAt: new Date().toISOString(),
-        lastIndexedEntryCount: getChatEntryCount(meta.id),
+        lastIndexedEntryCount: await getChatEntryCount(meta.id),
       });
     }
   }
@@ -168,7 +171,7 @@ export const refreshMetadataJob = job({
   schema: z.object({}),
   process: async ({ ctx }) => {
     const entry: JobRunLog = { jobId: "refresh-metadata", startedAt: new Date().toISOString(), status: "running" };
-    pushJobLog(entry);
+    await pushJobLog(entry);
     log("started refresh-metadata");
 
     try {
@@ -176,14 +179,14 @@ export const refreshMetadataJob = job({
       entry.finishedAt = new Date().toISOString();
       entry.status = "success";
       entry.result = result.summary;
-      syncJobLog();
+      await pushJobLog(entry);
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       entry.finishedAt = new Date().toISOString();
       entry.status = "error";
       entry.error = msg;
-      syncJobLog();
+      await pushJobLog(entry);
       log(`refresh-metadata failed: ${msg}`);
       throw err;
     }

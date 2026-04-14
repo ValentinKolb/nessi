@@ -1,34 +1,8 @@
-import { readJson, writeJson } from "./json-storage.js";
+import { filesRepo, type ChatFileKind, type ChatFileMeta, type ChatFileSourceType, type PendingChatFile } from "../domains/files/index.js";
 import { newId } from "./utils.js";
 
-export type ChatFileKind = "input" | "output";
-export type ChatFileSourceType = "text" | "pdf" | "table" | "generated";
+export type { ChatFileKind, ChatFileMeta, ChatFileSourceType, PendingChatFile } from "../domains/files/index.js";
 
-export type ChatFileMeta = {
-  id: string;
-  chatId: string;
-  name: string;
-  mimeType: string;
-  size: number;
-  kind: ChatFileKind;
-  sourceType: ChatFileSourceType;
-  mountPath: string;
-  createdAt: string;
-};
-
-export type PendingChatFile = {
-  id: string;
-  file: File;
-  name: string;
-  /** Folder-relative path, e.g. "my-folder/sub/file.txt". Set from webkitRelativePath. */
-  relativePath?: string;
-  mimeType: string;
-  size: number;
-  sourceType: Extract<ChatFileSourceType, "text" | "pdf" | "table">;
-};
-
-const CHAT_FILES_KEY = "nessi:chat-files:v1";
-const MESSAGE_FILE_REFS_PREFIX = "nessi:chat-file-refs:";
 const IDB_NAME = "nessi-chat-files";
 const IDB_STORE = "files";
 
@@ -50,36 +24,47 @@ type BinaryStore = {
 
 let binaryStorePromise: Promise<BinaryStore> | null = null;
 
-const refsKey = (chatId: string) => `${MESSAGE_FILE_REFS_PREFIX}${chatId}`;
-
 const toArrayBuffer = (bytes: Uint8Array) =>
   bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 
 const storageKey = (meta: Pick<ChatFileMeta, "chatId" | "id">) => `${meta.chatId}/${meta.id}`;
-
-const loadAllMetas = () => {
-  const raw = readJson<ChatFileMeta[]>(CHAT_FILES_KEY, []);
-  return Array.isArray(raw) ? raw : [];
-};
-
-const saveAllMetas = (metas: ChatFileMeta[]) => {
-  writeJson(CHAT_FILES_KEY, metas);
-};
-
-const loadRefs = (chatId: string) => readJson<Record<string, string[]>>(refsKey(chatId), {});
-
-const saveRefs = (chatId: string, refs: Record<string, string[]>) => {
-  writeJson(refsKey(chatId), refs);
-};
 
 const fileExt = (name: string) => {
   const lastDot = name.lastIndexOf(".");
   return lastDot >= 0 ? name.slice(lastDot + 1).toLowerCase() : "";
 };
 
+export const guessMimeTypeFromName = (name: string) => {
+  const ext = fileExt(name);
+  switch (ext) {
+    case "pdf": return "application/pdf";
+    case "json": return "application/json";
+    case "csv": return "text/csv";
+    case "tsv": return "text/tab-separated-values";
+    case "xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "xls": return "application/vnd.ms-excel";
+    case "md":
+    case "markdown": return "text/markdown";
+    case "html":
+    case "htm": return "text/html";
+    case "css": return "text/css";
+    case "xml": return "application/xml";
+    case "yaml":
+    case "yml": return "application/yaml";
+    default: return "text/plain";
+  }
+};
+
+export const formatFileSize = (size: number) => {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export const classifyPendingChatFile = (file: File): PendingChatFile | null => {
   const mimeType = file.type || guessMimeTypeFromName(file.name);
   const ext = fileExt(file.name);
+
   if (mimeType === "application/pdf" || ext === "pdf") {
     return {
       id: newId(),
@@ -136,12 +121,11 @@ const safeSegment = (segment: string) =>
     .replace(/-+/g, "-")
   || "file";
 
-/** Sanitize a path that may contain folder segments: "folder/sub/file.txt" */
 const safePath = (path: string) =>
   path.split("/").map(safeSegment).filter(Boolean).join("/");
 
-const uniqueMountPath = (chatId: string, kind: ChatFileKind, name: string, excludeId?: string) => {
-  const metas = listChatFiles(chatId).filter((meta) => meta.kind === kind && meta.id !== excludeId);
+const uniqueMountPath = async (chatId: string, kind: ChatFileKind, name: string, excludeId?: string) => {
+  const metas = (await listChatFiles(chatId)).filter((meta) => meta.kind === kind && meta.id !== excludeId);
   const baseDir = kind === "input" ? "/input" : "/output";
   const sanitized = safePath(name);
   const lastSlash = sanitized.lastIndexOf("/");
@@ -159,88 +143,6 @@ const uniqueMountPath = (chatId: string, kind: ChatFileKind, name: string, exclu
     suffix += 1;
   }
   return candidate;
-};
-
-export const guessMimeTypeFromName = (name: string) => {
-  const ext = fileExt(name);
-  switch (ext) {
-    case "pdf": return "application/pdf";
-    case "json": return "application/json";
-    case "csv": return "text/csv";
-    case "tsv": return "text/tab-separated-values";
-    case "xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    case "xls": return "application/vnd.ms-excel";
-    case "md":
-    case "markdown": return "text/markdown";
-    case "html":
-    case "htm": return "text/html";
-    case "css": return "text/css";
-    case "xml": return "application/xml";
-    case "yaml":
-    case "yml": return "application/yaml";
-    default: return "text/plain";
-  }
-};
-
-export const formatFileSize = (size: number) => {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-};
-
-export const listChatFiles = (chatId: string) =>
-  loadAllMetas()
-    .filter((meta) => meta.chatId === chatId)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-
-export const getChatFileByPath = (chatId: string, mountPath: string) =>
-  listChatFiles(chatId).find((meta) => meta.mountPath === mountPath);
-
-export const listInputFiles = (chatId: string) =>
-  listChatFiles(chatId).filter((meta) => meta.kind === "input");
-
-export const listOutputFiles = (chatId: string) =>
-  listChatFiles(chatId).filter((meta) => meta.kind === "output");
-
-export const fileMetasForMessage = (chatId: string, seq: number) => {
-  const refs = loadRefs(chatId);
-  const ids = refs[String(seq)] ?? [];
-  if (ids.length === 0) return [];
-  const byId = new Map(listChatFiles(chatId).map((meta) => [meta.id, meta] as const));
-  return ids.map((id) => byId.get(id)).filter((meta): meta is ChatFileMeta => Boolean(meta));
-};
-
-export const attachFilesToMessage = (chatId: string, seq: number, fileIds: string[]) => {
-  if (fileIds.length === 0) return;
-  const refs = loadRefs(chatId);
-  refs[String(seq)] = [...new Set(fileIds)];
-  saveRefs(chatId, refs);
-};
-
-const removeFileRefs = (chatId: string, fileId: string) => {
-  const refs = loadRefs(chatId);
-  let changed = false;
-  for (const key of Object.keys(refs)) {
-    const next = (refs[key] ?? []).filter((id) => id !== fileId);
-    if (next.length !== (refs[key] ?? []).length) {
-      changed = true;
-      if (next.length > 0) refs[key] = next;
-      else delete refs[key];
-    }
-  }
-  if (changed) saveRefs(chatId, refs);
-};
-
-const removeRefsAtOrAfter = (chatId: string, seq: number) => {
-  const refs = loadRefs(chatId);
-  let changed = false;
-  for (const key of Object.keys(refs)) {
-    if (Number(key) >= seq) {
-      delete refs[key];
-      changed = true;
-    }
-  }
-  if (changed) saveRefs(chatId, refs);
 };
 
 const openIndexedDb = () =>
@@ -353,6 +255,22 @@ const getBinaryStore = async () => {
   return binaryStorePromise;
 };
 
+export const listChatFiles = (chatId: string) => filesRepo.list(chatId);
+
+export const getChatFileByPath = (chatId: string, mountPath: string) => filesRepo.getByPath(chatId, mountPath);
+
+export const listInputFiles = (chatId: string) => filesRepo.listInput(chatId);
+
+export const listOutputFiles = (chatId: string) => filesRepo.listOutput(chatId);
+
+export const fileMetasForMessage = (chatId: string, seq: number) => filesRepo.refsForMessage(chatId, seq);
+
+export const attachFilesToMessage = (chatId: string, seq: number, fileIds: string[]) =>
+  filesRepo.attachToMessage(chatId, seq, fileIds);
+
+export const clearMessageFileRefs = (chatId: string, seq: number) =>
+  filesRepo.clearRefsAtOrAfter(chatId, seq);
+
 export const putInputFile = async (chatId: string, pending: PendingChatFile) => {
   const pathName = pending.relativePath || pending.name;
   const meta: ChatFileMeta = {
@@ -363,15 +281,14 @@ export const putInputFile = async (chatId: string, pending: PendingChatFile) => 
     size: pending.size,
     kind: "input",
     sourceType: pending.sourceType,
-    mountPath: uniqueMountPath(chatId, "input", pathName),
+    mountPath: await uniqueMountPath(chatId, "input", pathName),
     createdAt: new Date().toISOString(),
   };
 
   const bytes = new Uint8Array(await pending.file.arrayBuffer());
   const store = await getBinaryStore();
   await store.write(storageKey(meta), bytes);
-
-  saveAllMetas([...loadAllMetas(), meta]);
+  await filesRepo.putMeta(meta);
   return meta;
 };
 
@@ -381,7 +298,7 @@ export const putOutputFile = async (
   data: Uint8Array,
   mimeType = guessMimeTypeFromName(mountPath),
 ) => {
-  const existing = listOutputFiles(chatId).find((meta) => meta.mountPath === mountPath);
+  const existing = (await listOutputFiles(chatId)).find((meta) => meta.mountPath === mountPath);
   const meta: ChatFileMeta = existing ?? {
     id: newId(),
     chatId,
@@ -389,7 +306,7 @@ export const putOutputFile = async (
     mimeType,
     size: data.byteLength,
     kind: "output",
-    sourceType: "generated",
+    sourceType: "generated" satisfies ChatFileSourceType,
     mountPath,
     createdAt: new Date().toISOString(),
   };
@@ -399,12 +316,7 @@ export const putOutputFile = async (
 
   const store = await getBinaryStore();
   await store.write(storageKey(meta), data);
-
-  const metas = loadAllMetas();
-  const index = metas.findIndex((entry) => entry.id === meta.id);
-  if (index >= 0) metas[index] = meta;
-  else metas.push(meta);
-  saveAllMetas(metas);
+  await filesRepo.putMeta(meta);
   return meta;
 };
 
@@ -416,18 +328,16 @@ export const readChatFile = async (meta: Pick<ChatFileMeta, "chatId" | "id">) =>
 };
 
 export const removeChatFile = async (chatId: string, fileId: string) => {
-  const metas = loadAllMetas();
-  const target = metas.find((meta) => meta.chatId === chatId && meta.id === fileId);
+  const target = (await listChatFiles(chatId)).find((meta) => meta.id === fileId);
   if (!target) return;
 
   const store = await getBinaryStore();
   await store.remove(storageKey(target));
-  saveAllMetas(metas.filter((meta) => meta.id !== fileId));
-  removeFileRefs(chatId, fileId);
+  await filesRepo.removeMeta(chatId, fileId);
 };
 
 export const removeOutputFilesMissingFromPaths = async (chatId: string, mountPaths: Set<string>) => {
-  const outputs = listOutputFiles(chatId);
+  const outputs = await listOutputFiles(chatId);
   for (const meta of outputs) {
     if (!mountPaths.has(meta.mountPath)) {
       await removeChatFile(chatId, meta.id);
@@ -450,19 +360,15 @@ export const downloadChatFile = async (meta: ChatFileMeta) => {
 };
 
 export const downloadChatFileByPath = async (chatId: string, mountPath: string) => {
-  const meta = getChatFileByPath(chatId, mountPath);
+  const meta = await getChatFileByPath(chatId, mountPath);
   if (!meta) throw new Error(`File not found: ${mountPath}`);
   await downloadChatFile(meta);
 };
 
 export const deleteAllChatFiles = async (chatId: string) => {
-  const metas = listChatFiles(chatId);
+  const metas = await listChatFiles(chatId);
   await Promise.all(metas.map((meta) => removeChatFile(chatId, meta.id)));
-  saveRefs(chatId, {});
-};
-
-export const clearMessageFileRefs = (chatId: string, seq: number) => {
-  removeRefsAtOrAfter(chatId, seq);
+  await filesRepo.clearAllForChat(chatId);
 };
 
 const fileInfoLine = (meta: ChatFileMeta) =>

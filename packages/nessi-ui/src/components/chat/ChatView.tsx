@@ -21,32 +21,9 @@ import { createMainBashRuntime } from "../../lib/skills.js";
 import { getActivePrompt, resolvePrompt } from "../../lib/prompts.js";
 import { createProvider, getActiveProviderEntry } from "../../lib/provider.js";
 import { contentPartsToUIContent, uiContentText, type UIUserContentPart } from "../../lib/chat-content.js";
-import { createProviderContextStore, loadPersistedEntries, localStorageStore, truncatePersistedEntries } from "../../lib/store.js";
+import { createProviderContextStore, loadPersistedEntries, persistentSessionStore, truncatePersistedEntries } from "../../lib/store.js";
 import { isAlwaysAllowed, setAlwaysAllowed } from "../../lib/tool-approvals.js";
 import { getTopicSuggestions } from "../../lib/memory.js";
-import type { UIMessage as UIMsg } from "./types.js";
-
-const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
-  const topics = () => props.messages.length === 0 ? getTopicSuggestions() : [];
-  return (
-    <Show when={topics().length > 0}>
-      <div class="px-3 pb-1">
-        <div class="max-w-4xl mx-auto flex flex-wrap gap-1.5">
-          <For each={topics()}>
-            {(topic) => (
-              <button
-                class="text-[11px] text-gh-fg-muted hover:text-gh-fg px-2.5 py-1 rounded-lg bg-gh-overlay hover:bg-gh-muted transition-all truncate max-w-52"
-                onClick={() => props.onSelect(topic)}
-              >
-                {topic}
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
-    </Show>
-  );
-};
 import { ensureChatMeta } from "../../lib/chat-storage.js";
 import { registerCommand } from "../../lib/slash-commands.js";
 import { createDefaultCompactFn } from "../../lib/compaction.js";
@@ -71,6 +48,42 @@ import {
   type ChatFileMeta,
   type PendingChatFile,
 } from "../../lib/chat-files.js";
+import type { UIMessage as UIMsg } from "./types.js";
+
+const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
+  const [topics, setTopics] = createSignal<string[]>([]);
+  const refreshTopics = async () => {
+    setTopics(await getTopicSuggestions());
+  };
+
+  createEffect(on(() => props.messages.length, (messageCount) => {
+    if (messageCount > 0) {
+      setTopics([]);
+      return;
+    }
+
+    void refreshTopics();
+  }, { defer: true }));
+
+  return (
+    <Show when={topics().length > 0}>
+      <div class="px-3 pb-1">
+        <div class="max-w-4xl mx-auto flex flex-wrap gap-1.5">
+          <For each={topics()}>
+            {(topic) => (
+              <button
+                class="text-[11px] text-gh-fg-muted hover:text-gh-fg px-2.5 py-1 rounded-lg bg-gh-overlay hover:bg-gh-muted transition-all truncate max-w-52"
+                onClick={() => props.onSelect(topic)}
+              >
+                {topic}
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
+    </Show>
+  );
+};
 
 import { isAssistantMessage, isUserMessage } from "./guards.js";
 
@@ -114,8 +127,8 @@ const summaryPreviewFromEntries = (entries: StoreEntry[]): string | undefined =>
 };
 
 /** Rebuild UI messages from persisted nessi-core StoreEntry format. */
-const loadMessages = (chatId: string): UIMessage[] => {
-  const entries = loadPersistedEntries(chatId);
+const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
+  const entries = await loadPersistedEntries(chatId);
 
   const toolResults = new Map<string, { result: unknown; isError?: boolean }>();
   for (const entry of entries) {
@@ -155,7 +168,7 @@ const loadMessages = (chatId: string): UIMessage[] => {
     const message = entry.message;
 
     if (message.role === "user") {
-      const fileParts = fileMetasForMessage(chatId, entry.seq).map((file) => ({
+      const fileParts = (await fileMetasForMessage(chatId, entry.seq)).map((file) => ({
         type: "file" as const,
         fileId: file.id,
         name: file.name,
@@ -263,6 +276,7 @@ export const ChatView = (props: {
   let currentAssistantStartedAt: string | undefined;
   let pendingAutoCompactionEntriesBefore: number | null = null;
   let dragDepth = 0;
+  let resetVersion = 0;
 
   let assistantIdx = -1;
   const toolBlockIndices = new Map<string, { idx: number; name: string }>();
@@ -289,20 +303,27 @@ export const ChatView = (props: {
     getChatId: () => props.chatId,
     getBash: () => runtime?.bash ?? null,
     onFilesChanged: () => {
-      refreshChatFiles();
+      void refreshChatFiles();
     },
   });
 
-  const resetRuntime = (chatId: string) => {
+  const resetRuntime = async (chatId: string) => {
+    const version = ++resetVersion;
     activeLoop?.abort();
     activeLoop = null;
     runtime = null;
+    const [messages, nextInputFiles, nextOutputFiles] = await Promise.all([
+      loadMessages(chatId),
+      listInputFiles(chatId),
+      listOutputFiles(chatId),
+    ]);
+    if (version !== resetVersion) return;
 
-    setState({ messages: loadMessages(chatId), streaming: false });
+    setState({ messages, streaming: false });
     setPendingImages([]);
     setPendingFiles([]);
-    setInputFiles(listInputFiles(chatId));
-    setOutputFiles(listOutputFiles(chatId));
+    setInputFiles(nextInputFiles);
+    setOutputFiles(nextOutputFiles);
     setFilesModalOpen(false);
     currentAssistantStartedAt = undefined;
     dragDepth = 0;
@@ -311,9 +332,13 @@ export const ChatView = (props: {
     clearPendingCallMappings();
   };
 
-  const refreshChatFiles = () => {
-    setInputFiles(listInputFiles(props.chatId));
-    setOutputFiles(listOutputFiles(props.chatId));
+  const refreshChatFiles = async () => {
+    const [nextInputFiles, nextOutputFiles] = await Promise.all([
+      listInputFiles(props.chatId),
+      listOutputFiles(props.chatId),
+    ]);
+    setInputFiles(nextInputFiles);
+    setOutputFiles(nextOutputFiles);
   };
 
   const mapMessages = (mutator: (messages: UIMessage[]) => UIMessage[]) => {
@@ -402,7 +427,7 @@ export const ChatView = (props: {
     const initialFiles: Record<string, Uint8Array> = {};
     const staleIds: string[] = [];
 
-    for (const meta of listChatFiles(chatId)) {
+    for (const meta of await listChatFiles(chatId)) {
       try {
         initialFiles[meta.mountPath] = await readChatFile(meta);
       } catch {
@@ -412,7 +437,7 @@ export const ChatView = (props: {
 
     if (staleIds.length > 0) {
       await Promise.all(staleIds.map((fileId) => removeChatFile(chatId, fileId)));
-      refreshChatFiles();
+      await refreshChatFiles();
     }
 
     return initialFiles;
@@ -453,10 +478,10 @@ export const ChatView = (props: {
         },
       });
       runtime = {
-        store: localStorageStore(props.chatId),
+        store: persistentSessionStore(props.chatId),
         tools: bashRuntime.tools,
         compactFn: createDefaultCompactFn({
-          minMessages: loadCompactionSettings().autoCompactAfterMessages,
+          minMessages: (await loadCompactionSettings()).autoCompactAfterMessages,
         }),
         bash: bashRuntime.bash,
       };
@@ -478,8 +503,8 @@ export const ChatView = (props: {
     return undefined;
   };
 
-  const latestPersistedSeq = () =>
-    loadPersistedEntries(props.chatId).reduce((max, entry) => Math.max(max, entry.seq), 0);
+  const latestPersistedSeq = async () =>
+    (await loadPersistedEntries(props.chatId)).reduce((max, entry) => Math.max(max, entry.seq), 0);
 
   const addPendingFiles = async (files: FileList | File[]) => {
     const incoming = Array.from(files);
@@ -582,7 +607,7 @@ export const ChatView = (props: {
 
     if (!toolEntry) return;
 
-    if (action === "always") setAlwaysAllowed(toolEntry.name);
+    if (action === "always") await setAlwaysAllowed(toolEntry.name);
     loop.push({ type: "approval_response", callId, approved });
 
     updateBlock(toolEntry.idx, (block) =>
@@ -671,7 +696,7 @@ export const ChatView = (props: {
           const entry = toolBlockIndices.get(event.callId);
           if (!entry) break;
 
-          if (isAlwaysAllowed(event.name)) {
+          if (await isAlwaysAllowed(event.name)) {
             activeLoop?.push({ type: "approval_response", callId: event.callId, approved: true });
             updateBlock(entry.idx, (block) =>
               block.type === "tool_call" ? { ...block, approval: "approved" } : block,
@@ -744,7 +769,7 @@ export const ChatView = (props: {
       }
 
       case "turn_end": {
-        const persistedAssistant = [...loadPersistedEntries(props.chatId)]
+        const persistedAssistant = [...await loadPersistedEntries(props.chatId)]
           .reverse()
           .find((entry) => entry.kind === "message" && entry.message.role === "assistant");
         const completedAt = persistedAssistant?.createdAt ?? new Date().toISOString();
@@ -834,7 +859,7 @@ export const ChatView = (props: {
     }
 
     try {
-      const store = createProviderContextStore(ensured.runtime.store, latestPersistedSeq());
+      const store = createProviderContextStore(ensured.runtime.store, await latestPersistedSeq());
       const loop = compact({
         agentId: "main",
         store,
@@ -956,9 +981,9 @@ export const ChatView = (props: {
       size: file.size,
     })));
 
-    const predictedUserSeq = latestPersistedSeq() + 1;
+    const predictedUserSeq = await latestPersistedSeq() + 1;
     if (attachedFiles.length > 0) {
-      attachFilesToMessage(props.chatId, predictedUserSeq, attachedFiles.map((file) => file.id));
+      await attachFilesToMessage(props.chatId, predictedUserSeq, attachedFiles.map((file) => file.id));
     }
 
     mapMessages((messages) => [
@@ -966,16 +991,16 @@ export const ChatView = (props: {
       { id: msgId(), role: "user", content, timestamp: new Date().toISOString(), entrySeq: predictedUserSeq },
     ]);
 
-    ensureChatMeta(props.chatId, uiContentText(content) || attachedFiles[0]?.name || images[0]?.name || "Files chat");
+    await ensureChatMeta(props.chatId, uiContentText(content) || attachedFiles[0]?.name || images[0]?.name || "Files chat");
     clearPendingCallMappings();
     assistantIdx = -1;
     setPendingImages([]);
     setPendingFiles([]);
     setState("streaming", true);
 
-    const store = createProviderContextStore(ensured.runtime.store, latestPersistedSeq());
-    const prompt = resolvePrompt(getActivePrompt(), {
-      fileInfo: buildFileInfo(newFiles, listChatFiles(props.chatId)),
+    const store = createProviderContextStore(ensured.runtime.store, await latestPersistedSeq());
+    const prompt = await resolvePrompt(await getActivePrompt(), {
+      fileInfo: buildFileInfo(newFiles, await listChatFiles(props.chatId)),
     });
     const input: ContentPart[] = [
       ...(text ? [textPart(text)] : []),
@@ -1020,22 +1045,23 @@ export const ChatView = (props: {
   const retryLastUserTurn = async (message: UIMessage) => {
     if (!canRetryMessage(message) || !isUserMessage(message) || message.entrySeq === undefined) return;
 
-    clearMessageFileRefs(props.chatId, message.entrySeq);
-    truncatePersistedEntries(props.chatId, message.entrySeq);
+    await clearMessageFileRefs(props.chatId, message.entrySeq);
+    await truncatePersistedEntries(props.chatId, message.entrySeq);
     clearPendingCallMappings();
     assistantIdx = -1;
     currentAssistantStartedAt = undefined;
     setPendingImages([]);
     setPendingFiles([]);
     runtime = null;
-    setState({ messages: loadMessages(props.chatId), streaming: false });
-    refreshChatFiles();
+    setState({ messages: await loadMessages(props.chatId), streaming: false });
+    await refreshChatFiles();
 
     const text = uiContentText(message.content);
     const images = message.content.filter((part): part is Extract<UIUserContentPart, { type: "image" }> => part.type === "image");
+    const allFiles = await listChatFiles(props.chatId);
     const files = message.content
       .filter((part): part is Extract<UIUserContentPart, { type: "file" }> => part.type === "file")
-      .map((part) => listChatFiles(props.chatId).find((file) => file.id === part.fileId))
+      .map((part) => allFiles.find((file) => file.id === part.fileId))
       .filter((file): file is ChatFileMeta => Boolean(file));
     void runTurn(text, images, files, []);
   };
@@ -1047,15 +1073,17 @@ export const ChatView = (props: {
     const trimmed = text.trim();
     if (!trimmed && images.length === 0 && files.length === 0) return;
 
-    void (async () => {
+    const sendPendingFiles = async () => {
       try {
         const persistedFiles = await Promise.all(files.map((file) => putInputFile(props.chatId, file)));
-        refreshChatFiles();
+        await refreshChatFiles();
         await runTurn(trimmed, images, persistedFiles, persistedFiles);
       } catch (error) {
         appendStatusMessage(error instanceof Error ? error.message : String(error));
       }
-    })();
+    };
+
+    void sendPendingFiles();
   };
 
   const handleDragEnter = (event: DragEvent) => {
@@ -1090,8 +1118,8 @@ export const ChatView = (props: {
     try {
       await removeChatFile(props.chatId, file.id);
       runtime = null;
-      refreshChatFiles();
-      setState("messages", loadMessages(props.chatId));
+      await refreshChatFiles();
+      setState("messages", await loadMessages(props.chatId));
     } catch (error) {
       appendStatusMessage(error instanceof Error ? error.message : String(error));
     }
@@ -1105,17 +1133,19 @@ export const ChatView = (props: {
     }
   };
 
-  createEffect(on(() => props.chatId, (id) => resetRuntime(id)));
+  createEffect(on(() => props.chatId, (id) => {
+    void resetRuntime(id);
+  }));
   createEffect(on(() => props.providerId, () => {
     if (!providerSupportsImages()) setPendingImages([]);
   }));
 
   onMount(() => {
-    resetRuntime(props.chatId);
+    void resetRuntime(props.chatId);
     registerCommand({
       name: "compact",
       description: "Compact the active session history",
-      action: () => handleCompactCommand(),
+      action: () => { void handleCompactCommand(); },
     });
   });
 

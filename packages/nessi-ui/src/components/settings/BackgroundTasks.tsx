@@ -26,13 +26,13 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
   const [logs, setLogs] = createSignal<readonly JobRunLog[]>([]);
   let timer: ReturnType<typeof setInterval> | undefined;
 
-  const refresh = () => {
-    setLogs(getRunLog());
+  const refresh = async () => {
+    setLogs(await getRunLog());
   };
 
   onMount(() => {
-    refresh();
-    timer = setInterval(refresh, 2000);
+    void refresh();
+    timer = setInterval(() => { void refresh(); }, 2000);
   });
 
   onCleanup(() => { if (timer) clearInterval(timer); });
@@ -117,13 +117,13 @@ export const BackgroundLogsView = () => {
   const [textLogs, setTextLogs] = createSignal<readonly string[]>([]);
   let timer: ReturnType<typeof setInterval> | undefined;
 
-  const refresh = () => {
-    setTextLogs(getBackgroundLogs());
+  const refresh = async () => {
+    setTextLogs(await getBackgroundLogs());
   };
 
   onMount(() => {
-    refresh();
-    timer = setInterval(refresh, 2000);
+    void refresh();
+    timer = setInterval(() => { void refresh(); }, 2000);
   });
 
   onCleanup(() => { if (timer) clearInterval(timer); });

@@ -13,7 +13,7 @@ export const memoryAddTool = defineTool({
   }),
   outputSchema: z.object({ status: z.string(), total: z.number() }),
 }).server(async (input) => {
-  const { total } = addMemory(input.text);
+  const { total } = await addMemory(input.text);
   return { status: `Saved: ${input.text}`, total };
 });
 
@@ -28,7 +28,7 @@ export const memoryRemoveTool = defineTool({
   outputSchema: z.object({ status: z.string() }),
 }).server(async (input) => {
   try {
-    const { removed, remaining } = removeMemory(input.id);
+    const { removed, remaining } = await removeMemory(input.id);
     return { status: `Removed line ${input.id}: ${removed} (${remaining} remaining)` };
   } catch (e) {
     return { status: `Error: ${e instanceof Error ? e.message : "unknown"}` };
@@ -47,7 +47,7 @@ export const memoryReplaceTool = defineTool({
   outputSchema: z.object({ status: z.string() }),
 }).server(async (input) => {
   try {
-    const { updated, total } = replaceMemory(input.id, input.text);
+    const { updated, total } = await replaceMemory(input.id, input.text);
     return { status: `Updated line ${input.id}: ${updated} (${total} total)` };
   } catch (e) {
     return { status: `Error: ${e instanceof Error ? e.message : "unknown"}` };
@@ -61,4 +61,4 @@ export const memoryRecallTool = defineTool({
     "Only use this when the memories list says some entries were not shown.",
   inputSchema: z.object({}),
   outputSchema: z.object({ memories: z.string() }),
-}).server(async () => ({ memories: formatAll() }));
+}).server(async () => ({ memories: await formatAll() }));

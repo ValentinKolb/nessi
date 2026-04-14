@@ -1,6 +1,4 @@
-import { readString, writeString } from "../json-storage.js";
-
-const PROMPT_KEY = "nessi:bg-prompt:refresh-metadata";
+import { settingsRepo } from "../../domains/settings/index.js";
 
 const DEFAULT_PROMPT = `You are the background memory agent for nessi, a personal assistant. Your job is to review a completed conversation and produce three things:
 
@@ -122,29 +120,27 @@ Return the complete, cleaned-up memory text. One line per memory. Include all en
 
 If no changes are needed, return the memories exactly as they are.`;
 
-const CONSOLIDATION_PROMPT_KEY = "nessi:bg-prompt:consolidate-memory";
+export const getBackgroundPrompt = async () =>
+  await settingsRepo.getBackgroundPrompt() ?? DEFAULT_PROMPT;
 
-export const getBackgroundPrompt = () =>
-  readString(PROMPT_KEY) || DEFAULT_PROMPT;
+export const setBackgroundPrompt = async (prompt: string) =>
+  settingsRepo.setBackgroundPrompt(prompt);
 
-export const setBackgroundPrompt = (prompt: string) =>
-  writeString(PROMPT_KEY, prompt);
-
-export const resetBackgroundPrompt = () => {
-  writeString(PROMPT_KEY, DEFAULT_PROMPT);
+export const resetBackgroundPrompt = async () => {
+  await settingsRepo.setBackgroundPrompt(DEFAULT_PROMPT);
   return DEFAULT_PROMPT;
 };
 
 export const getDefaultBackgroundPrompt = () => DEFAULT_PROMPT;
 
-export const getConsolidationPrompt = () =>
-  readString(CONSOLIDATION_PROMPT_KEY) || CONSOLIDATION_PROMPT;
+export const getConsolidationPrompt = async () =>
+  await settingsRepo.getConsolidationPrompt() ?? CONSOLIDATION_PROMPT;
 
-export const setConsolidationPrompt = (prompt: string) =>
-  writeString(CONSOLIDATION_PROMPT_KEY, prompt);
+export const setConsolidationPrompt = async (prompt: string) =>
+  settingsRepo.setConsolidationPrompt(prompt);
 
-export const resetConsolidationPrompt = () => {
-  writeString(CONSOLIDATION_PROMPT_KEY, CONSOLIDATION_PROMPT);
+export const resetConsolidationPrompt = async () => {
+  await settingsRepo.setConsolidationPrompt(CONSOLIDATION_PROMPT);
   return CONSOLIDATION_PROMPT;
 };
 

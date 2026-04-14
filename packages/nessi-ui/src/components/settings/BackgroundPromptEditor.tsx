@@ -1,4 +1,4 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import {
   getBackgroundPrompt,
   setBackgroundPrompt,
@@ -14,10 +14,22 @@ type Tab = "metadata" | "consolidation";
 
 export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
   const [tab, setTab] = createSignal<Tab>("metadata");
-  const [metadataText, setMetadataText] = createSignal(getBackgroundPrompt());
-  const [consolidationText, setConsolidationText] = createSignal(getConsolidationPrompt());
+  const [metadataText, setMetadataText] = createSignal("");
+  const [consolidationText, setConsolidationText] = createSignal("");
   const [saved, setSaved] = createSignal(false);
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
+  const loadPrompts = async () => {
+    setMetadataText(await getBackgroundPrompt());
+    setConsolidationText(await getConsolidationPrompt());
+  };
+
+  onMount(() => {
+    void loadPrompts();
+  });
+
+  onCleanup(() => {
+    if (savedTimer) clearTimeout(savedTimer);
+  });
 
   const flashSaved = () => {
     setSaved(true);
@@ -25,21 +37,21 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
     savedTimer = setTimeout(() => setSaved(false), 2000);
   };
 
-  const save = () => {
+  const save = async () => {
     if (tab() === "metadata") {
-      setBackgroundPrompt(metadataText());
+      await setBackgroundPrompt(metadataText());
     } else {
-      setConsolidationPrompt(consolidationText());
+      await setConsolidationPrompt(consolidationText());
     }
     flashSaved();
   };
 
-  const reset = () => {
+  const reset = async () => {
     if (tab() === "metadata") {
-      const text = resetBackgroundPrompt();
+      const text = await resetBackgroundPrompt();
       setMetadataText(text);
     } else {
-      const text = resetConsolidationPrompt();
+      const text = await resetConsolidationPrompt();
       setConsolidationText(text);
     }
     flashSaved();
@@ -112,12 +124,12 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
       {/* Actions */}
       <div class="flex items-center gap-2">
         <button class="btn-secondary" onClick={props.onDone}>back</button>
-        <button class="btn-primary" onClick={save}>
+        <button class="btn-primary" onClick={() => void save()}>
           {saved() ? "saved!" : "save"}
         </button>
         <div class="flex-1" />
         <Show when={!isDefault()}>
-          <button class="btn-secondary" onClick={reset}>reset to default</button>
+          <button class="btn-secondary" onClick={() => void reset()}>reset to default</button>
         </Show>
       </div>
     </div>

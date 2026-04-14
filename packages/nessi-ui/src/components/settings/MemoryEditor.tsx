@@ -17,11 +17,14 @@ export const MemoryEditor = () => {
   const [confirmClear, setConfirmClear] = createSignal(false);
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
   let clearTimer: ReturnType<typeof setTimeout> | undefined;
-
-  onMount(() => {
-    const val = readMemories();
+  const loadMemory = async () => {
+    const val = await readMemories();
     setText(val);
     setInitial(val);
+  };
+
+  onMount(() => {
+    void loadMemory();
   });
 
   onCleanup(() => {
@@ -29,22 +32,22 @@ export const MemoryEditor = () => {
     if (clearTimer) clearTimeout(clearTimer);
   });
 
-  const handleSave = () => {
-    writeMemories(text());
+  const handleSave = async () => {
+    await writeMemories(text());
     setInitial(text());
     setSaved(true);
     if (savedTimer) clearTimeout(savedTimer);
     savedTimer = setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
     if (!confirmClear()) {
       setConfirmClear(true);
       if (clearTimer) clearTimeout(clearTimer);
       clearTimer = setTimeout(() => setConfirmClear(false), 3000);
       return;
     }
-    writeMemories("");
+    await writeMemories("");
     setText("");
     setInitial("");
     setConfirmClear(false);
@@ -88,14 +91,14 @@ export const MemoryEditor = () => {
         />
         <div class="flex gap-2">
           <Show when={dirty() || saved()}>
-            <button class="btn-primary" onClick={handleSave}>
+            <button class="btn-primary" onClick={() => void handleSave()}>
               {saved() ? "saved!" : "save"}
             </button>
           </Show>
           <Show when={hasContent() && !dirty()}>
             <button
               class="text-[11px] text-gh-fg-subtle hover:text-gh-danger transition-colors"
-              onClick={handleClear}
+              onClick={() => void handleClear()}
             >
               {confirmClear() ? "click again to confirm" : "clear all"}
             </button>

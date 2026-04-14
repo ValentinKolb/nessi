@@ -28,24 +28,35 @@ export const PromptEditorView = (props: {
     setDraft(toDraft(props.prompt));
   });
 
-  const save = () => {
+  const exportPrompt = async () => {
+    const all = await loadPrompts();
+    const prompt = all.find((entry) => entry.id === draft().id) ?? {
+      id: draft().id,
+      name: draft().name,
+      content: draft().content,
+    };
+    copy(JSON.stringify({ name: prompt.name, content: prompt.content }, null, 2));
+  };
+
+  const save = async () => {
     const nextPrompt: Prompt = {
       id: draft().id,
       name: draft().name.trim() || "Untitled",
       content: draft().content,
     };
-    const userPrompts = loadUserPrompts();
+    const userPrompts = await loadUserPrompts();
     const idx = userPrompts.findIndex((prompt) => prompt.id === nextPrompt.id);
     const next = idx >= 0
       ? userPrompts.map((prompt) => (prompt.id === nextPrompt.id ? nextPrompt : prompt))
       : [...userPrompts, nextPrompt];
-    saveUserPrompts(next);
+    await saveUserPrompts(next);
     props.onDone();
   };
 
-  const remove = () => {
+  const remove = async () => {
     if (!props.prompt) return;
-    saveUserPrompts(loadUserPrompts().filter((entry) => entry.id !== props.prompt!.id));
+    const prompts = await loadUserPrompts();
+    await saveUserPrompts(prompts.filter((entry) => entry.id !== props.prompt!.id));
     props.onDone();
   };
 
@@ -73,22 +84,14 @@ export const PromptEditorView = (props: {
       </div>
       <div class="flex items-center gap-2">
         <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
-        <button class="btn-secondary" onClick={() => {
-          const all = loadPrompts();
-          const prompt = all.find((entry) => entry.id === draft().id) ?? {
-            id: draft().id,
-            name: draft().name,
-            content: draft().content,
-          };
-          copy(JSON.stringify({ name: prompt.name, content: prompt.content }, null, 2));
-        }}>
+        <button class="btn-secondary" onClick={() => void exportPrompt()}>
           {copied() ? "copied!" : "export"}
         </button>
         <div class="flex-1" />
-        <button class="btn-secondary danger-text" onClick={remove}>
+        <button class="btn-secondary danger-text" onClick={() => void remove()}>
           {props.prompt && isDefault(props.prompt) ? "reset" : "delete"}
         </button>
-        <button class="btn-primary" onClick={save}>save</button>
+        <button class="btn-primary" onClick={() => void save()}>save</button>
       </div>
     </div>
   );

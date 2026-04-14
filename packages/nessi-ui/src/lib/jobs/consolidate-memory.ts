@@ -4,7 +4,7 @@ import { createProvider, getActiveProviderEntry } from "../provider.js";
 import { formatAll, getMemoryLines, writeMemories } from "../memory.js";
 import { readJson, readString, writeJson, writeString } from "../json-storage.js";
 import { getConsolidationPrompt } from "./background-prompt.js";
-import { log, pushJobLog, syncJobLog, type JobRunLog } from "../scheduler.js";
+import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
 
 const LAST_CONSOLIDATION_KEY = "nessi:last-consolidation";
 const CHATS_SINCE_KEY = "nessi:chats-since-consolidation";
@@ -19,8 +19,8 @@ export const incrementChatsSinceConsolidation = () => {
   writeJson(CHATS_SINCE_KEY, current + 1);
 };
 
-const shouldConsolidate = (): boolean => {
-  const lines = getMemoryLines();
+const shouldConsolidateAsync = async (): Promise<boolean> => {
+  const lines = await getMemoryLines();
   if (lines.length < MIN_MEMORY_LINES) return false;
 
   const lastConsolidation = readString(LAST_CONSOLIDATION_KEY);
@@ -40,15 +40,15 @@ export const consolidateMemoryJob = job({
   schema: z.object({}),
   process: async ({ ctx }) => {
     const entry: JobRunLog = { jobId: "consolidate-memory", startedAt: new Date().toISOString(), status: "running" };
-    pushJobLog(entry);
+    await pushJobLog(entry);
     log("started consolidate-memory");
 
     try {
-      if (!shouldConsolidate()) {
+      if (!await shouldConsolidateAsync()) {
         entry.finishedAt = new Date().toISOString();
         entry.status = "success";
         entry.result = "skipped (conditions not met)";
-        syncJobLog();
+        await pushJobLog(entry);
         log("consolidate-memory skipped (conditions not met)");
         return { consolidated: false, reason: "conditions-not-met" };
       }
@@ -58,15 +58,15 @@ export const consolidateMemoryJob = job({
         entry.finishedAt = new Date().toISOString();
         entry.status = "success";
         entry.result = "skipped (no provider)";
-        syncJobLog();
+        await pushJobLog(entry);
         return { consolidated: false, reason: "no-provider" };
       }
 
-      const memoryCount = getMemoryLines().length;
+      const memoryCount = (await getMemoryLines()).length;
       log(`consolidating ${memoryCount} memories...`);
 
-      const memories = formatAll();
-      const promptTemplate = getConsolidationPrompt();
+      const memories = await formatAll();
+      const promptTemplate = await getConsolidationPrompt();
       const systemPrompt = promptTemplate.replaceAll("{{memories}}", memories);
 
       const provider = createProvider(providerEntry);
@@ -89,7 +89,7 @@ export const consolidateMemoryJob = job({
         entry.finishedAt = new Date().toISOString();
         entry.status = "error";
         entry.error = "empty response";
-        syncJobLog();
+        await pushJobLog(entry);
         log("consolidate-memory failed: empty response");
         return { consolidated: false, reason: "empty-response" };
       }
@@ -99,9 +99,9 @@ export const consolidateMemoryJob = job({
         .replace(/```$/gm, "")
         .trim();
 
-      const beforeCount = getMemoryLines().length;
-      writeMemories(cleaned);
-      const afterCount = getMemoryLines().length;
+      const beforeCount = (await getMemoryLines()).length;
+      await writeMemories(cleaned);
+      const afterCount = (await getMemoryLines()).length;
 
       writeString(LAST_CONSOLIDATION_KEY, new Date().toISOString());
       writeJson(CHATS_SINCE_KEY, 0);
@@ -110,7 +110,7 @@ export const consolidateMemoryJob = job({
       entry.finishedAt = new Date().toISOString();
       entry.status = "success";
       entry.result = summary;
-      syncJobLog();
+      await pushJobLog(entry);
       log(`consolidate-memory done — ${summary}`);
       return { consolidated: true, before: beforeCount, after: afterCount, summary };
     } catch (err) {
@@ -118,7 +118,7 @@ export const consolidateMemoryJob = job({
       entry.finishedAt = new Date().toISOString();
       entry.status = "error";
       entry.error = msg;
-      syncJobLog();
+      await pushJobLog(entry);
       log(`consolidate-memory failed: ${msg}`);
       throw err;
     }

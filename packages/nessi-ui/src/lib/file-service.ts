@@ -7,7 +7,7 @@ import {
   readChatFile,
   type ChatFileMeta,
 } from "./chat-files.js";
-import { extractPdfText } from "./pdf-text.js";
+import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
 
 const DEFAULT_READ_LIMIT = 200;
 const MAX_READ_LIMIT = 400;
@@ -97,7 +97,7 @@ const splitLines = (text: string) => {
 };
 
 const readBytesFromMountedPath = async (chatId: string, path: string, bash: Bash | null) => {
-  const meta = getChatFileByPath(chatId, path);
+  const meta = await getChatFileByPath(chatId, path);
   if (!meta) throw new Error(`File not found: ${path}`);
 
   if (bash) {
@@ -155,7 +155,7 @@ export const createChatFileService = (options: {
   const writeImpl = async (path: string, content: string, overwrite = true): Promise<WriteFileResult> => {
     const normalized = validateMountedPath(path, WRITE_ROOTS);
     const chatId = options.getChatId();
-    const existing = getChatFileByPath(chatId, normalized);
+    const existing = await getChatFileByPath(chatId, normalized);
     if (existing && !overwrite) {
       throw new Error(`File already exists: ${normalized}`);
     }
@@ -214,8 +214,10 @@ export const createChatFileService = (options: {
   return {
     async list(scope = "all") {
       const chatId = options.getChatId();
-      const input = listInputFiles(chatId);
-      const output = listOutputFiles(chatId);
+      const [input, output] = await Promise.all([
+        listInputFiles(chatId),
+        listOutputFiles(chatId),
+      ]);
 
       const files = [
         ...(scope === "output" ? [] : input),
