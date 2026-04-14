@@ -57,11 +57,13 @@ export const CompactionSettings = () => {
             ))}
           </select>
         </label>
-        <Show when={dirty() || saved()}>
-          <button class="btn-primary" onClick={() => void handleSave()}>
-            {saved() ? "saved!" : "save"}
-          </button>
-        </Show>
+        <div class="ui-actions-end">
+          <Show when={dirty() || saved()}>
+            <button class="btn-primary" onClick={() => void handleSave()}>
+              {saved() ? "saved!" : "save"}
+            </button>
+          </Show>
+        </div>
       </div>
     </div>
   );

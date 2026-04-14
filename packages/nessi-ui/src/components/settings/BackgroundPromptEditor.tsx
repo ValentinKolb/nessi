@@ -122,15 +122,18 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
       />
 
       {/* Actions */}
-      <div class="flex items-center gap-2">
-        <button class="btn-secondary" onClick={props.onDone}>back</button>
-        <button class="btn-primary" onClick={() => void save()}>
-          {saved() ? "saved!" : "save"}
-        </button>
-        <div class="flex-1" />
-        <Show when={!isDefault()}>
-          <button class="btn-secondary" onClick={() => void reset()}>reset to default</button>
-        </Show>
+      <div class="ui-actions">
+        <div class="ui-actions-left">
+          <Show when={!isDefault()}>
+            <button class="btn-secondary" onClick={() => void reset()}>reset to default</button>
+          </Show>
+        </div>
+        <div class="ui-actions-right">
+          <button class="btn-secondary" onClick={props.onDone}>back</button>
+          <button class="btn-primary" onClick={() => void save()}>
+            {saved() ? "saved!" : "save"}
+          </button>
+        </div>
       </div>
     </div>
   );

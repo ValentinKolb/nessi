@@ -100,7 +100,7 @@ export const SystemPrompt = (props: {
             onInput={(e) => { setImportText(e.currentTarget.value); if (error()) setError(""); }}
             onKeyDown={(e) => { if (e.key === "Enter") void submitImport(); }}
           />
-          <div class="flex gap-2">
+          <div class="ui-actions-end">
             <button class="btn-secondary" onClick={() => { setImporting(false); setImportText(""); setError(""); }}>cancel</button>
             <button class="btn-primary" onClick={() => void submitImport()}>import</button>
           </div>

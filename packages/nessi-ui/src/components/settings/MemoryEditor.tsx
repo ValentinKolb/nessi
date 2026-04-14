@@ -89,20 +89,24 @@ export const MemoryEditor = () => {
           onInput={(e) => setText(e.currentTarget.value)}
           rows={8}
         />
-        <div class="flex gap-2">
-          <Show when={dirty() || saved()}>
-            <button class="btn-primary" onClick={() => void handleSave()}>
-              {saved() ? "saved!" : "save"}
-            </button>
-          </Show>
-          <Show when={hasContent() && !dirty()}>
-            <button
-              class="text-[11px] text-gh-fg-subtle hover:text-gh-danger transition-colors"
-              onClick={() => void handleClear()}
-            >
-              {confirmClear() ? "click again to confirm" : "clear all"}
-            </button>
-          </Show>
+        <div class="ui-actions">
+          <div class="ui-actions-left">
+            <Show when={hasContent() && !dirty()}>
+              <button
+                class="text-[11px] text-gh-fg-subtle hover:text-gh-danger transition-colors"
+                onClick={() => void handleClear()}
+              >
+                {confirmClear() ? "click again to confirm" : "clear all"}
+              </button>
+            </Show>
+          </div>
+          <div class="ui-actions-right">
+            <Show when={dirty() || saved()}>
+              <button class="btn-primary" onClick={() => void handleSave()}>
+                {saved() ? "saved!" : "save"}
+              </button>
+            </Show>
+          </div>
         </div>
       </div>
     </div>

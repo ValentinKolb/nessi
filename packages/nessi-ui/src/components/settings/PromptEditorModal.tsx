@@ -1,5 +1,5 @@
 import { createCopyAction } from "../../lib/clipboard.js";
-import { createEffect, createSignal } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import type { Prompt } from "../../lib/prompts.js";
 import { isDefault, loadPrompts, loadUserPrompts, newPromptId, saveUserPrompts } from "../../lib/prompts.js";
 
@@ -82,16 +82,21 @@ export const PromptEditorView = (props: {
           onInput={(e) => setDraft((prev) => ({ ...prev, content: e.currentTarget.value }))}
         />
       </div>
-      <div class="flex items-center gap-2">
-        <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
-        <button class="btn-secondary" onClick={() => void exportPrompt()}>
-          {copied() ? "copied!" : "export"}
-        </button>
-        <div class="flex-1" />
-        <button class="btn-secondary danger-text" onClick={() => void remove()}>
-          {props.prompt && isDefault(props.prompt) ? "reset" : "delete"}
-        </button>
-        <button class="btn-primary" onClick={() => void save()}>save</button>
+      <div class="ui-actions">
+        <div class="ui-actions-left">
+          <button class="btn-secondary" onClick={() => void exportPrompt()}>
+            {copied() ? "copied!" : "export"}
+          </button>
+          <Show when={props.prompt}>
+            <button class="btn-secondary danger-text" onClick={() => void remove()}>
+              {props.prompt && isDefault(props.prompt) ? "reset" : "delete"}
+            </button>
+          </Show>
+        </div>
+        <div class="ui-actions-right">
+          <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
+          <button class="btn-primary" onClick={() => void save()}>save</button>
+        </div>
       </div>
     </div>
   );

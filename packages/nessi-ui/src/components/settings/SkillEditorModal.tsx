@@ -190,18 +190,21 @@ export const SkillEditorView = (props: {
         </Show>
       </div>
 
-      <div class="flex items-center gap-2">
-        <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
-        <button class="btn-primary" onClick={() => void save()}>save</button>
-        <div class="flex-1" />
-        <button class="btn-secondary" onClick={exportSkill}>
-          {exportCopied() ? "copied!" : "export"}
-        </button>
-        <Show when={isExisting() && !draft().builtin}>
-          <button class="btn-secondary danger-text" onClick={() => void remove()}>
-            delete
+      <div class="ui-actions">
+        <div class="ui-actions-left">
+          <button class="btn-secondary" onClick={exportSkill}>
+            {exportCopied() ? "copied!" : "export"}
           </button>
-        </Show>
+          <Show when={isExisting() && !draft().builtin}>
+            <button class="btn-secondary danger-text" onClick={() => void remove()}>
+              delete
+            </button>
+          </Show>
+        </div>
+        <div class="ui-actions-right">
+          <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
+          <button class="btn-primary" onClick={() => void save()}>save</button>
+        </div>
       </div>
     </div>
   );

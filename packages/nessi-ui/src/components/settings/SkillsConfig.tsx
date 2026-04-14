@@ -95,7 +95,7 @@ export const SkillsConfig = (props: {
             value={importText()}
             onInput={(e) => { setImportText(e.currentTarget.value); if (error()) setError(""); }}
           />
-          <div class="flex gap-2">
+          <div class="ui-actions-end">
             <button class="btn-secondary" onClick={() => { setImporting(false); setError(""); }}>cancel</button>
             <button class="btn-primary" onClick={() => void importSkill()}>import</button>
           </div>

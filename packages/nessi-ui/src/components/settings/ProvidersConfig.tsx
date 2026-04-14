@@ -220,18 +220,21 @@ export const ProvidersConfig = () => {
             {capabilities().tools ? "supports tools" : "no tools"}
           </span>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <button class="btn-secondary" onClick={cancel}>cancel</button>
-          <button class="btn-primary" onClick={save}>save</button>
-          <div class="flex-1" />
-          <Show when={editing()}>
-            <button class="btn-secondary" onClick={() => handleExport(draft())}>
-              {exportCopied() ? "copied!" : "export"}
-            </button>
-            <button class="btn-secondary danger-text" onClick={() => remove(editingId()!)}>
-              delete
-            </button>
-          </Show>
+        <div class="ui-actions">
+          <div class="ui-actions-left">
+            <Show when={editing()}>
+              <button class="btn-secondary" onClick={() => handleExport(draft())}>
+                {exportCopied() ? "copied!" : "export"}
+              </button>
+              <button class="btn-secondary danger-text" onClick={() => remove(editingId()!)}>
+                delete
+              </button>
+            </Show>
+          </div>
+          <div class="ui-actions-right">
+            <button class="btn-secondary" onClick={cancel}>cancel</button>
+            <button class="btn-primary" onClick={save}>save</button>
+          </div>
         </div>
       </div>
     );
@@ -267,7 +270,7 @@ export const ProvidersConfig = () => {
             onKeyDown={(e) => { if (e.key === "Enter") submitImport(); }}
             autofocus
           />
-          <div class="flex gap-2">
+          <div class="ui-actions-end">
             <button class="btn-secondary" onClick={() => { setImporting(false); setImportText(""); setError(""); }}>cancel</button>
             <button class="btn-primary" onClick={submitImport}>import</button>
           </div>
