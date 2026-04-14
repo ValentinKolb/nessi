@@ -126,6 +126,14 @@ const summaryPreviewFromEntries = (entries: StoreEntry[]): string | undefined =>
   return undefined;
 };
 
+const assistantPreviewFromBlocks = (blocks: UIBlock[]) =>
+  blocks
+    .filter((block): block is Extract<UIBlock, { type: "text" }> => block.type === "text")
+    .map((block) => block.text.trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 180);
+
 /** Rebuild UI messages from persisted nessi-core StoreEntry format. */
 const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
   const entries = await loadPersistedEntries(chatId);
@@ -262,6 +270,7 @@ export const ChatView = (props: {
   activeProviderId?: string;
   onProviderChange?: (id: string) => void;
   onOpenSettings?: () => void;
+  onSessionComplete?: (payload: { chatId: string; finishedAt: string; preview: string }) => void;
 }) => {
   const [state, setState] = createStore<ChatState>({ messages: [], streaming: false });
   const [pendingImages, setPendingImages] = createSignal<Array<Extract<UIUserContentPart, { type: "image" }>>>([]);
@@ -675,6 +684,7 @@ export const ChatView = (props: {
           callId: event.callId,
           name: event.name,
           args: {},
+          startedAt: new Date().toISOString(),
         });
         if (idx !== null) {
           toolBlockIndices.set(event.callId, { idx, name: event.name });
@@ -769,6 +779,7 @@ export const ChatView = (props: {
       }
 
       case "turn_end": {
+        const preview = assistantPreviewFromBlocks(getCurrentBlocks());
         const persistedAssistant = [...await loadPersistedEntries(props.chatId)]
           .reverse()
           .find((entry) => entry.kind === "message" && entry.message.role === "assistant");
@@ -786,6 +797,11 @@ export const ChatView = (props: {
         }));
         closeStreamingAssistantMessage();
         currentAssistantStartedAt = undefined;
+        props.onSessionComplete?.({
+          chatId: props.chatId,
+          finishedAt: completedAt,
+          preview,
+        });
         break;
       }
 

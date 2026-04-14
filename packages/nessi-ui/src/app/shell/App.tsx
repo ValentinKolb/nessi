@@ -3,6 +3,7 @@ import { humanId } from "human-id";
 import { ChatModal } from "../../components/ChatModal.js";
 import { ChatView } from "../../components/chat/ChatView.js";
 import { Settings } from "../../components/settings/Settings.js";
+import { NotificationConsentDialog } from "./NotificationConsentDialog.js";
 import { loadProviders, getActiveProviderEntry, setActiveProviderId } from "../../lib/provider.js";
 import {
   hasPromptUpdate,
@@ -17,6 +18,8 @@ import { readString, writeString } from "../../lib/json-storage.js";
 import { loadPersistedEntries } from "../../lib/store.js";
 import { messageTime, timeAgo } from "../../lib/date-format.js";
 import { dbEvents } from "../../shared/db/db-events.js";
+import { browserNotifications } from "../../shared/browser/browser-notifications.js";
+import { pageAttention } from "../../shared/browser/page-attention.js";
 
 const ACTIVE_CHAT_KEY = "nessi:activeChat";
 
@@ -36,6 +39,7 @@ export const App = () => {
   const [showUpdateBanner, setShowUpdateBanner] = createSignal(false);
   const [isOverride, setIsOverride] = createSignal(false);
   const [openChats, setOpenChats] = createSignal<() => void>(() => {});
+  const [showNotificationConsent, setShowNotificationConsent] = createSignal(false);
   let chatInfoRef!: HTMLDialogElement;
   let settingsRef!: HTMLDialogElement;
 
@@ -74,13 +78,55 @@ export const App = () => {
     chatInfoRef.showModal();
   };
 
+  const pageIsActive = () =>
+    document.visibilityState === "visible" && document.hasFocus();
+
+  const dismissNotificationConsent = () => {
+    browserNotifications.dismissPrompt();
+    setShowNotificationConsent(false);
+  };
+
+  const enableNotifications = async () => {
+    await browserNotifications.requestAccess();
+    setShowNotificationConsent(false);
+  };
+
+  const handleSessionComplete = (payload: { chatId: string; finishedAt: string; preview: string }) => {
+    if (pageIsActive()) return;
+    if (!browserNotifications.canNotify()) return;
+
+    const title = activeChatTitle().trim() || activeChatMeta()?.title?.trim() || "Nessi";
+    const body = payload.preview.trim() || `A reply in "${title}" is ready.`;
+    const notification = browserNotifications.notify({
+      title: `${title} is ready`,
+      body,
+      tag: `chat:${payload.chatId}`,
+    });
+
+    if (!notification) return;
+
+    pageAttention.markUnread();
+    notification.onclick = () => {
+      pageAttention.clear();
+      notification.close();
+      window.focus();
+    };
+  };
+
   const resumeScheduler = () => {
     void startScheduler();
     void triggerMetadataRefresh();
   };
 
   const handleVisibilityChange = () => {
-    if (document.visibilityState === "visible") resumeScheduler();
+    if (document.visibilityState === "visible") {
+      pageAttention.clear();
+      resumeScheduler();
+    }
+  };
+
+  const handleWindowFocus = () => {
+    pageAttention.clear();
   };
 
   const refreshPromptBanner = async () => {
@@ -96,6 +142,8 @@ export const App = () => {
   };
 
   onMount(() => {
+    pageAttention.init();
+    setShowNotificationConsent(browserNotifications.shouldShowStartupPrompt());
     void refreshActiveChatInfo();
     void refreshPromptBanner();
 
@@ -111,6 +159,7 @@ export const App = () => {
     void startScheduler();
     window.addEventListener("pageshow", resumeScheduler);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
     const unsubscribe = dbEvents.subscribe(handleDataChanged);
     onCleanup(unsubscribe);
   });
@@ -123,6 +172,7 @@ export const App = () => {
   onCleanup(() => {
     window.removeEventListener("pageshow", resumeScheduler);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.removeEventListener("focus", handleWindowFocus);
     void stopScheduler();
   });
 
@@ -211,10 +261,16 @@ export const App = () => {
           activeProviderId={activeProvider()?.id ?? ""}
           onProviderChange={handleProviderChange}
           onOpenSettings={openSettings}
+          onSessionComplete={handleSessionComplete}
         />
       </div>
 
       <Settings ref={(el) => { settingsRef = el; }} onClose={refreshProvider} />
+      <NotificationConsentDialog
+        open={showNotificationConsent()}
+        onEnable={() => { void enableNotifications(); }}
+        onDismiss={dismissNotificationConsent}
+      />
 
       <dialog
         ref={chatInfoRef}

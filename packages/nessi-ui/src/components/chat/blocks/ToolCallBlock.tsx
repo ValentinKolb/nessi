@@ -1,9 +1,48 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show, createEffect, onCleanup } from "solid-js";
 import type { UIToolCallBlock } from "../types.js";
 import { isPresentResult, PresentContent } from "./PresentContent.js";
+import { PulseDots } from "../../PulseDots.js";
 
 const stringArg = (args: Record<string, unknown> | undefined, key: string, fallback: string) =>
   typeof args?.[key] === "string" ? args[key] : fallback;
+
+const formatElapsed = (seconds: number) => {
+  if (seconds < 60) return `${seconds}s`;
+  const min = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+};
+
+const RunningMeta = (props: { startedAt?: string }) => {
+  const [elapsed, setElapsed] = createSignal(0);
+  let timer: ReturnType<typeof setInterval> | undefined;
+
+  createEffect(() => {
+    if (timer) clearInterval(timer);
+    if (!props.startedAt) {
+      setElapsed(0);
+      return;
+    }
+
+    const startedAt = new Date(props.startedAt).getTime();
+    const update = () => setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    update();
+    timer = setInterval(update, 1000);
+  });
+
+  onCleanup(() => {
+    if (timer) clearInterval(timer);
+  });
+
+  return (
+    <span class="flex items-center gap-1.5 text-[11px] text-gh-fg-subtle">
+      <PulseDots />
+      <Show when={elapsed() >= 2}>
+        <span class="tabular-nums">{formatElapsed(elapsed())}</span>
+      </Show>
+    </span>
+  );
+};
 
 /** Collapsible shell command block with approval controls and command output. */
 export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; onApproval?: (callId: string, action: "deny" | "allow" | "always") => void }) => {
@@ -141,7 +180,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
         </Show>
         <span class="text-gh-fg-muted truncate flex-1">{headline()}</span>
         <Show when={isRunning()}>
-          <span class="text-gh-fg-subtle animate-pulse">...</span>
+          <RunningMeta startedAt={props.block.startedAt} />
         </Show>
         <Show when={!isPresent() && (hasResult() || props.block.args !== undefined)}>
           <span class={`i ti ti-chevron-${expanded() ? "up" : "down"} text-gh-fg-subtle text-xs`} />

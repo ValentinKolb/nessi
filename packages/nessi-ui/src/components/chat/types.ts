@@ -7,6 +7,7 @@ export type UIToolCallBlock = {
   callId: string;
   name: string;
   args: unknown;
+  startedAt?: string;
   result?: unknown;
   isError?: boolean;
   approval?: "pending" | "approved" | "denied";

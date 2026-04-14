@@ -2,6 +2,14 @@ import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid
 import type { UIMessage, UIAssistantMessage } from "./types.js";
 import { isAssistantMessage } from "./guards.js";
 import { Message } from "./Message.js";
+import { PulseDots } from "../PulseDots.js";
+
+const formatElapsed = (seconds: number) => {
+  if (seconds < 60) return `${seconds}s`;
+  const min = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+};
 
 /** Live elapsed-time counter that appears after a 3s delay. */
 const WorkingTimer = (props: { startedAt?: string }) => {
@@ -30,16 +38,13 @@ const WorkingTimer = (props: { startedAt?: string }) => {
   });
 
   const label = () => {
-    const s = elapsed();
-    if (s < 60) return `${s}s`;
-    const min = Math.floor(s / 60);
-    const sec = s % 60;
-    return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+    return formatElapsed(elapsed());
   };
 
   return (
-    <div class="px-3 py-2 text-[12px] text-gh-fg-subtle flex items-center gap-1.5">
-      <span class="animate-pulse">...</span>
+    <div class="px-3 py-2 text-[12px] text-gh-fg-subtle flex items-center gap-2">
+      <PulseDots />
+      <span class="select-none">Thinking</span>
       <Show when={visible()}>
         <span class="tabular-nums select-none">Working for {label()}</span>
       </Show>

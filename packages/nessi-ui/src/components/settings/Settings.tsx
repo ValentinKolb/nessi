@@ -7,6 +7,7 @@ import { SkillsConfig } from "./SkillsConfig.js";
 import { CompactionSettings } from "./CompactionSettings.js";
 import { BackgroundLogsView, BackgroundTasks } from "./BackgroundTasks.js";
 import { BackgroundPromptEditor } from "./BackgroundPromptEditor.js";
+import { GeneralSettings } from "./GeneralSettings.js";
 import type { SkillEntry } from "../../lib/skill-registry.js";
 import type { Prompt } from "../../lib/prompts.js";
 import { SkillEditorView } from "./SkillEditorModal.js";
@@ -107,6 +108,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
         <Switch>
           <Match when={route().kind === "root"}>
             <div class="hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
+              <GeneralSettings />
               <ProvidersConfig />
               <ApiKeys
                 onShowGitHubHelp={() => setRoute({ kind: "github-help" })}
