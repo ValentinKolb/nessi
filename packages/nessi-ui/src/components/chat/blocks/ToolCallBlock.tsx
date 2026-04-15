@@ -1,6 +1,7 @@
-import { createSignal, For, Show, createEffect, onCleanup } from "solid-js";
+import { createSignal, For, Show, createEffect, onCleanup, type JSX } from "solid-js";
 import type { UIToolCallBlock } from "../types.js";
 import { isPresentResult, PresentContent } from "./PresentContent.js";
+import { downloadChatFileByPath } from "../../../lib/chat-files.js";
 import { PulseDots } from "../../PulseDots.js";
 
 const stringArg = (args: Record<string, unknown> | undefined, key: string, fallback: string) =>
@@ -76,7 +77,11 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
         const action = stringArg(args, "action", "search");
         return action === "extract" ? `web extract ${stringArg(args, "url", "")}` : `web search "${stringArg(args, "query", "")}"`;
       },
-      present: () => `${stringArg(args, "path", "")}`,
+      present: () => {
+        const p = stringArg(args, "path", "");
+        const filename = p.split("/").pop() ?? p;
+        return filename;
+      },
       file_read: () => `read ${stringArg(args, "path", "")}`,
       file_write: () => `write ${stringArg(args, "path", "")}`,
       file_edit: () => `edit ${stringArg(args, "path", "")}`,
@@ -155,6 +160,19 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
   const isRunning = () => !hasResult() && props.block.approval !== "pending";
   const isPending = () => props.block.approval === "pending";
 
+  const canDownloadPresent = () => {
+    if (!isPresent() || !props.chatId) return false;
+    const path = stringArg(props.block.args as Record<string, unknown> | undefined, "path", "");
+    return /^(\/input|\/output)\//.test(path);
+  };
+
+  const handlePresentDownload = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (!props.chatId) return;
+    const path = stringArg(props.block.args as Record<string, unknown> | undefined, "path", "");
+    void downloadChatFileByPath(props.chatId, path);
+  };
+
   let headRef!: HTMLButtonElement;
 
   const toggle = () => {
@@ -181,6 +199,19 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
         <span class="text-gh-fg-muted truncate flex-1">{headline()}</span>
         <Show when={isRunning()}>
           <RunningMeta startedAt={props.block.startedAt} />
+        </Show>
+        <Show when={canDownloadPresent()}>
+          <span
+            class="icon-action text-sm shrink-0 group/dl"
+            title="Download"
+            onClick={handlePresentDownload}
+          >
+            <span class="test-xs">
+            Download
+            </span>
+            <span class="i ti ti-download group-hover/dl:hidden" />
+            <span class="i ti ti-file-download hidden group-hover/dl:inline-block" />
+          </span>
         </Show>
         <Show when={!isPresent() && (hasResult() || props.block.args !== undefined)}>
           <span class={`i ti ti-chevron-${expanded() ? "up" : "down"} text-gh-fg-subtle text-xs`} />

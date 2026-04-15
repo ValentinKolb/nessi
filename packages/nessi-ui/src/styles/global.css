@@ -102,6 +102,19 @@ body {
   text-underline-offset: 2px;
 }
 
+@utility icon-action {
+  @apply cursor-pointer transition-colors duration-150;
+  color: var(--color-gh-fg-subtle);
+  background: none;
+  border: none;
+  padding: 0;
+  line-height: 1;
+}
+
+.icon-action:hover {
+  color: var(--color-gh-accent);
+}
+
 /* ─── Scrollbars ─── */
 * {
   scrollbar-width: thin;
@@ -396,18 +409,7 @@ dialog::backdrop {
 }
 
 .code-copy-btn {
-  transition: color 150ms ease;
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--color-gh-fg-subtle);
   font-size: 0.75rem;
-  line-height: 1;
-}
-
-.code-copy-btn:hover {
-  color: var(--color-gh-fg);
 }
 
 /* ─── Composer container ─── */

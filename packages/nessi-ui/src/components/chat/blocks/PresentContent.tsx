@@ -1,7 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { downloadChatFileByPath } from "../../../lib/chat-files.js";
 import { Portal } from "solid-js/web";
-import { getFileIcon } from "../../../lib/file-icons.js";
 
 type TableData = {
   headers: string[];
@@ -37,22 +36,14 @@ const downloadDataUrl = (dataUrl: string, filename: string) => {
 };
 
 const IconButton = (props: { icon: string; title: string; onClick: () => void }) => (
-  <button class="btn-secondary text-[10px] p-1" title={props.title} onClick={props.onClick}>
-    <span class={`i ti ${props.icon} text-xs`} />
-  </button>
-);
-
-const DownloadButton = (props: { name: string; onClick: () => void }) => (
-  <button class="btn-secondary text-[10px] flex items-center gap-1" title={`Download ${props.name}`} onClick={props.onClick}>
-    <span class="i ti ti-download text-xs" />
-    <span class="hidden sm:inline">{props.name}</span>
+  <button class="icon-action text-xs" title={props.title} onClick={props.onClick}>
+    <span class={`i ti ${props.icon}`} />
   </button>
 );
 
 const MaximizeButton = (props: { onClick: () => void }) => (
-  <button class="btn-secondary text-[10px] flex items-center gap-1" title="Maximize" onClick={props.onClick}>
-    <span class="i ti ti-arrows-maximize text-xs" />
-    <span class="hidden sm:inline">maximize</span>
+  <button class="icon-action text-sm" title="Maximize" onClick={props.onClick}>
+    <span class="i ti ti-arrows-maximize" />
   </button>
 );
 
@@ -168,19 +159,16 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
   const ct = () => props.result.contentType;
   const content = () => props.result.content ?? "";
   const name = () => props.result.name;
-  const canDownloadFromChatFile = () => /^(\/input|\/output)\//.test(props.result.path);
 
   const handleDownload = async () => {
-    if (props.chatId && canDownloadFromChatFile()) {
+    if (props.chatId && /^(\/input|\/output)\//.test(props.result.path)) {
       await downloadChatFileByPath(props.chatId, props.result.path);
       return;
     }
-
     if (ct() === "svg") {
       downloadBlob(content(), name(), "image/svg+xml");
       return;
     }
-
     if (ct() === "image") {
       downloadDataUrl(content(), name());
     }
@@ -191,10 +179,7 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
       <Show when={ct() === "svg"}>
         <div class="bg-white rounded p-2 flex flex-col items-center gap-2">
           <div class="max-w-md mx-auto w-full" innerHTML={content()} />
-          <div class="flex items-center gap-1.5">
-            <DownloadButton name={name()} onClick={() => void handleDownload()} />
-            <MaximizeButton onClick={() => setFullscreen(true)} />
-          </div>
+          <MaximizeButton onClick={() => setFullscreen(true)} />
         </div>
         <FullscreenModal
           open={fullscreen()}
@@ -208,10 +193,7 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
       <Show when={ct() === "image"}>
         <div class="bg-white rounded p-2 flex flex-col items-center gap-2">
           <img src={content()} alt={name()} class="max-w-full rounded" />
-          <div class="flex items-center gap-1.5">
-            <DownloadButton name={name()} onClick={() => void handleDownload()} />
-            <MaximizeButton onClick={() => setFullscreen(true)} />
-          </div>
+          <MaximizeButton onClick={() => setFullscreen(true)} />
         </div>
         <FullscreenModal
           open={fullscreen()}
@@ -223,39 +205,13 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
       </Show>
 
       <Show when={ct() === "table" && props.result.tableData}>
-        <div class="space-y-2">
-          <DataTable data={props.result.tableData!} />
-          <Show when={props.chatId && canDownloadFromChatFile()}>
-            <div class="flex justify-end">
-              <DownloadButton name={name()} onClick={() => void handleDownload()} />
-            </div>
-          </Show>
-        </div>
+        <DataTable data={props.result.tableData!} />
       </Show>
 
       <Show when={ct() === "text"}>
-        <div class="space-y-2">
-          <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-xs text-gh-fg-muted bg-gh-surface rounded p-2 border border-gh-border-muted">
-            {content()}
-          </pre>
-          <Show when={props.chatId && canDownloadFromChatFile()}>
-            <div class="flex justify-end">
-              <DownloadButton name={name()} onClick={() => void handleDownload()} />
-            </div>
-          </Show>
-        </div>
-      </Show>
-
-      <Show when={ct() === "download"}>
-        <div class="flex items-center justify-between gap-3 py-1 text-gh-fg-muted">
-          <div class="flex min-w-0 items-center gap-2">
-            <span class={`i ti ${getFileIcon(name())} text-base shrink-0`} />
-            <span class="text-xs truncate">{name()}</span>
-          </div>
-          <Show when={props.chatId && canDownloadFromChatFile()}>
-            <DownloadButton name={name()} onClick={() => void handleDownload()} />
-          </Show>
-        </div>
+        <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-xs text-gh-fg-muted bg-gh-surface rounded p-2 border border-gh-border-muted">
+          {content()}
+        </pre>
       </Show>
     </div>
   );

@@ -1,23 +1,40 @@
 import { createSignal, Show } from "solid-js";
 import type { UIThinkingBlock } from "../types.js";
 
-/** Toggleable block for model thinking traces. */
+/** Collapsible thinking block styled like a tool call. */
 export const ThinkingBlock = (props: { block: UIThinkingBlock }) => {
   const [expanded, setExpanded] = createSignal(false);
 
+  // Estimate thinking duration from text length (rough heuristic: ~15 tokens/sec, ~4 chars/token)
+  const estimatedSeconds = () => Math.max(1, Math.round(props.block.text.length / 60));
+
+  const isStreaming = () => !props.block.text || props.block.text.length === 0;
+
+  const headline = () => {
+    if (isStreaming()) return "thinking";
+    const secs = estimatedSeconds();
+    if (secs < 60) return `thought for ${secs}s`;
+    const mins = Math.floor(secs / 60);
+    const remSecs = secs % 60;
+    return remSecs > 0 ? `thought for ${mins}m ${remSecs}s` : `thought for ${mins}m`;
+  };
+
   return (
-    <div class="my-1 text-[13px]">
+    <div class="ui-panel text-[13px] overflow-hidden tool-call-block rounded-md">
       <button
-        class="flex items-center gap-1 text-gh-fg-subtle hover:text-gh-fg-muted"
+        class="w-full flex items-center gap-1.5 px-2 py-1 bg-gh-muted hover:bg-gh-subtle text-left tool-call-head"
         onClick={() => setExpanded(!expanded())}
       >
-        <span class={`i ti ti-chevron-${expanded() ? "up" : "right"} text-xs`} />
-        <span>thinking</span>
+        <span class="i ti ti-bulb text-sm text-gh-fg-subtle" />
+        <span class="text-gh-fg-muted truncate flex-1">{headline()}</span>
+        <span class={`i ti ti-chevron-${expanded() ? "up" : "down"} text-gh-fg-subtle text-xs`} />
       </button>
       <Show when={expanded()}>
-        <pre class="ui-subpanel px-2 py-1 text-gh-fg-subtle whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
-          {props.block.text}
-        </pre>
+        <div class="px-2 py-2">
+          <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto text-xs text-gh-fg-muted tool-call-output">
+            {props.block.text}
+          </pre>
+        </div>
       </Show>
     </div>
   );

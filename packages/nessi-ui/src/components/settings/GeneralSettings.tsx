@@ -6,13 +6,13 @@ const statusCopy = (status: BrowserNotificationStatus) => {
     case "enabled":
       return {
         label: "enabled",
-        tone: "bg-emerald-50 text-emerald-700",
+        tone: "bg-emerald-100 text-emerald-700",
         message: "Browser notifications are allowed. Nessi can notify you when a background chat reply is ready.",
       };
     case "blocked":
       return {
         label: "blocked",
-        tone: "bg-red-50 text-red-700",
+        tone: "bg-red-100 text-red-700",
         message: "Notifications are blocked by the browser. Re-enable them in your browser's site settings for this page.",
       };
     case "default":

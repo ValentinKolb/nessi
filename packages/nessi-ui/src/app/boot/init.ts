@@ -6,6 +6,7 @@ export const appBoot = {
   async init() {
     await db.init();
     await dbMigrate.run();
+    dbMigrate.cleanupLegacyStorage();
     await skillRegistry.ensureLoaded();
   },
 } as const;

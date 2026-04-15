@@ -116,13 +116,13 @@ const addCodeHeaders = (container: HTMLElement) => {
     langEl.innerHTML = `<span class="i ti ${meta.icon}"></span><span>${meta.label}</span>`;
 
     const btn = document.createElement("button");
-    btn.className = "code-copy-btn i ti ti-copy";
+    btn.className = "code-copy-btn icon-action i ti ti-copy";
     btn.title = "Copy";
     btn.addEventListener("click", () => {
       void navigator.clipboard.writeText(code.textContent ?? "").then(() => {
-        btn.className = "code-copy-btn i ti ti-check";
+        btn.className = "code-copy-btn icon-action i ti ti-check";
         setTimeout(() => {
-          btn.className = "code-copy-btn i ti ti-copy";
+          btn.className = "code-copy-btn icon-action i ti ti-copy";
         }, 1500);
       });
     });

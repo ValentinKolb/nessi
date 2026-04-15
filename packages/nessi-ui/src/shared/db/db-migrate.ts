@@ -215,5 +215,43 @@ export const dbMigrate = {
         await importAppDoc(MIGRATION_KEY, 1);
       },
     );
+
+    // Clean up migrated localStorage keys to free quota
+    dbMigrate.cleanupLegacyStorage();
+  },
+
+  /** Remove localStorage keys that have been migrated to IndexedDB. */
+  cleanupLegacyStorage() {
+    const prefixKeys = [CHAT_PREFIX, MESSAGE_FILE_REFS_PREFIX];
+    const exactKeys = [
+      CHAT_INDEX_KEY,
+      CHAT_FILES_KEY,
+      RUN_LOG_KEY,
+      TEXT_LOG_KEY,
+      PROMPTS_KEY,
+      SKILLS_KEY,
+      MEMORY_KEY,
+      BG_PROMPT_KEY,
+      BG_CONSOLIDATION_KEY,
+      COMPACTION_KEY,
+      TOOL_APPROVALS_KEY,
+      "nessi:provider", // legacy single-provider format
+    ];
+
+    for (const key of exactKeys) {
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    }
+
+    // Remove all chat:*:meta, chat:*:entries, and nessi:chat-file-refs:* keys
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && prefixKeys.some((prefix) => key.startsWith(prefix))) {
+        toRemove.push(key);
+      }
+    }
+    for (const key of toRemove) {
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    }
   },
 } as const;
