@@ -5,6 +5,9 @@
 @import "@fontsource-variable/bricolage-grotesque";
 @import "@fontsource-variable/jetbrains-mono";
 
+/* ─── Dark mode: class-based strategy ─── */
+@variant dark (&:where(.dark, .dark *));
+
 /* ─── Design tokens ─── */
 @theme {
   --color-gh-canvas: #fafafa;
@@ -25,6 +28,122 @@
   --color-gh-agent-bg: #f0fdfa;
   --color-gh-agent-bg-strong: #ccfbf1;
   --color-gh-agent-border: #0d9488;
+
+  /* ─── Status tokens ─── */
+  --color-status-ok-bg: #dcfce7;
+  --color-status-ok-fg: #15803d;
+  --color-status-err-bg: #fee2e2;
+  --color-status-err-fg: #dc2626;
+  --color-status-warn-bg: #fef3c7;
+  --color-status-warn-fg: #b45309;
+  --color-status-info-bg: #dbeafe;
+  --color-status-info-fg: #1d4ed8;
+
+  /* ─── Compaction tokens ─── */
+  --color-compact-bg: color-mix(in oklab, #efe9ff 52%, white);
+  --color-compact-head: color-mix(in oklab, #ede5ff 65%, white);
+  --color-compact-body: color-mix(in oklab, #f6f1ff 74%, white);
+  --color-compact-pre: color-mix(in oklab, white 86%, #ede5ff);
+  --color-compact-accent: #7c3aed;
+}
+
+/* ─── Terminal dark theme ─── */
+html.dark {
+  /* Core palette — high contrast, terminal aesthetic */
+  --color-gh-canvas: #0c0c0e;
+  --color-gh-surface: #141416;
+  --color-gh-overlay: #1c1c1f;
+  --color-gh-muted: #2a2a2e;
+  --color-gh-subtle: #3a3a40;
+  --color-gh-border: #2e2e33;
+  --color-gh-border-muted: #222226;
+  --color-gh-fg: #f0f0f3;
+  --color-gh-fg-secondary: #e0e0e5;
+  --color-gh-fg-muted: #a0a0aa;
+  --color-gh-fg-subtle: #606068;
+  --color-gh-danger: #ff6b6b;
+  --color-gh-accent: #34d4bf;
+  --color-gh-accent-muted: #0d9488;
+  --color-gh-accent-subtle: #0a1f1c;
+  --color-gh-agent-bg: #0a1f1c;
+  --color-gh-agent-bg-strong: #103830;
+  --color-gh-agent-border: #34d4bf;
+
+  /* Status tokens */
+  --color-status-ok-bg: #052e16;
+  --color-status-ok-fg: #4ade80;
+  --color-status-err-bg: #2a0a0a;
+  --color-status-err-fg: #ff6b6b;
+  --color-status-warn-bg: #2a1f06;
+  --color-status-warn-fg: #fbbf24;
+  --color-status-info-bg: #0a1628;
+  --color-status-info-fg: #60a5fa;
+
+  /* Compaction tokens */
+  --color-compact-bg: #1e1530;
+  --color-compact-head: #261d40;
+  --color-compact-body: #1a1328;
+  --color-compact-pre: #13101c;
+  --color-compact-accent: #a78bfa;
+
+  /* ── Terminal: kill all border-radius ── */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+
+  /* ── Terminal: kill all shadows ── */
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-2xl: 0 0 #0000;
+
+  color-scheme: dark;
+}
+
+/* Terminal: kill ALL border-radius globally */
+html.dark * {
+  border-radius: 0 !important;
+}
+
+html.dark :where(*) {
+  --tw-ring-offset-color: #0c0c0e;
+}
+
+/* Terminal: remove hardcoded box-shadow on composer */
+html.dark .composer-container,
+html.dark .composer-container:focus-within,
+html.dark .composer-container.drop-active {
+  box-shadow: none !important;
+}
+
+/* Dark mode: stronger backdrops */
+html.dark dialog::backdrop,
+html.dark .modal-backdrop {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+/* Dark mode: modal surfaces — no shadow, visible border */
+html.dark .modal-panel,
+html.dark .modal-dialog,
+html.dark dialog,
+html.dark [popover] {
+  border: 1px solid var(--color-gh-border);
+  box-shadow: none;
+}
+
+/* Dark mode: bold/strong text must stay bright for readability */
+html.dark .text-block-markdown strong,
+html.dark .text-block-markdown b {
+  color: var(--color-gh-fg);
 }
 
 /*
@@ -160,8 +279,44 @@ body {
 }
 
 dialog::backdrop {
-  background: rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(3px);
+}
+
+/* ─── Modal utilities (consistent across all modals) ─── */
+
+/** Fullscreen backdrop overlay. Use on the outermost fixed container. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(3px);
+  padding: 1rem;
+}
+
+/** Floating panel surface. Use on the inner content container. */
+.modal-panel {
+  background: var(--color-gh-surface);
+  border: 1px solid var(--color-gh-border-muted);
+  overflow: hidden;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+/** Dialog element base — same surface treatment as .modal-panel */
+.modal-dialog {
+  margin: auto;
+  padding: 0;
+  background: var(--color-gh-surface);
+  color: var(--color-gh-fg);
+  border: 1px solid var(--color-gh-border-muted);
+  overflow: hidden;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
 }
 
 .prose table {
@@ -253,7 +408,7 @@ dialog::backdrop {
 }
 
 .ui-note code {
-  background: color-mix(in oklab, var(--color-gh-accent-subtle) 60%, white);
+  background: color-mix(in oklab, var(--color-gh-accent-subtle) 60%, var(--color-gh-surface));
   color: var(--color-gh-fg-secondary);
   padding: 0 0.2rem;
   border-radius: 0.25rem;
@@ -427,9 +582,9 @@ dialog::backdrop {
 }
 
 .composer-container.drop-active {
-  border-color: #34d399;
+  border-color: var(--color-gh-accent);
   box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.06);
-  background: color-mix(in oklab, #ecfdf5 80%, white);
+  background: var(--color-gh-accent-subtle);
 }
 
 /* ─── Mobile: prevent zoom on 16px+ inputs ─── */

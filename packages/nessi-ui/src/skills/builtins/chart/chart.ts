@@ -4,10 +4,17 @@
  */
 
 const COLORS = ["#8664e0", "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#6366f1"];
-const AXIS_COLOR = "#d4d4d8";
-const LABEL_COLOR = "#52525b";
-const TITLE_COLOR = "#18181b";
-const BG_COLOR = "#ffffff";
+
+/*
+ * Theme-aware chart colors using CSS custom properties.
+ * Works because charts are rendered as inline SVG (innerHTML),
+ * so the browser resolves var() from the document cascade.
+ * Fallback values ensure standalone SVGs still render.
+ */
+const AXIS_COLOR = "var(--color-gh-subtle, #d4d4d8)";
+const LABEL_COLOR = "var(--color-gh-fg-muted, #52525b)";
+const TITLE_COLOR = "var(--color-gh-fg, #18181b)";
+const BG_COLOR = "var(--color-gh-surface, #ffffff)";
 const FONT = "ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
