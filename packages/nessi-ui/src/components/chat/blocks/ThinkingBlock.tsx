@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import type { UIThinkingBlock } from "../types.js";
+import { haptics } from "../../../shared/browser/haptics.js";
 
 /** Collapsible thinking block styled like a tool call. */
 export const ThinkingBlock = (props: { block: UIThinkingBlock }) => {
@@ -23,7 +24,7 @@ export const ThinkingBlock = (props: { block: UIThinkingBlock }) => {
     <div class="ui-panel text-[13px] overflow-hidden tool-call-block rounded-md">
       <button
         class="w-full flex items-center gap-1.5 px-2 py-1 bg-gh-muted hover:bg-gh-subtle text-left tool-call-head"
-        onClick={() => setExpanded(!expanded())}
+        onClick={() => { haptics.tap(); setExpanded(!expanded()); }}
       >
         <span class="i ti ti-bulb text-sm text-gh-fg-subtle" />
         <span class="text-gh-fg-muted truncate flex-1">{headline()}</span>

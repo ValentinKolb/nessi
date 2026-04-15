@@ -1,5 +1,6 @@
 import { createSignal, Show, onCleanup, onMount } from "solid-js";
 import { loadCompactionSettings, saveCompactionSettings } from "../../lib/compaction-settings.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 const MESSAGE_OPTIONS = [10, 20, 30, 40, 50, 60, 80] as const;
 const LOOP_OPTIONS = [2, 4, 6, 8, 10, 12, 16, 20] as const;
@@ -45,6 +46,7 @@ export const CompactionSettings = (props: { onEditPrompt?: () => void }) => {
     };
     await saveCompactionSettings(settings);
     setInitial({ m: settings.autoCompactAfterMessages, l: settings.keepRecentLoops, t: settings.maxToolChars, s: settings.maxSourceChars });
+    haptics.success();
     setSaved(true);
     if (savedTimer) clearTimeout(savedTimer);
     savedTimer = setTimeout(() => setSaved(false), 2000);
@@ -148,7 +150,7 @@ export const CompactionSettings = (props: { onEditPrompt?: () => void }) => {
       </div>
 
       <Show when={props.onEditPrompt}>
-        <button class="btn-minimal" onClick={props.onEditPrompt}>
+        <button class="btn-minimal" onClick={() => { haptics.tap(); props.onEditPrompt?.(); }}>
           edit compaction prompt
         </button>
       </Show>

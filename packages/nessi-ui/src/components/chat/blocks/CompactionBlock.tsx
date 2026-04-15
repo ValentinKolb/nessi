@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import type { UICompactionBlock } from "../types.js";
+import { haptics } from "../../../shared/browser/haptics.js";
 
 /** Collapsible status block that explains manual chat compaction in user-friendly language. */
 export const CompactionBlock = (props: { block: UICompactionBlock }) => {
@@ -21,6 +22,7 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
 
   const toggle = () => {
     if (!hasDetails()) return;
+    haptics.tap();
     setExpanded(!expanded());
     requestAnimationFrame(() => headRef.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   };

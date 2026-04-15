@@ -10,6 +10,7 @@ import {
   type ProviderEntry,
   type ProviderType,
 } from "../../lib/provider.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 const newEntry = (): ProviderEntry => ({
   id: humanId({ separator: "-", capitalize: false }),
@@ -55,12 +56,14 @@ export const ProvidersConfig = (props: {
   const activate = (id: string) => {
     setActiveId(id);
     setActiveProviderId(id);
+    haptics.success();
   };
 
   const submitImport = () => {
     const entry = fromImport(importText());
     if (!entry) {
       setError("Invalid provider config.");
+      haptics.error();
       return;
     }
     const list = [...providers(), entry];
@@ -70,6 +73,7 @@ export const ProvidersConfig = (props: {
     if (!activeId()) {
       activate(entry.id);
     }
+    haptics.success();
     setImporting(false);
     setImportText("");
     // Open the imported entry for review
@@ -84,8 +88,8 @@ export const ProvidersConfig = (props: {
           <span>Providers</span>
         </h3>
         <div class="flex gap-2">
-          <button class="btn-secondary" onClick={() => { setImporting(!importing()); setImportText(""); setError(""); }}>import</button>
-          <button class="btn-secondary" onClick={props.onCreateProvider}>+ add</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); setImporting(!importing()); setImportText(""); setError(""); }}>import</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); props.onCreateProvider?.(); }}>+ add</button>
         </div>
       </div>
 
@@ -107,7 +111,7 @@ export const ProvidersConfig = (props: {
             autofocus
           />
           <div class="ui-actions-end">
-            <button class="btn-secondary" onClick={() => { setImporting(false); setImportText(""); setError(""); }}>cancel</button>
+            <button class="btn-secondary" onClick={() => { haptics.tap(); setImporting(false); setImportText(""); setError(""); }}>cancel</button>
             <button class="btn-primary" onClick={submitImport}>import</button>
           </div>
         </div>
@@ -118,7 +122,7 @@ export const ProvidersConfig = (props: {
           {(p) => (
             <div
               class="ui-row cursor-pointer group"
-              onClick={() => props.onEditProvider?.(p)}
+              onClick={() => { haptics.tap(); props.onEditProvider?.(p); }}
             >
               <div class="flex items-center gap-2 min-w-0">
                 <img src={getProviderIconUrl(p.type)} alt="" class="h-4 w-4 shrink-0" />

@@ -9,6 +9,7 @@ import {
   type ToolCallIdPolicy,
 } from "../../lib/provider.js";
 import { createCopyAction } from "../../lib/clipboard.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 const PRESETS = getProviderPresets();
 const POLICY_OPTIONS: Array<{ value: ToolCallIdPolicy; label: string; desc: string }> = [
@@ -106,8 +107,10 @@ export const ProviderEditorView = (props: {
     const validationError = validateProviderEntry(d);
     if (validationError) {
       setError(validationError);
+      haptics.error();
       return;
     }
+    haptics.success();
     props.onSave(d);
   };
 
@@ -243,13 +246,13 @@ export const ProviderEditorView = (props: {
             </button>
           </Show>
           <Show when={!props.isNew && props.onDelete}>
-            <button class="btn-secondary danger-text" onClick={() => props.onDelete!(draft().id)}>
+            <button class="btn-secondary danger-text" onClick={() => { haptics.tap(); props.onDelete!(draft().id); }}>
               delete
             </button>
           </Show>
         </div>
         <div class="ui-actions-right">
-          <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); props.onCancel(); }}>cancel</button>
           <button class="btn-primary" onClick={handleSave}>save</button>
         </div>
       </div>

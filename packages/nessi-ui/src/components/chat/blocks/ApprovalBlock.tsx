@@ -1,5 +1,6 @@
 import { Switch, Match } from "solid-js";
 import type { UIApprovalBlock } from "../types.js";
+import { haptics } from "../../../shared/browser/haptics.js";
 
 /** Render a custom approval request block with allow/deny actions. */
 export const ApprovalBlock = (props: {
@@ -13,13 +14,13 @@ export const ApprovalBlock = (props: {
         <div class="flex gap-2 mt-2">
           <button
             class="btn-primary"
-            onClick={() => props.onApproval?.(props.block.callId, "allow")}
+            onClick={() => { haptics.success(); props.onApproval?.(props.block.callId, "allow"); }}
           >
             approve
           </button>
           <button
             class="btn-secondary danger-text"
-            onClick={() => props.onApproval?.(props.block.callId, "deny")}
+            onClick={() => { haptics.tap(); props.onApproval?.(props.block.callId, "deny"); }}
           >
             deny
           </button>

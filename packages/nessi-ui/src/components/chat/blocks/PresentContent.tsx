@@ -1,6 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { downloadChatFileByPath } from "../../../lib/chat-files.js";
 import { Portal } from "solid-js/web";
+import { haptics } from "../../../shared/browser/haptics.js";
 
 type TableData = {
   headers: string[];
@@ -131,13 +132,13 @@ const DataTable = (props: { data: TableData }) => {
       </div>
       <div class="flex items-center justify-center gap-2 text-[10px] text-gh-fg-subtle">
         <Show when={maxPage() > 1}>
-          <button class="btn-secondary py-0.5 px-1.5" disabled={page() <= 1} onClick={() => setPage(page() - 1)}>
+          <button class="btn-secondary py-0.5 px-1.5" disabled={page() <= 1} onClick={() => { haptics.tap(); setPage(page() - 1); }}>
             <span class="i ti ti-chevron-left text-[10px]" />
           </button>
         </Show>
         <span>{props.data.rows.length} rows{maxPage() > 1 ? ` · page ${page()} / ${maxPage()}` : ""}</span>
         <Show when={maxPage() > 1}>
-          <button class="btn-secondary py-0.5 px-1.5" disabled={page() >= maxPage()} onClick={() => setPage(page() + 1)}>
+          <button class="btn-secondary py-0.5 px-1.5" disabled={page() >= maxPage()} onClick={() => { haptics.tap(); setPage(page() + 1); }}>
             <span class="i ti ti-chevron-right text-[10px]" />
           </button>
         </Show>
@@ -161,16 +162,24 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
   const name = () => props.result.name;
 
   const handleDownload = async () => {
-    if (props.chatId && /^(\/input|\/output)\//.test(props.result.path)) {
-      await downloadChatFileByPath(props.chatId, props.result.path);
-      return;
-    }
-    if (ct() === "svg") {
-      downloadBlob(content(), name(), "image/svg+xml");
-      return;
-    }
-    if (ct() === "image") {
-      downloadDataUrl(content(), name());
+    try {
+      if (props.chatId && /^(\/input|\/output)\//.test(props.result.path)) {
+        await downloadChatFileByPath(props.chatId, props.result.path);
+        haptics.success();
+        return;
+      }
+      if (ct() === "svg") {
+        downloadBlob(content(), name(), "image/svg+xml");
+        haptics.success();
+        return;
+      }
+      if (ct() === "image") {
+        downloadDataUrl(content(), name());
+        haptics.success();
+      }
+    } catch (error) {
+      haptics.error();
+      throw error;
     }
   };
 
@@ -179,11 +188,11 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
       <Show when={ct() === "svg"}>
         <div class="bg-white rounded p-2 flex flex-col items-center gap-2">
           <div class="max-w-md mx-auto w-full" innerHTML={content()} />
-          <MaximizeButton onClick={() => setFullscreen(true)} />
+          <MaximizeButton onClick={() => { haptics.tap(); setFullscreen(true); }} />
         </div>
         <FullscreenModal
           open={fullscreen()}
-          onClose={() => setFullscreen(false)}
+          onClose={() => { haptics.tap(); setFullscreen(false); }}
           name={name()}
           svgContent={content()}
           onDownload={() => void handleDownload()}
@@ -193,11 +202,11 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
       <Show when={ct() === "image"}>
         <div class="bg-white rounded p-2 flex flex-col items-center gap-2">
           <img src={content()} alt={name()} class="max-w-full rounded" />
-          <MaximizeButton onClick={() => setFullscreen(true)} />
+          <MaximizeButton onClick={() => { haptics.tap(); setFullscreen(true); }} />
         </div>
         <FullscreenModal
           open={fullscreen()}
-          onClose={() => setFullscreen(false)}
+          onClose={() => { haptics.tap(); setFullscreen(false); }}
           name={name()}
           imageSrc={content()}
           onDownload={() => void handleDownload()}

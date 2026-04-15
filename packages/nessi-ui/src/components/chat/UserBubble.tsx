@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
 import { formatFileSize } from "../../lib/chat-files.js";
 import { messageTime } from "../../lib/date-format.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 /** Render right-aligned user text bubble with optional timestamp metadata. */
 export const UserBubble = (props: {
@@ -57,7 +58,7 @@ export const UserBubble = (props: {
           <Show when={props.canRetry}>
             <button
               class="flex h-5 w-5 items-center justify-center rounded-full text-gh-fg-subtle transition-colors hover:bg-gh-overlay hover:text-gh-fg"
-              onClick={() => props.onRetry?.()}
+              onClick={() => { haptics.tap(); props.onRetry?.(); }}
               aria-label="Run this message again"
             >
               <span class="i ti ti-reload text-[12px]" />

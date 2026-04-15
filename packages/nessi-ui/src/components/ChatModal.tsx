@@ -2,6 +2,7 @@ import { createMemo, createSignal, For, Show, onMount, onCleanup } from "solid-j
 import { deleteChat as deleteChatData, listChatMetas, type ChatMeta } from "../lib/chat-storage.js";
 import { timeAgo } from "../lib/date-format.js";
 import { dbEvents } from "../shared/db/db-events.js";
+import { haptics } from "../shared/browser/haptics.js";
 
 /** Chat switcher modal — doubles as mobile menu with settings + new chat. */
 export const ChatModal = (props: {
@@ -41,24 +42,28 @@ export const ChatModal = (props: {
   });
 
   const open = () => {
+    haptics.tap();
     void refresh();
     setQuery("");
     dialogRef.showModal();
   };
-  const close = () => {
+  const close = (withHaptics = false) => {
+    if (withHaptics) haptics.tap();
     setQuery("");
     dialogRef.close();
   };
 
-  const selectChat = (id: string) => { props.onSelectChat(id); close(); };
-  const newChat = () => { props.onNewChat(); close(); };
+  const selectChat = (id: string) => { haptics.tap(); props.onSelectChat(id); close(); };
+  const newChat = () => { haptics.tap(); props.onNewChat(); close(); };
 
   const openSettings = () => {
+    haptics.tap();
     close();
     props.onOpenSettings?.();
   };
 
   const deleteChat = (id: string) => {
+    haptics.tap();
     void deleteChatData(id);
     void refresh();
     if (id === props.activeChatId) newChat();
@@ -78,7 +83,7 @@ export const ChatModal = (props: {
       <dialog
         ref={dialogRef}
         class="m-auto bg-gh-surface text-gh-fg p-0 w-[min(760px,94vw)] max-h-[84vh] overflow-hidden rounded-xl border border-gh-border-muted"
-        onClick={(e) => { if (e.target === dialogRef) close(); }}
+        onClick={(e) => { if (e.target === dialogRef) close(true); }}
       >
         <div class="flex max-h-[84vh] min-h-0 flex-col">
           {/* Header */}
@@ -100,7 +105,7 @@ export const ChatModal = (props: {
             </button>
             <button
               class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"
-              onClick={close}
+              onClick={() => close(true)}
               title="Close"
             >
               <span class="i ti ti-x text-base" />

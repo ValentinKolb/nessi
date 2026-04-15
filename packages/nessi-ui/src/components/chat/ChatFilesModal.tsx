@@ -2,6 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import type { ChatFileMeta } from "../../lib/chat-files.js";
 import { formatFileSize } from "../../lib/chat-files.js";
 import { getFileIcon } from "../../lib/file-icons.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 /* ── Tree data structure ── */
 
@@ -73,7 +74,7 @@ const FolderRow = (props: {
       <button
         class="w-full flex items-center gap-1.5 py-1 text-left text-[13px] text-gh-fg-secondary hover:text-gh-fg transition-colors pr-2"
         style={{ "padding-left": `${props.depth * INDENT + 4}px` }}
-        onClick={() => setOpen(!open())}
+        onClick={() => { haptics.tap(); setOpen(!open()); }}
       >
         <span class={`i ti ${open() ? "ti-chevron-down" : "ti-chevron-right"} text-[10px] text-gh-fg-subtle`} />
         <span class="i ti ti-folder text-gh-fg-subtle text-sm" />
@@ -133,7 +134,7 @@ const FileRow = (props: {
       <div class="flex-1" />
       <button
         class="shrink-0 text-gh-fg-subtle hover:text-gh-fg opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={() => props.onAction(meta())}
+        onClick={() => { haptics.tap(); props.onAction(meta()); }}
       >
         <span class={`i ti ${props.actionIcon} text-sm`} />
       </button>
@@ -159,7 +160,7 @@ export const ChatFilesModal = (props: {
 
   return (
     <Show when={props.open}>
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4" onClick={props.onClose}>
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4" onClick={() => { haptics.tap(); props.onClose(); }}>
         <div
           class="bg-gh-surface rounded-xl shadow-lg hide-scrollbar max-h-[82vh] w-[min(480px,94vw)] overflow-y-auto"
           onClick={(event) => event.stopPropagation()}
@@ -168,7 +169,7 @@ export const ChatFilesModal = (props: {
           <div class="flex items-center gap-2 px-3 py-2.5">
             <span class="i ti ti-files text-gh-fg-subtle" />
             <span class="flex-1 text-[13px] font-semibold text-gh-fg">Files</span>
-            <button class="flex h-6 w-6 items-center justify-center rounded-md nav-icon" onClick={props.onClose}>
+            <button class="flex h-6 w-6 items-center justify-center rounded-md nav-icon" onClick={() => { haptics.tap(); props.onClose(); }}>
               <span class="i ti ti-x text-sm" />
             </button>
           </div>

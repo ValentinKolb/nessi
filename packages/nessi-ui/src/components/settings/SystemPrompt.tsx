@@ -8,6 +8,7 @@ import {
   newPromptId,
   type Prompt,
 } from "../../lib/prompts.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 const fromImport = (raw: string): Prompt | null => {
   try {
@@ -53,12 +54,14 @@ export const SystemPrompt = (props: {
   const activate = (id: string) => {
     setActiveId(id);
     setActivePromptId(id);
+    haptics.success();
   };
 
   const submitImport = async () => {
     const entry = fromImport(importText());
     if (!entry) {
       setError("Invalid prompt config.");
+      haptics.error();
       return;
     }
     const current = await loadUserPrompts();
@@ -67,6 +70,7 @@ export const SystemPrompt = (props: {
     setImporting(false);
     setImportText("");
     await refreshPrompts();
+    haptics.success();
   };
 
   return (
@@ -77,8 +81,8 @@ export const SystemPrompt = (props: {
           <span>Prompts</span>
         </h3>
         <div class="flex gap-2">
-          <button class="btn-secondary" onClick={() => { setImporting(!importing()); setImportText(""); }}>import</button>
-          <button class="btn-secondary" onClick={props.onCreatePrompt}>+ add</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); setImporting(!importing()); setImportText(""); }}>import</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); props.onCreatePrompt(); }}>+ add</button>
         </div>
       </div>
 
@@ -101,7 +105,7 @@ export const SystemPrompt = (props: {
             onKeyDown={(e) => { if (e.key === "Enter") void submitImport(); }}
           />
           <div class="ui-actions-end">
-            <button class="btn-secondary" onClick={() => { setImporting(false); setImportText(""); setError(""); }}>cancel</button>
+            <button class="btn-secondary" onClick={() => { haptics.tap(); setImporting(false); setImportText(""); setError(""); }}>cancel</button>
             <button class="btn-primary" onClick={() => void submitImport()}>import</button>
           </div>
         </div>
@@ -112,7 +116,7 @@ export const SystemPrompt = (props: {
           {(prompt) => (
             <div
               class="ui-row cursor-pointer group"
-              onClick={() => props.onEditPrompt(prompt)}
+              onClick={() => { haptics.tap(); props.onEditPrompt(prompt); }}
             >
               <div class="flex items-center gap-2 min-w-0">
                 <span class="shrink-0 text-gh-fg-secondary">{prompt.name}</span>

@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 export const NotificationConsentDialog = (props: {
   open: boolean;
@@ -8,7 +9,7 @@ export const NotificationConsentDialog = (props: {
   <Show when={props.open}>
     <div
       class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4"
-      onClick={props.onDismiss}
+      onClick={() => { haptics.tap(); props.onDismiss(); }}
     >
       <div
         class="w-[min(32rem,92vw)] rounded-xl border border-gh-border-muted bg-gh-surface p-4 shadow-lg"
@@ -29,8 +30,8 @@ export const NotificationConsentDialog = (props: {
 
         <div class="ui-actions mt-4">
           <div class="ui-actions-right">
-            <button class="btn-secondary" onClick={props.onDismiss}>no thanks</button>
-            <button class="btn-primary" onClick={props.onEnable}>allow notifications</button>
+            <button class="btn-secondary" onClick={() => { haptics.tap(); props.onDismiss(); }}>no thanks</button>
+            <button class="btn-primary" onClick={() => { haptics.success(); props.onEnable(); }}>allow notifications</button>
           </div>
         </div>
       </div>

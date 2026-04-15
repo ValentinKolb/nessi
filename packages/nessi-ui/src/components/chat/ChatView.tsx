@@ -48,6 +48,7 @@ import {
   type ChatFileMeta,
   type PendingChatFile,
 } from "../../lib/chat-files.js";
+import { haptics } from "../../shared/browser/haptics.js";
 import type { UIMessage as UIMsg } from "./types.js";
 
 const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
@@ -83,7 +84,7 @@ const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) =
             {(topic) => (
               <button
                 class="text-[11px] text-gh-fg-muted hover:text-gh-fg px-2.5 py-1 rounded-lg bg-gh-overlay hover:bg-gh-muted transition-all truncate max-w-52"
-                onClick={() => props.onSelect(topic)}
+                onClick={() => { haptics.tap(); props.onSelect(topic); }}
               >
                 {topic}
               </button>
@@ -296,6 +297,10 @@ export const ChatView = (props: {
   let pendingAutoCompactionEntriesBefore: number | null = null;
   let dragDepth = 0;
   let resetVersion = 0;
+  let attentionFeedbackSentForTurn = false;
+  let streamFeedbackStartedForTurn = false;
+  let lastStreamFeedbackAt = 0;
+  let streamedCharsSinceFeedback = 0;
 
   let assistantIdx = -1;
   const toolBlockIndices = new Map<string, { idx: number; name: string }>();
@@ -316,6 +321,24 @@ export const ChatView = (props: {
       next[assistantIdx] = { ...current, streaming: false };
       return next;
     });
+  };
+
+  const pulseStreamingFeedback = (delta: string) => {
+    if (!delta.trim()) return;
+    const now = Date.now();
+    streamedCharsSinceFeedback += delta.length;
+    if (!streamFeedbackStartedForTurn) {
+      streamFeedbackStartedForTurn = true;
+      lastStreamFeedbackAt = now;
+      streamedCharsSinceFeedback = 0;
+      haptics.selection();
+      return;
+    }
+    if (streamedCharsSinceFeedback >= 48 || now - lastStreamFeedbackAt >= 900) {
+      streamedCharsSinceFeedback = 0;
+      lastStreamFeedbackAt = now;
+      haptics.selection();
+    }
   };
 
   const fileService = createChatFileService({
@@ -654,6 +677,7 @@ export const ChatView = (props: {
       .join("\n\n");
 
     loop.push({ type: "tool_result", callId, result: { result } });
+    haptics.success();
     updateBlock(blockIdx, (block) =>
       block.type === "survey" ? { ...block, submitted: true, answers } : block,
     );
@@ -663,11 +687,16 @@ export const ChatView = (props: {
     switch (event.type) {
       case "turn_start": {
         currentAssistantStartedAt = new Date().toISOString();
+        attentionFeedbackSentForTurn = false;
+        streamFeedbackStartedForTurn = false;
+        lastStreamFeedbackAt = 0;
+        streamedCharsSinceFeedback = 0;
         ensureAssistantTurnMessage();
         break;
       }
 
       case "text": {
+        pulseStreamingFeedback(event.delta);
         const blocks = getCurrentBlocks();
         const last = blocks[blocks.length - 1];
         if (last?.type === "text") {
@@ -694,6 +723,10 @@ export const ChatView = (props: {
       }
 
       case "tool_start": {
+        if (!attentionFeedbackSentForTurn) {
+          attentionFeedbackSentForTurn = true;
+          haptics.nudge();
+        }
         const idx = appendBlock({
           type: "tool_call",
           callId: event.callId,
@@ -717,6 +750,10 @@ export const ChatView = (props: {
       }
 
       case "action_request": {
+        if (!attentionFeedbackSentForTurn) {
+          attentionFeedbackSentForTurn = true;
+          haptics.nudge();
+        }
         if (event.kind === "approval") {
           const entry = toolBlockIndices.get(event.callId);
           if (!entry) break;
@@ -794,6 +831,7 @@ export const ChatView = (props: {
       }
 
       case "turn_end": {
+        if (streamFeedbackStartedForTurn) haptics.success();
         const preview = assistantPreviewFromBlocks(getCurrentBlocks());
         const persistedAssistant = [...await loadPersistedEntries(props.chatId)]
           .reverse()
@@ -812,6 +850,9 @@ export const ChatView = (props: {
         }));
         closeStreamingAssistantMessage();
         currentAssistantStartedAt = undefined;
+        streamFeedbackStartedForTurn = false;
+        lastStreamFeedbackAt = 0;
+        streamedCharsSinceFeedback = 0;
         props.onSessionComplete?.({
           chatId: props.chatId,
           finishedAt: completedAt,
@@ -821,6 +862,7 @@ export const ChatView = (props: {
       }
 
       case "error": {
+        haptics.error();
         appendStatusMessage(`Error: ${event.error}`);
         break;
       }
@@ -974,6 +1016,7 @@ export const ChatView = (props: {
         summaryPreview,
       });
     } catch (error) {
+      haptics.error();
       const message = error instanceof Error ? error.message : String(error);
       appendCompactionBlock({
         type: "compaction",
@@ -997,6 +1040,7 @@ export const ChatView = (props: {
   ) => {
     const ensured = await ensureRuntime();
     if (!ensured) {
+      haptics.error();
       appendStatusMessage("Error: No provider configured. Open Settings to add one.");
       return;
     }
@@ -1060,12 +1104,16 @@ export const ChatView = (props: {
         await handleNessiEvent(event);
       }
     } catch (error) {
+      haptics.error();
       appendStatusMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       activeLoop = null;
       clearPendingCallMappings();
       closeStreamingAssistantMessage();
       currentAssistantStartedAt = undefined;
+      streamFeedbackStartedForTurn = false;
+      lastStreamFeedbackAt = 0;
+      streamedCharsSinceFeedback = 0;
       assistantIdx = -1;
       setState("streaming", false);
       runtime = null;
@@ -1110,6 +1158,7 @@ export const ChatView = (props: {
         await refreshChatFiles();
         await runTurn(trimmed, images, persistedFiles, persistedFiles);
       } catch (error) {
+        haptics.error();
         appendStatusMessage(error instanceof Error ? error.message : String(error));
       }
     };
@@ -1152,6 +1201,7 @@ export const ChatView = (props: {
       await refreshChatFiles();
       setState("messages", await loadMessages(props.chatId));
     } catch (error) {
+      haptics.error();
       appendStatusMessage(error instanceof Error ? error.message : String(error));
     }
   };
@@ -1160,6 +1210,7 @@ export const ChatView = (props: {
     try {
       await downloadChatFile(file);
     } catch (error) {
+      haptics.error();
       appendStatusMessage(error instanceof Error ? error.message : String(error));
     }
   };
@@ -1213,7 +1264,7 @@ export const ChatView = (props: {
             <span class="i ti ti-alert-circle text-gh-danger text-base shrink-0" />
             <span>
               No provider configured.{" "}
-              <button class="underline text-gh-accent hover:text-gh-fg cursor-pointer font-medium" onClick={() => props.onOpenSettings?.()}>
+              <button class="underline text-gh-accent hover:text-gh-fg cursor-pointer font-medium" onClick={() => { haptics.tap(); props.onOpenSettings?.(); }}>
                 Open Settings
               </button>
               {" "}to add one.

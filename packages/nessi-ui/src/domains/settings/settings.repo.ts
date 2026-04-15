@@ -96,6 +96,13 @@ const setSuggestionPrompt = async (prompt: string) => {
   await putDoc("background-prompt:suggest-topics", prompt);
 };
 
+const getHapticsEnabled = async () =>
+  getDoc("haptics-enabled", true);
+
+const setHapticsEnabled = async (enabled: boolean) => {
+  await putDoc("haptics-enabled", enabled);
+};
+
 const loadToolApprovals = async () => getDoc<ToolApprovalMap>("tool-approvals", {});
 
 const setAlwaysAllowed = async (toolName: string) => {
@@ -113,6 +120,8 @@ export const settingsRepo = {
   setCompactionPrompt,
   getSuggestionPrompt,
   setSuggestionPrompt,
+  getHapticsEnabled,
+  setHapticsEnabled,
   loadCompactionSettings,
   saveCompactionSettings,
   loadToolApprovals,

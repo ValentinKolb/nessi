@@ -5,6 +5,7 @@ import {
   resetCompactionPrompt,
   getDefaultCompactionPrompt,
 } from "../../lib/compaction-settings.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 export const CompactionPromptEditor = (props: { onDone: () => void }) => {
   const [text, setText] = createSignal("");
@@ -27,12 +28,14 @@ export const CompactionPromptEditor = (props: { onDone: () => void }) => {
 
   const save = async () => {
     await setCompactionPrompt(text());
+    haptics.success();
     flashSaved();
   };
 
   const reset = async () => {
     const defaultText = await resetCompactionPrompt();
     setText(defaultText);
+    haptics.success();
     flashSaved();
   };
 
@@ -63,7 +66,7 @@ export const CompactionPromptEditor = (props: { onDone: () => void }) => {
           </Show>
         </div>
         <div class="ui-actions-right">
-          <button class="btn-secondary" onClick={props.onDone}>cancel</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); props.onDone(); }}>cancel</button>
           <button class="btn-primary" onClick={() => void save()}>
             {saved() ? "saved!" : "save"}
           </button>

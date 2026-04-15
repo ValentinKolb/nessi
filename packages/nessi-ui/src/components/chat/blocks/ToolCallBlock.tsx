@@ -2,6 +2,7 @@ import { createSignal, For, Show, createEffect, onCleanup, type JSX } from "soli
 import type { UIToolCallBlock } from "../types.js";
 import { isPresentResult, PresentContent } from "./PresentContent.js";
 import { downloadChatFileByPath } from "../../../lib/chat-files.js";
+import { haptics } from "../../../shared/browser/haptics.js";
 import { PulseDots } from "../../PulseDots.js";
 
 const stringArg = (args: Record<string, unknown> | undefined, key: string, fallback: string) =>
@@ -169,6 +170,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
   const handlePresentDownload = (e: MouseEvent) => {
     e.stopPropagation();
     if (!props.chatId) return;
+    haptics.tap();
     const path = stringArg(props.block.args as Record<string, unknown> | undefined, "path", "");
     void downloadChatFileByPath(props.chatId, path);
   };
@@ -177,6 +179,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
 
   const toggle = () => {
     if (isPresent()) return;
+    haptics.tap();
     setExpanded(!expanded());
     requestAnimationFrame(() => headRef.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   };
@@ -219,13 +222,13 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
       </button>
       <Show when={isPending()}>
         <div class="flex items-center gap-2 px-2 py-1.5">
-          <button class="btn-secondary danger-text flex items-center gap-1" onClick={() => props.onApproval?.(props.block.callId, "deny")}>
+          <button class="btn-secondary danger-text flex items-center gap-1" onClick={() => { haptics.tap(); props.onApproval?.(props.block.callId, "deny"); }}>
             <span class="i ti ti-x text-[11px]" />deny
           </button>
-          <button class="btn-primary flex items-center gap-1" onClick={() => props.onApproval?.(props.block.callId, "allow")}>
+          <button class="btn-primary flex items-center gap-1" onClick={() => { haptics.success(); props.onApproval?.(props.block.callId, "allow"); }}>
             <span class="i ti ti-check text-[11px]" />allow
           </button>
-          <button class="btn-secondary flex items-center gap-1" onClick={() => props.onApproval?.(props.block.callId, "always")}>
+          <button class="btn-secondary flex items-center gap-1" onClick={() => { haptics.success(); props.onApproval?.(props.block.callId, "always"); }}>
             <span class="i ti ti-checks text-[11px]" />always
           </button>
         </div>

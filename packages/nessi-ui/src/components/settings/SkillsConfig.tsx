@@ -6,6 +6,7 @@ import {
   saveSkills,
   type SkillEntry,
 } from "../../lib/skill-registry.js";
+import { haptics } from "../../shared/browser/haptics.js";
 const NATIVE_TOOLS = ["memory", "web", "list_files", "read_file", "write_file", "edit_file", "bash"] as const;
 
 export const SkillsConfig = (props: {
@@ -48,8 +49,10 @@ export const SkillsConfig = (props: {
       setImporting(false);
       setImportText("");
       await refresh();
+      haptics.success();
     } catch {
       setError("Invalid skill JSON. Must contain at least name and doc.");
+      haptics.error();
     }
   };
 
@@ -61,10 +64,10 @@ export const SkillsConfig = (props: {
           <span>Skills</span>
         </h3>
         <div class="flex items-center gap-2">
-          <button class="btn-secondary" onClick={() => setImporting((value) => !value)}>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); setImporting((value) => !value); }}>
             {importing() ? "close" : "import"}
           </button>
-          <button class="btn-secondary" onClick={props.onCreateSkill}>+ add skill</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); props.onCreateSkill(); }}>+ add skill</button>
         </div>
       </div>
 
@@ -96,7 +99,7 @@ export const SkillsConfig = (props: {
             onInput={(e) => { setImportText(e.currentTarget.value); if (error()) setError(""); }}
           />
           <div class="ui-actions-end">
-            <button class="btn-secondary" onClick={() => { setImporting(false); setError(""); }}>cancel</button>
+            <button class="btn-secondary" onClick={() => { haptics.tap(); setImporting(false); setError(""); }}>cancel</button>
             <button class="btn-primary" onClick={() => void importSkill()}>import</button>
           </div>
         </div>
@@ -105,7 +108,7 @@ export const SkillsConfig = (props: {
       <div class="ui-list">
         <For each={skills()}>
           {(skill) => (
-            <div class="ui-row cursor-pointer" onClick={() => props.onEditSkill(skill)}>
+            <div class="ui-row cursor-pointer" onClick={() => { haptics.tap(); props.onEditSkill(skill); }}>
               <div class="flex items-center gap-2 min-w-0">
                 <span class="shrink-0 text-gh-fg-secondary">{skill.command}</span>
                 <span class="flex-1 min-w-0 truncate text-gh-fg-muted">{skill.description}</span>

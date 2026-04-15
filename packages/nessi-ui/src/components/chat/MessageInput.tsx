@@ -4,6 +4,7 @@ import type { UIUserContentPart } from "../../lib/chat-content.js";
 import type { PendingChatFile } from "../../lib/chat-files.js";
 import { getProviderIconUrl, type ProviderEntry } from "../../lib/provider.js";
 import { formatFileSize } from "../../lib/chat-files.js";
+import { haptics } from "../../shared/browser/haptics.js";
 import { PopoverMenu } from "../PopoverMenu.js";
 
 /** Keep the textarea compact while allowing multiline input. */
@@ -98,6 +99,7 @@ export const MessageInput = (props: {
     const t = text().trim();
     if ((!t && !hasAttachments()) || props.disabled) return;
     props.onSend(t);
+    haptics.success();
     setText("");
     setMatches([]);
     textareaRef.style.height = "auto";
@@ -142,7 +144,7 @@ export const MessageInput = (props: {
                         ? "bg-gh-accent-subtle text-gh-fg"
                         : "text-gh-fg-muted hover:bg-gh-overlay"
                     }`}
-                    onMouseDown={(e) => { e.preventDefault(); void executeCommand(cmd); }}
+                    onMouseDown={(e) => { e.preventDefault(); haptics.tap(); void executeCommand(cmd); }}
                   >
                     <span class="font-medium text-gh-fg-secondary">/{cmd.name}</span>
                     <span class="text-gh-fg-subtle text-xs">{cmd.description}</span>
@@ -193,7 +195,7 @@ export const MessageInput = (props: {
                     />
                     <button
                       class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gh-fg text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => props.onRemoveImage?.(index())}
+                      onClick={() => { haptics.tap(); props.onRemoveImage?.(index()); }}
                     >
                       <span class="i ti ti-x text-[8px]" />
                     </button>
@@ -218,7 +220,7 @@ export const MessageInput = (props: {
                     <span class="text-[10px] text-gh-fg-subtle">{formatFileSize(file.size)}</span>
                     <button
                       class="text-gh-fg-subtle hover:text-gh-fg ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => props.onRemovePendingFile?.(file.id)}
+                      onClick={() => { haptics.tap(); props.onRemovePendingFile?.(file.id); }}
                     >
                       <span class="i ti ti-x text-[9px]" />
                     </button>
@@ -290,7 +292,7 @@ export const MessageInput = (props: {
               <span class="text-gh-border text-[10px] select-none">|</span>
               <button
                 class="flex items-center gap-1.5 text-[12px] text-gh-fg-subtle hover:text-gh-fg px-1.5 py-1 rounded-md hover:bg-gh-overlay transition-colors"
-                onClick={() => props.onOpenFiles?.()}
+                onClick={() => { haptics.tap(); props.onOpenFiles?.(); }}
               >
                 <Show when={inputCount() > 0}>
                   <span class="flex items-center gap-0.5">

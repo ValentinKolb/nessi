@@ -1,5 +1,6 @@
 import { createSignal, Show, onCleanup, onMount } from "solid-js";
 import { readMemories, writeMemories, getMemoryLines } from "../../lib/memory.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 const CATEGORIES = [
   { tag: "[fact]", desc: "Name, job, location, languages" },
@@ -35,6 +36,7 @@ export const MemoryEditor = () => {
   const handleSave = async () => {
     await writeMemories(text());
     setInitial(text());
+    haptics.success();
     setSaved(true);
     if (savedTimer) clearTimeout(savedTimer);
     savedTimer = setTimeout(() => setSaved(false), 2000);
@@ -51,6 +53,7 @@ export const MemoryEditor = () => {
     setText("");
     setInitial("");
     setConfirmClear(false);
+    haptics.success();
     setSaved(true);
     if (savedTimer) clearTimeout(savedTimer);
     savedTimer = setTimeout(() => setSaved(false), 2000);

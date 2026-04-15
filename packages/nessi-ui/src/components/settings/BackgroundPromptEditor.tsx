@@ -13,6 +13,7 @@ import {
   resetSuggestionPrompt,
   getDefaultSuggestionPrompt,
 } from "../../lib/jobs/background-prompt.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 type Tab = "metadata" | "consolidation" | "suggestions";
 
@@ -48,6 +49,7 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
     if (current === "metadata") await setBackgroundPrompt(metadataText());
     else if (current === "consolidation") await setConsolidationPrompt(consolidationText());
     else await setSuggestionPrompt(suggestionText());
+    haptics.success();
     flashSaved();
   };
 
@@ -63,6 +65,7 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
       const text = await resetSuggestionPrompt();
       setSuggestionText(text);
     }
+    haptics.success();
     flashSaved();
   };
 
@@ -94,7 +97,7 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
           ? "text-gh-fg"
           : "text-gh-fg-subtle hover:text-gh-fg-muted"
       }`}
-      onClick={() => setTab(tabProps.id)}
+      onClick={() => { haptics.tap(); setTab(tabProps.id); }}
     >
       {tabProps.label}
       <Show when={tab() === tabProps.id}>
@@ -146,7 +149,7 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
           </Show>
         </div>
         <div class="ui-actions-right">
-          <button class="btn-secondary" onClick={props.onDone}>cancel</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); props.onDone(); }}>cancel</button>
           <button class="btn-primary" onClick={() => void save()}>
             {saved() ? "saved!" : "save"}
           </button>

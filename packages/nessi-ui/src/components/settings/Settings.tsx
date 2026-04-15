@@ -24,6 +24,7 @@ import { PromptEditorView } from "./PromptEditorModal.js";
 import { CompactionPromptEditor } from "./CompactionPromptEditor.js";
 import { GitHubHelpView } from "./GitHubHelpView.js";
 import { NextcloudHelpView } from "./NextcloudHelpView.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 type SettingsRoute =
   | { kind: "root" }
@@ -41,7 +42,8 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
   let dialogRef!: HTMLDialogElement;
   const [route, setRoute] = createSignal<SettingsRoute>({ kind: "root" });
 
-  const close = () => {
+  const close = (withHaptics = false) => {
+    if (withHaptics) haptics.tap();
     dialogRef.close();
     setRoute({ kind: "root" });
     props.onClose();
@@ -137,14 +139,14 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
     <dialog
       ref={(el) => { dialogRef = el; props.ref(el); }}
       class="m-auto bg-gh-surface text-gh-fg p-0 w-[min(980px,96vw)] max-h-[92vh] overflow-hidden shadow-lg"
-      onClick={(e) => { if (e.target === dialogRef && route().kind === "root") close(); }}
+      onClick={(e) => { if (e.target === dialogRef && route().kind === "root") close(true); }}
       onCancel={(e) => {
         if (route().kind !== "root") {
           e.preventDefault();
           return;
         }
         e.preventDefault();
-        close();
+        close(true);
       }}
     >
       <div class="flex max-h-[92vh] min-h-0 flex-col">
@@ -152,7 +154,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
           <Show when={route().kind !== "root"}>
             <button
               class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"
-              onClick={backToRoot}
+              onClick={() => { haptics.tap(); backToRoot(); }}
               title="Back"
             >
               <span class="i ti ti-arrow-left text-base" />
@@ -162,7 +164,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
           <Show when={route().kind === "root"}>
             <button
               class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"
-              onClick={close}
+              onClick={() => close(true)}
               title="Close"
             >
               <span class="i ti ti-x text-base" />

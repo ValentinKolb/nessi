@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { UISurveyBlock } from "../types.js";
+import { haptics } from "../../../shared/browser/haptics.js";
 
 /** Interactive multi-step survey block rendered from the survey client tool. */
 export const SurveyBlock = (props: {
@@ -38,6 +39,7 @@ export const SurveyBlock = (props: {
       return;
     }
 
+    haptics.tap();
     setStep((current) => current + 1);
   };
 

@@ -1,5 +1,6 @@
 import { createSignal, Show, onCleanup, onMount } from "solid-js";
 import { readJson, writeJson } from "../../lib/json-storage.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 const TAVILY_KEY = "nessi:tavily";
 const GITHUB_KEY = "nessi:github";
@@ -22,6 +23,7 @@ const useApiKey = (storageKey: string) => {
   const save = () => {
     writeJson(storageKey, { apiKey: value() });
     setInitial(value());
+    haptics.success();
     setSaved(true);
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => setSaved(false), 2000);
@@ -54,6 +56,7 @@ const useNextcloudConfig = () => {
   const save = () => {
     writeJson(NEXTCLOUD_KEY, config());
     setInitial(config());
+    haptics.success();
     setSaved(true);
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => setSaved(false), 2000);
@@ -108,7 +111,7 @@ export const ApiKeys = (props: {
           <div class="flex items-center justify-between">
             <span class="text-[13px] text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-brand-github text-sm" />GitHub</span>
             <Show when={props.onShowGitHubHelp}>
-              <button class="btn-minimal" onClick={props.onShowGitHubHelp}>
+              <button class="btn-minimal" onClick={() => { haptics.tap(); props.onShowGitHubHelp?.(); }}>
                 how to get a token?
               </button>
             </Show>
@@ -136,7 +139,7 @@ export const ApiKeys = (props: {
         <div class="flex items-center justify-between">
           <div class="text-[13px] text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-brand-nextcloud text-sm" />Nextcloud</div>
           <Show when={props.onShowNextcloudHelp}>
-            <button class="btn-minimal" onClick={props.onShowNextcloudHelp}>
+            <button class="btn-minimal" onClick={() => { haptics.tap(); props.onShowNextcloudHelp?.(); }}>
               how to get an app password?
             </button>
           </Show>

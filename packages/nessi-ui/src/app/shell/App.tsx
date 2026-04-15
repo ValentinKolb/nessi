@@ -19,6 +19,7 @@ import { loadPersistedEntries } from "../../lib/store.js";
 import { messageTime, timeAgo } from "../../lib/date-format.js";
 import { dbEvents } from "../../shared/db/db-events.js";
 import { browserNotifications } from "../../shared/browser/browser-notifications.js";
+import { haptics } from "../../shared/browser/haptics.js";
 import { pageAttention } from "../../shared/browser/page-attention.js";
 
 const ACTIVE_CHAT_KEY = "nessi:activeChat";
@@ -175,7 +176,7 @@ export const App = () => {
       <header class="flex items-center gap-2 px-3 py-2 shrink-0">
         <button
           class="group flex h-8 w-8 items-center justify-center rounded-lg text-gh-fg"
-          onClick={newChat}
+          onClick={() => { haptics.tap(); newChat(); }}
           title="New chat"
         >
           <span class="relative h-4 w-4">
@@ -190,7 +191,7 @@ export const App = () => {
         >
           <button
             class="min-w-0 max-w-[min(52vw,22rem)] truncate rounded-md text-left text-[15px] font-medium tracking-tight text-gh-fg underline-offset-3 transition-colors hover:text-gh-accent hover:underline"
-            onClick={openChatInfo}
+            onClick={() => { haptics.tap(); openChatInfo(); }}
             title="Open chat info"
           >
             {activeChatTitle()}
@@ -202,7 +203,7 @@ export const App = () => {
         {/* Help button */}
         <button
           class="flex h-8 w-8 items-center justify-center rounded-lg nav-icon"
-          onClick={openHelp}
+          onClick={() => { haptics.tap(); openHelp(); }}
           title="Help & guide"
         >
           <span class="i ti ti-help text-base" />
@@ -238,14 +239,14 @@ export const App = () => {
               <Show when={isOverride()}>
                 <button
                   class="btn-primary !py-1 !px-2.5"
-                  onClick={() => { void acceptPromptUpdate(); setShowUpdateBanner(false); }}
+                  onClick={() => { haptics.success(); void acceptPromptUpdate(); setShowUpdateBanner(false); }}
                 >
                   update
                 </button>
               </Show>
               <button
                 class="btn-secondary !py-1 !px-2.5"
-                onClick={() => { acknowledgePromptVersion(); setShowUpdateBanner(false); }}
+                onClick={() => { haptics.tap(); acknowledgePromptVersion(); setShowUpdateBanner(false); }}
               >
                 dismiss
               </button>
@@ -277,14 +278,14 @@ export const App = () => {
       <dialog
         ref={chatInfoRef}
         class="m-auto bg-gh-surface text-gh-fg p-0 w-[min(720px,92vw)] max-h-[82vh] overflow-hidden rounded-xl border border-gh-border-muted"
-        onClick={(e) => { if (e.target === chatInfoRef) chatInfoRef.close(); }}
+        onClick={(e) => { if (e.target === chatInfoRef) { haptics.tap(); chatInfoRef.close(); } }}
       >
         <div class="flex max-h-[82vh] min-h-0 flex-col">
           <div class="px-4 py-3 flex items-center gap-2 border-b border-gh-border-muted">
             <span class="text-[15px] font-semibold flex-1 text-gh-fg">Chat Info</span>
             <button
               class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"
-              onClick={() => chatInfoRef.close()}
+              onClick={() => { haptics.tap(); chatInfoRef.close(); }}
               title="Close"
             >
               <span class="i ti ti-x text-base" />

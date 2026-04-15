@@ -1,6 +1,7 @@
 import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import { getBackgroundLogs, getRunLog, triggerJob, type JobRunLog } from "../../lib/scheduler.js";
 import { timeAgo } from "../../lib/date-format.js";
+import { haptics } from "../../shared/browser/haptics.js";
 import { PulseDots } from "../PulseDots.js";
 
 const JOBS = [
@@ -49,7 +50,7 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
           <span class="i ti ti-clock-play" />
           <span>Background Tasks</span>
         </h3>
-        <button class="btn-secondary" onClick={props.onOpenLogs}>
+        <button class="btn-secondary" onClick={() => { haptics.tap(); props.onOpenLogs?.(); }}>
           logs
         </button>
       </div>
@@ -86,7 +87,7 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
                   <button
                     class="shrink-0 i ti ti-player-play icon-action text-sm"
                     title={`Run ${job.label}`}
-                    onClick={() => void triggerJob(job.id)}
+                    onClick={() => { haptics.tap(); void triggerJob(job.id); }}
                   />
                 </div>
                 <div class="text-[11px] mt-0.5">
@@ -107,7 +108,7 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
       </div>
 
       <Show when={props.onEditPrompts}>
-        <button class="btn-minimal" onClick={props.onEditPrompts}>
+        <button class="btn-minimal" onClick={() => { haptics.tap(); props.onEditPrompts?.(); }}>
           edit background prompts
         </button>
       </Show>

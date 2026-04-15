@@ -2,6 +2,7 @@ import { createCopyAction } from "../../lib/clipboard.js";
 import { createEffect, createSignal, Show } from "solid-js";
 import type { Prompt } from "../../lib/prompts.js";
 import { isDefault, loadPrompts, loadUserPrompts, newPromptId, saveUserPrompts } from "../../lib/prompts.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 type PromptDraft = {
   id: string;
@@ -50,6 +51,7 @@ export const PromptEditorView = (props: {
       ? userPrompts.map((prompt) => (prompt.id === nextPrompt.id ? nextPrompt : prompt))
       : [...userPrompts, nextPrompt];
     await saveUserPrompts(next);
+    haptics.success();
     props.onDone();
   };
 
@@ -57,6 +59,7 @@ export const PromptEditorView = (props: {
     if (!props.prompt) return;
     const prompts = await loadUserPrompts();
     await saveUserPrompts(prompts.filter((entry) => entry.id !== props.prompt!.id));
+    haptics.success();
     props.onDone();
   };
 
@@ -94,7 +97,7 @@ export const PromptEditorView = (props: {
           </Show>
         </div>
         <div class="ui-actions-right">
-          <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); props.onCancel(); }}>cancel</button>
           <button class="btn-primary" onClick={() => void save()}>save</button>
         </div>
       </div>

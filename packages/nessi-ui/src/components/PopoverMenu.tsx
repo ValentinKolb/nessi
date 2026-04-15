@@ -1,4 +1,5 @@
 import { For, Show, type JSX } from "solid-js";
+import { haptics } from "../shared/browser/haptics.js";
 
 export type PopoverMenuItem = {
   /** Tabler icon class (e.g. "ti-paperclip"). Ignored if iconUrl is set. */
@@ -65,7 +66,7 @@ export const PopoverMenu = (props: {
         ref={triggerRef}
         popovertarget={props.id}
         class={props.triggerClass ?? "flex items-center justify-center rounded-md transition-colors text-gh-fg-subtle hover:text-gh-fg hover:bg-gh-overlay"}
-        onClick={position}
+        onClick={() => { haptics.tap(); position(); }}
       >
         {props.trigger}
       </button>
@@ -82,7 +83,7 @@ export const PopoverMenu = (props: {
             {(item) => (
               <button
                 class="w-full flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-gh-fg-muted hover:bg-gh-overlay hover:text-gh-fg transition-colors text-left"
-                onClick={() => { item.onClick(); close(); }}
+                onClick={() => { haptics.tap(); item.onClick(); close(); }}
               >
                 <ItemIcon icon={item.icon} iconUrl={item.iconUrl} />
                 <span class="flex-1">{item.label}</span>

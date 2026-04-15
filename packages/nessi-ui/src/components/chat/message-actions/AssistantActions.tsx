@@ -1,6 +1,7 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import type { UIAssistantMessage } from "../types.js";
 import { createCopyAction } from "../../../lib/clipboard.js";
+import { haptics } from "../../../shared/browser/haptics.js";
 
 const messageText = (message: UIAssistantMessage) =>
   message.blocks
@@ -78,7 +79,7 @@ export const AssistantActions = (props: { message: UIAssistantMessage }) => {
       </button>
       <button
         class="flex h-6 w-6 items-center justify-center rounded-full text-gh-fg-subtle transition-colors hover:bg-gh-overlay hover:text-gh-fg"
-        onClick={() => setOpen(true)}
+        onClick={() => { haptics.tap(); setOpen(true); }}
         title="Message info"
       >
         <span class="i ti ti-info-circle text-[13px] leading-none" />
@@ -92,11 +93,11 @@ export const AssistantActions = (props: { message: UIAssistantMessage }) => {
       </Show>
 
       <Show when={open()}>
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4" onClick={() => setOpen(false)}>
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4" onClick={() => { haptics.tap(); setOpen(false); }}>
           <div class="ui-panel w-[min(420px,92vw)] p-3 space-y-3" onClick={(event) => event.stopPropagation()}>
             <div class="flex items-center gap-2">
               <div class="text-[15px] font-semibold text-gh-fg flex-1">Message stats</div>
-              <button class="flex h-7 w-7 items-center justify-center rounded-md nav-icon" onClick={() => setOpen(false)}>
+              <button class="flex h-7 w-7 items-center justify-center rounded-md nav-icon" onClick={() => { haptics.tap(); setOpen(false); }}>
                 <span class="i ti ti-x text-base" />
               </button>
             </div>

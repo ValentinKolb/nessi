@@ -4,6 +4,7 @@ import { ensureUniqueSkillId, listSkills, saveSkills } from "../../lib/skill-reg
 import { createSkillDocTemplate, readSkillDocMeta, syncSkillDoc } from "../../lib/skill-doc.js";
 import { SNIPPET_TEMPLATE } from "../../lib/skill-templates.js";
 import { createCopyAction } from "../../lib/clipboard.js";
+import { haptics } from "../../shared/browser/haptics.js";
 
 type SkillEditorDraft = {
   id: string;
@@ -83,6 +84,7 @@ export const SkillEditorView = (props: {
 
     await saveSkills(next);
     setError("");
+    haptics.success();
     props.onDone();
   };
 
@@ -91,6 +93,7 @@ export const SkillEditorView = (props: {
     if (!current.id || current.builtin) return;
     const existingSkills = await listSkills();
     await saveSkills(existingSkills.filter((skill) => skill.id !== current.id));
+    haptics.success();
     props.onDone();
   };
 
@@ -132,7 +135,7 @@ export const SkillEditorView = (props: {
                 ? "text-gh-fg"
                 : "text-gh-fg-subtle hover:text-gh-fg-muted"
             }`}
-            onClick={() => setTab("definition")}
+            onClick={() => { haptics.tap(); setTab("definition"); }}
           >
             Definition
             <Show when={tab() === "definition"}>
@@ -145,7 +148,7 @@ export const SkillEditorView = (props: {
                 ? "text-gh-fg"
                 : "text-gh-fg-subtle hover:text-gh-fg-muted"
             }`}
-            onClick={() => setTab("implementation")}
+            onClick={() => { haptics.tap(); setTab("implementation"); }}
           >
             Code
             <Show when={tab() === "implementation"}>
@@ -202,7 +205,7 @@ export const SkillEditorView = (props: {
           </Show>
         </div>
         <div class="ui-actions-right">
-          <button class="btn-secondary" onClick={props.onCancel}>cancel</button>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); props.onCancel(); }}>cancel</button>
           <button class="btn-primary" onClick={() => void save()}>save</button>
         </div>
       </div>
