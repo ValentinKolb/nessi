@@ -1,18 +1,20 @@
 import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
-import { getBackgroundLogs, getRunLog, triggerMetadataRefresh, type JobRunLog } from "../../lib/scheduler.js";
+import { getBackgroundLogs, getRunLog, triggerJob, type JobRunLog } from "../../lib/scheduler.js";
 import { timeAgo } from "../../lib/date-format.js";
+import { PulseDots } from "../PulseDots.js";
 
 const JOBS = [
   { id: "refresh-metadata", label: "Chat metadata", cron: "every minute" },
-  { id: "consolidate-memory", label: "Memory consolidation", cron: "every 6 hours" },
+  { id: "consolidate-memory", label: "Memory consolidation", cron: "every 2 hours" },
+  { id: "suggest-topics", label: "Chat suggestions", cron: "every 30 minutes" },
 ] as const;
 
 const StatusBadge = (props: { status: JobRunLog["status"] }) => {
   const cls = () => {
     switch (props.status) {
-      case "running": return "bg-amber-50 text-amber-700";
-      case "success": return "bg-emerald-50 text-emerald-700";
-      case "error": return "bg-red-50 text-red-700";
+      case "running": return "bg-amber-100 text-amber-700";
+      case "success": return "bg-emerald-100 text-emerald-700";
+      case "error": return "bg-red-100 text-red-700";
     }
   };
   return (
@@ -37,13 +39,8 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
 
   onCleanup(() => { if (timer) clearInterval(timer); });
 
-  const latestFor = (jobId: string) => {
-    const all = logs();
-    for (let i = all.length - 1; i >= 0; i--) {
-      if (all[i]!.jobId === jobId) return all[i]!;
-    }
-    return undefined;
-  };
+  const latestFor = (jobId: string) =>
+    logs().find((run) => run.jobId === jobId);
 
   return (
     <div class="ui-panel p-3 space-y-2">
@@ -52,18 +49,13 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
           <span class="i ti ti-clock-play" />
           <span>Background Tasks</span>
         </h3>
-        <div class="flex items-center gap-2">
-          <button class="btn-secondary" onClick={props.onOpenLogs}>
-            logs
-          </button>
-          <button class="btn-secondary" onClick={() => void triggerMetadataRefresh()}>
-            run now
-          </button>
-        </div>
+        <button class="btn-secondary" onClick={props.onOpenLogs}>
+          logs
+        </button>
       </div>
 
       <p class="settings-desc">
-        Background jobs process chats after conversations to generate metadata and update memories.
+        Background jobs process chats after conversations to generate metadata, update memories, and suggest topics.
       </p>
 
       <div class="ui-list">
@@ -81,7 +73,7 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
                       <>
                         <StatusBadge status={run().status} />
                         <Show when={run().finishedAt}>
-                          <span class="text-[11px] text-gh-fg-subtle tabular-nums">
+                          <span class="shrink-0 rounded-full bg-gh-overlay px-2 py-0.5 text-[11px] text-gh-fg-subtle tabular-nums">
                             {timeAgo(run().finishedAt!)}
                           </span>
                         </Show>
@@ -89,15 +81,25 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
                     )}
                   </Show>
                   <Show when={!latest()}>
-                    <span class="text-[11px] text-gh-fg-subtle">not run yet</span>
+                    <span class="shrink-0 rounded-full bg-gh-overlay px-2 py-0.5 text-[11px] text-gh-fg-subtle">not run yet</span>
+                  </Show>
+                  <button
+                    class="shrink-0 i ti ti-player-play icon-action text-sm"
+                    title={`Run ${job.label}`}
+                    onClick={() => void triggerJob(job.id)}
+                  />
+                </div>
+                <div class="text-[11px] mt-0.5">
+                  <Show when={latest()?.status === "running"}>
+                    <span class="text-gh-fg-subtle flex items-center gap-1.5">working <PulseDots /></span>
+                  </Show>
+                  <Show when={latest()?.status !== "running" && latest()?.result}>
+                    <span class="text-gh-fg-subtle">{latest()!.result}</span>
+                  </Show>
+                  <Show when={latest()?.status !== "running" && latest()?.error}>
+                    <span class="text-gh-danger">{latest()!.error}</span>
                   </Show>
                 </div>
-                <Show when={latest()?.result}>
-                  <div class="text-[11px] text-gh-fg-subtle mt-0.5">{latest()!.result}</div>
-                </Show>
-                <Show when={latest()?.error}>
-                  <div class="text-[11px] text-gh-danger mt-0.5">{latest()!.error}</div>
-                </Show>
               </div>
             );
           }}

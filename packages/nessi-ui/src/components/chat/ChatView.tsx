@@ -53,7 +53,17 @@ import type { UIMessage as UIMsg } from "./types.js";
 const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
   const [topics, setTopics] = createSignal<string[]>([]);
   const refreshTopics = async () => {
-    setTopics(await getTopicSuggestions());
+    const memoryTopics = await getTopicSuggestions();
+    const { getSuggestions } = await import("../../lib/jobs/suggest-topics.js");
+    const aiTopics = getSuggestions();
+    // Merge: AI suggestions first, then memory-based, deduplicated
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    for (const t of [...aiTopics, ...memoryTopics]) {
+      const key = t.toLowerCase().trim();
+      if (!seen.has(key)) { seen.add(key); merged.push(t); }
+    }
+    setTopics(merged.slice(0, 8));
   };
 
   createEffect(on(() => props.messages.length, (messageCount) => {

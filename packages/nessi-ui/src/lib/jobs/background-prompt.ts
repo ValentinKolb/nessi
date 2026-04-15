@@ -163,3 +163,35 @@ export const resetConsolidationPrompt = async () => {
 };
 
 export const getDefaultConsolidationPrompt = () => CONSOLIDATION_PROMPT;
+
+const SUGGESTION_PROMPT = `You generate conversation starters for nessi, a personal assistant.
+
+<memories>
+{{memories}}
+</memories>
+
+<recent_chats>
+{{recent_chats}}
+</recent_chats>
+
+Suggest 4-6 short conversation starters based on the memories and recent chat summaries above. These are shown when the user opens a new, empty chat.
+
+A new chat starts completely fresh — no access to previous conversations, files, or tool outputs. The assistant does have the user's long-term memories, so suggestions can reference things the user cares about. Only suggest things that work without prior context.
+
+Good: follow up on open projects or deadlines from memory, explore user interests, help with recurring tasks, quick standalone tasks.
+Bad: anything needing files or context from another chat, generic filler, recently discussed topics, duplicates.
+
+Output one suggestion per line, nothing else.`;
+
+export const getSuggestionPrompt = async () =>
+  await settingsRepo.getSuggestionPrompt() ?? SUGGESTION_PROMPT;
+
+export const setSuggestionPrompt = async (prompt: string) =>
+  settingsRepo.setSuggestionPrompt(prompt);
+
+export const resetSuggestionPrompt = async () => {
+  await settingsRepo.setSuggestionPrompt(SUGGESTION_PROMPT);
+  return SUGGESTION_PROMPT;
+};
+
+export const getDefaultSuggestionPrompt = () => SUGGESTION_PROMPT;

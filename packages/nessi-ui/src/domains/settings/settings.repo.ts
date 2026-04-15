@@ -89,6 +89,13 @@ const saveCompactionSettings = async (settings: CompactionSettings) => {
   });
 };
 
+const getSuggestionPrompt = async () =>
+  getDoc("background-prompt:suggest-topics", null as string | null);
+
+const setSuggestionPrompt = async (prompt: string) => {
+  await putDoc("background-prompt:suggest-topics", prompt);
+};
+
 const loadToolApprovals = async () => getDoc<ToolApprovalMap>("tool-approvals", {});
 
 const setAlwaysAllowed = async (toolName: string) => {
@@ -104,6 +111,8 @@ export const settingsRepo = {
   setConsolidationPrompt,
   getCompactionPrompt,
   setCompactionPrompt,
+  getSuggestionPrompt,
+  setSuggestionPrompt,
   loadCompactionSettings,
   saveCompactionSettings,
   loadToolApprovals,

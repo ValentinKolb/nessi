@@ -8,19 +8,25 @@ import {
   setConsolidationPrompt,
   resetConsolidationPrompt,
   getDefaultConsolidationPrompt,
+  getSuggestionPrompt,
+  setSuggestionPrompt,
+  resetSuggestionPrompt,
+  getDefaultSuggestionPrompt,
 } from "../../lib/jobs/background-prompt.js";
 
-type Tab = "metadata" | "consolidation";
+type Tab = "metadata" | "consolidation" | "suggestions";
 
 export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
   const [tab, setTab] = createSignal<Tab>("metadata");
   const [metadataText, setMetadataText] = createSignal("");
   const [consolidationText, setConsolidationText] = createSignal("");
+  const [suggestionText, setSuggestionText] = createSignal("");
   const [saved, setSaved] = createSignal(false);
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
   const loadPrompts = async () => {
     setMetadataText(await getBackgroundPrompt());
     setConsolidationText(await getConsolidationPrompt());
+    setSuggestionText(await getSuggestionPrompt());
   };
 
   onMount(() => {
@@ -38,66 +44,72 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
   };
 
   const save = async () => {
-    if (tab() === "metadata") {
-      await setBackgroundPrompt(metadataText());
-    } else {
-      await setConsolidationPrompt(consolidationText());
-    }
+    const current = tab();
+    if (current === "metadata") await setBackgroundPrompt(metadataText());
+    else if (current === "consolidation") await setConsolidationPrompt(consolidationText());
+    else await setSuggestionPrompt(suggestionText());
     flashSaved();
   };
 
   const reset = async () => {
-    if (tab() === "metadata") {
+    const current = tab();
+    if (current === "metadata") {
       const text = await resetBackgroundPrompt();
       setMetadataText(text);
-    } else {
+    } else if (current === "consolidation") {
       const text = await resetConsolidationPrompt();
       setConsolidationText(text);
+    } else {
+      const text = await resetSuggestionPrompt();
+      setSuggestionText(text);
     }
     flashSaved();
   };
 
-  const isDefault = () =>
-    tab() === "metadata"
-      ? metadataText() === getDefaultBackgroundPrompt()
-      : consolidationText() === getDefaultConsolidationPrompt();
-
-  const currentText = () => tab() === "metadata" ? metadataText() : consolidationText();
-  const setCurrentText = (text: string) => {
-    if (tab() === "metadata") setMetadataText(text);
-    else setConsolidationText(text);
+  const isDefault = () => {
+    const current = tab();
+    if (current === "metadata") return metadataText() === getDefaultBackgroundPrompt();
+    if (current === "consolidation") return consolidationText() === getDefaultConsolidationPrompt();
+    return suggestionText() === getDefaultSuggestionPrompt();
   };
+
+  const currentText = () => {
+    const current = tab();
+    if (current === "metadata") return metadataText();
+    if (current === "consolidation") return consolidationText();
+    return suggestionText();
+  };
+
+  const setCurrentText = (text: string) => {
+    const current = tab();
+    if (current === "metadata") setMetadataText(text);
+    else if (current === "consolidation") setConsolidationText(text);
+    else setSuggestionText(text);
+  };
+
+  const TabButton = (tabProps: { id: Tab; label: string }) => (
+    <button
+      class={`px-3 py-1.5 text-[13px] font-medium transition-colors relative ${
+        tab() === tabProps.id
+          ? "text-gh-fg"
+          : "text-gh-fg-subtle hover:text-gh-fg-muted"
+      }`}
+      onClick={() => setTab(tabProps.id)}
+    >
+      {tabProps.label}
+      <Show when={tab() === tabProps.id}>
+        <span class="absolute bottom-0 left-0 right-0 h-[2px] bg-gh-accent rounded-full" />
+      </Show>
+    </button>
+  );
 
   return (
     <div class="flex h-full min-h-0 flex-col gap-3">
       {/* Tabs */}
       <div class="flex border-b border-gh-border-muted">
-        <button
-          class={`px-3 py-1.5 text-[13px] font-medium transition-colors relative ${
-            tab() === "metadata"
-              ? "text-gh-fg"
-              : "text-gh-fg-subtle hover:text-gh-fg-muted"
-          }`}
-          onClick={() => setTab("metadata")}
-        >
-          Chat Metadata
-          <Show when={tab() === "metadata"}>
-            <span class="absolute bottom-0 left-0 right-0 h-[2px] bg-gh-accent rounded-full" />
-          </Show>
-        </button>
-        <button
-          class={`px-3 py-1.5 text-[13px] font-medium transition-colors relative ${
-            tab() === "consolidation"
-              ? "text-gh-fg"
-              : "text-gh-fg-subtle hover:text-gh-fg-muted"
-          }`}
-          onClick={() => setTab("consolidation")}
-        >
-          Memory Consolidation
-          <Show when={tab() === "consolidation"}>
-            <span class="absolute bottom-0 left-0 right-0 h-[2px] bg-gh-accent rounded-full" />
-          </Show>
-        </button>
+        <TabButton id="metadata" label="Chat Metadata" />
+        <TabButton id="consolidation" label="Memory Consolidation" />
+        <TabButton id="suggestions" label="Chat Suggestions" />
       </div>
 
       {/* Info note */}
@@ -110,6 +122,11 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
         <Show when={tab() === "consolidation"}>
           This prompt is sent periodically to consolidate and clean up memories.
           Use <code>{"{{memories}}"}</code> to inject the current memories.
+        </Show>
+        <Show when={tab() === "suggestions"}>
+          This prompt generates conversation starters shown when opening a new chat.
+          Use <code>{"{{memories}}"}</code> and <code>{"{{recent_chats}}"}</code> to inject context.
+          Recent chats are auto-generated summaries, not full transcripts.
         </Show>
       </div>
 

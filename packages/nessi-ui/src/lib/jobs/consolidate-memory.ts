@@ -9,9 +9,9 @@ import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
 const LAST_CONSOLIDATION_KEY = "nessi:last-consolidation";
 const CHATS_SINCE_KEY = "nessi:chats-since-consolidation";
 
-const MIN_MEMORY_LINES = 25;
-const MIN_HOURS_SINCE_LAST = 24;
-const MIN_CHATS_SINCE_LAST = 3;
+const MIN_MEMORY_LINES = 8;
+const MIN_HOURS_SINCE_LAST = 4;
+const MIN_CHATS_SINCE_LAST = 2;
 
 /** Increment the counter of chats processed since last consolidation. */
 export const incrementChatsSinceConsolidation = () => {
@@ -124,3 +124,51 @@ export const consolidateMemoryJob = job({
     }
   },
 });
+
+/** Run consolidation directly, bypassing scheduler guards. */
+export const runConsolidation = async (): Promise<{ consolidated: boolean; reason?: string; summary?: string }> => {
+  const providerEntry = getActiveProviderEntry();
+  if (!providerEntry) return { consolidated: false, reason: "no provider" };
+
+  const memoryCount = (await getMemoryLines()).length;
+  if (memoryCount === 0) return { consolidated: false, reason: "no memories" };
+
+  log(`consolidating ${memoryCount} memories (manual)...`);
+
+  const memories = await formatAll();
+  const promptTemplate = await getConsolidationPrompt();
+  const systemPrompt = promptTemplate.replaceAll("{{memories}}", memories);
+
+  const provider = createProvider(providerEntry);
+  const result = await provider.complete({
+    systemPrompt,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "Please consolidate the memories above." }] },
+    ],
+    maxOutputTokens: 1500,
+  });
+
+  const responseText = result.message.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join(" ")
+    .trim();
+
+  if (!responseText) return { consolidated: false, reason: "empty response" };
+
+  const cleaned = responseText
+    .replace(/^```\w*\n?/gm, "")
+    .replace(/```$/gm, "")
+    .trim();
+
+  const beforeCount = (await getMemoryLines()).length;
+  await writeMemories(cleaned);
+  const afterCount = (await getMemoryLines()).length;
+
+  writeString(LAST_CONSOLIDATION_KEY, new Date().toISOString());
+  writeJson(CHATS_SINCE_KEY, 0);
+
+  const summary = `${beforeCount} → ${afterCount} memories`;
+  log(`consolidate-memory done (manual) — ${summary}`);
+  return { consolidated: true, summary };
+};
