@@ -1,8 +1,19 @@
 import { createSignal, For, Show } from "solid-js";
+import { humanId } from "human-id";
 import { readString, writeString } from "../../lib/json-storage.js";
-import { loadProviders } from "../../lib/provider.js";
+import {
+  getProviderPresets,
+  getProviderIconUrl,
+  loadProviders,
+  saveProviders,
+  setActiveProviderId,
+  validateProviderEntry,
+  type ProviderEntry,
+  type ProviderType,
+} from "../../lib/provider.js";
 import { browserNotifications } from "../../shared/browser/browser-notifications.js";
 import { haptics } from "../../shared/browser/haptics.js";
+import { theme, type ThemeMode } from "../../shared/theme/theme.js";
 
 const ONBOARD_KEY = "nessi:onboard-version";
 const CURRENT_VERSION = "0.0.3";
@@ -30,12 +41,14 @@ const Link = (props: { href: string; children: any }) => (
   <a href={props.href} target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-gh-fg">{props.children}</a>
 );
 
+const PRESETS = getProviderPresets();
+
 export const OnboardingDialog = (props: {
   open: boolean;
   onClose: () => void;
   onOpenSettings: () => void;
 }) => {
-  const [step, setStep] = createSignal(0);
+  const [step, setStep] = createSignal(0, { equals: false });
 
   const activeSteps = () => steps.filter((entry) => !entry.condition || entry.condition());
   const currentStep = () => activeSteps()[step()];
@@ -65,12 +78,6 @@ export const OnboardingDialog = (props: {
     if (index === step()) return;
     haptics.tap();
     setStep(index);
-  };
-
-  const openSettingsFromGuide = () => {
-    haptics.tap();
-    finish();
-    props.onOpenSettings();
   };
 
   const advanceAfter = (stepId: string) => {
@@ -108,6 +115,85 @@ export const OnboardingDialog = (props: {
       </button>
     </Show>
   );
+
+  /* ── Provider step state (shared between render + renderActions) ── */
+  const [providerMode, setProviderMode] = createSignal<"editor" | "import">("editor");
+  const [providerDraft, setProviderDraft] = createSignal<ProviderEntry>({
+    id: humanId({ separator: "-", capitalize: false }),
+    type: "openai-compatible",
+    name: "",
+    baseURL: "http://localhost:11434/v1",
+    model: "",
+    toolCallIdPolicy: "passthrough",
+  });
+  const [providerImportText, setProviderImportText] = createSignal("");
+  const [providerError, setProviderError] = createSignal("");
+
+  const updateProviderField = (field: keyof ProviderEntry, value: string) => {
+    setProviderDraft((prev) => ({ ...prev, [field]: value }));
+    if (providerError()) setProviderError("");
+  };
+
+  const applyPreset = (presetId: string) => {
+    const preset = PRESETS.find((p) => p.id === presetId);
+    if (!preset) {
+      setProviderDraft((prev) => ({ ...prev, type: presetId as ProviderType }));
+      return;
+    }
+    setProviderDraft((prev) => ({
+      ...prev,
+      type: preset.defaults.type,
+      name: prev.name.trim() ? prev.name : preset.defaults.name,
+      baseURL: preset.defaults.baseURL,
+      model: prev.model.trim() ? prev.model : preset.defaults.model,
+      toolCallIdPolicy: preset.defaults.toolCallIdPolicy,
+    }));
+  };
+
+  const saveProvider = () => {
+    const d = providerDraft();
+    if (providerMode() === "import") {
+      // Import mode
+      const raw = providerImportText();
+      let entry: ProviderEntry | null = null;
+      try {
+        const o = JSON.parse(raw) as Record<string, unknown>;
+        if (!o || typeof o.name !== "string" || typeof o.model !== "string") throw new Error();
+        entry = {
+          id: humanId({ separator: "-", capitalize: false }),
+          type: typeof o.type === "string" ? o.type as ProviderType : "openai-compatible",
+          name: o.name,
+          baseURL: (o.baseURL as string) ?? "http://localhost:11434/v1",
+          model: o.model,
+          apiKey: (o.apiKey as string) ?? undefined,
+          toolCallIdPolicy: o.toolCallIdPolicy === "strict9" ? "strict9" : "passthrough",
+        };
+      } catch {
+        setProviderError("Invalid JSON. Must contain at least name and model.");
+        haptics.error();
+        return;
+      }
+      const list = [...loadProviders(), entry];
+      saveProviders(list);
+      setActiveProviderId(entry.id);
+      haptics.success();
+      advanceAfter("get-started");
+      return;
+    }
+
+    // Editor mode
+    const validationError = validateProviderEntry(d);
+    if (validationError) {
+      setProviderError(validationError);
+      haptics.error();
+      return;
+    }
+    const list = [...loadProviders(), d];
+    saveProviders(list);
+    setActiveProviderId(d.id);
+    haptics.success();
+    advanceAfter("get-started");
+  };
 
   const steps: Step[] = [
     {
@@ -269,7 +355,8 @@ export const OnboardingDialog = (props: {
               class="btn-primary"
               onClick={async () => {
                 haptics.success();
-                await browserNotifications.requestAccess();
+                try { await browserNotifications.requestAccess(); } catch { /* user denied or API unavailable */ }
+                browserNotifications.dismissPrompt();
                 advanceAfter(stepId);
               }}
             >
@@ -284,48 +371,183 @@ export const OnboardingDialog = (props: {
     },
     {
       id: "get-started",
-      title: "One more thing",
-      subtitle: "You need an AI model to start chatting",
+      title: "Connect a model",
+      subtitle: "Add a provider to start chatting",
       condition: () => loadProviders().length === 0,
-      render: () => (
-        <div class="ui-subpanel p-4 space-y-3">
-          <p class="text-[13px] text-gh-fg-muted leading-relaxed">
-            nessi needs at least one LLM provider to work. You can connect a local model running on your machine, or use a cloud API.
-          </p>
-          <div class="grid grid-cols-2 gap-2 text-[13px]">
-            <div class="flex items-center gap-2 text-gh-fg-muted">
-              <span class="i ti ti-server text-base text-gh-fg-subtle" />
-              <span>Ollama (local)</span>
+      render: () => {
+        const draft = providerDraft;
+        return (
+          <div class="space-y-3">
+            {/* Mode toggle */}
+            <div class="flex gap-1.5">
+              <button
+                class={`flex-1 text-[12px] font-medium py-1.5 border rounded-md transition-colors ${
+                  providerMode() === "editor"
+                    ? "border-gh-accent bg-gh-accent-subtle text-gh-accent"
+                    : "border-gh-border-muted bg-gh-surface text-gh-fg-muted hover:border-gh-border"
+                }`}
+                onClick={() => { haptics.tap(); setProviderMode("editor"); setProviderError(""); }}
+              >
+                <span class="flex items-center justify-center gap-1.5">
+                  <span class="i ti ti-plus text-[11px]" /> New provider
+                </span>
+              </button>
+              <button
+                class={`flex-1 text-[12px] font-medium py-1.5 border rounded-md transition-colors ${
+                  providerMode() === "import"
+                    ? "border-gh-accent bg-gh-accent-subtle text-gh-accent"
+                    : "border-gh-border-muted bg-gh-surface text-gh-fg-muted hover:border-gh-border"
+                }`}
+                onClick={() => { haptics.tap(); setProviderMode("import"); setProviderError(""); }}
+              >
+                <span class="flex items-center justify-center gap-1.5">
+                  <span class="i ti ti-download text-[11px]" /> Import JSON
+                </span>
+              </button>
             </div>
-            <div class="flex items-center gap-2 text-gh-fg-muted">
-              <span class="i ti ti-server-bolt text-base text-gh-fg-subtle" />
-              <span>vLLM (local)</span>
-            </div>
-            <div class="flex items-center gap-2 text-gh-fg-muted">
-              <span class="i ti ti-brand-openai text-base text-gh-fg-subtle" />
-              <span>OpenAI</span>
-            </div>
-            <div class="flex items-center gap-2 text-gh-fg-muted">
-              <span class="i ti ti-route text-base text-gh-fg-subtle" />
-              <span>OpenRouter</span>
-            </div>
+
+            <Show when={providerError()}>
+              <p class="text-[12px] text-gh-danger">{providerError()}</p>
+            </Show>
+
+            {/* Editor mode */}
+            <Show when={providerMode() === "editor"}>
+              <div class="space-y-3">
+                {/* Provider type */}
+                <div class="space-y-1">
+                  <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Provider</label>
+                  <div class="flex items-center gap-2">
+                    <img src={getProviderIconUrl(draft().type)} alt="" class="h-5 w-5 shrink-0" />
+                    <select
+                      class="ui-input flex-1"
+                      value={draft().type}
+                      onInput={(e) => applyPreset(e.currentTarget.value)}
+                    >
+                      <For each={PRESETS}>
+                        {(preset) => <option value={preset.id}>{preset.label}</option>}
+                      </For>
+                      <option value="openai-compatible">Custom OpenAI-compatible</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Name & Model */}
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1">
+                    <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Name</label>
+                    <input
+                      class="ui-input"
+                      placeholder="My Provider"
+                      value={draft().name}
+                      onInput={(e) => updateProviderField("name", e.currentTarget.value)}
+                    />
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Model</label>
+                    <input
+                      class="ui-input"
+                      placeholder="llama3.1"
+                      value={draft().model}
+                      onInput={(e) => updateProviderField("model", e.currentTarget.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Base URL */}
+                <div class="space-y-1">
+                  <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Base URL</label>
+                  <input
+                    class="ui-input"
+                    placeholder="http://localhost:11434/v1"
+                    value={draft().baseURL}
+                    onInput={(e) => updateProviderField("baseURL", e.currentTarget.value)}
+                  />
+                </div>
+
+                {/* API Key */}
+                <div class="space-y-1">
+                  <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">API Key</label>
+                  <input
+                    type="password"
+                    class="ui-input"
+                    placeholder="optional — only for cloud providers"
+                    value={draft().apiKey ?? ""}
+                    onInput={(e) => updateProviderField("apiKey", e.currentTarget.value)}
+                  />
+                </div>
+              </div>
+            </Show>
+
+            {/* Import mode */}
+            <Show when={providerMode() === "import"}>
+              <div class="space-y-2">
+                <p class="text-[12px] text-gh-fg-muted">
+                  Paste a provider config JSON from someone who shared theirs.
+                </p>
+                <textarea
+                  class="ui-input min-h-32 resize-y font-mono text-[12px]"
+                  rows={6}
+                  placeholder={'{\n  "name": "My Provider",\n  "type": "ollama",\n  "baseURL": "http://localhost:11434",\n  "model": "llama3.1"\n}'}
+                  value={providerImportText()}
+                  onInput={(e) => { setProviderImportText(e.currentTarget.value); if (providerError()) setProviderError(""); }}
+                />
+              </div>
+            </Show>
           </div>
-        </div>
-      ),
+        );
+      },
       renderActions: () => (
         <div class="flex items-center gap-2">
           <BackButton />
-          <button class="btn-secondary" onClick={() => { haptics.tap(); nextStep(); }}>
+          <button class="btn-secondary" onClick={() => { haptics.tap(); advanceAfter("get-started"); }}>
             skip for now
           </button>
-          <button class="btn-primary" onClick={openSettingsFromGuide}>
+          <button class="btn-primary" onClick={saveProvider}>
             <span class="flex items-center gap-1.5">
-              <span class="i ti ti-settings text-sm" />
-              open settings
+              <span class="i ti ti-check text-sm" />
+              save
             </span>
           </button>
         </div>
       ),
+    },
+    {
+      id: "theme",
+      title: "Pick your look",
+      subtitle: "You can change this anytime in Settings",
+      render: () => {
+        const THEME_OPTIONS: { value: ThemeMode; icon: string; label: string; desc: string }[] = [
+          { value: "light", icon: "ti-sun", label: "Light", desc: "Clean and bright" },
+          { value: "dark", icon: "ti-terminal-2", label: "Terminal", desc: "High-contrast, sharp edges" },
+          { value: "system", icon: "ti-device-desktop", label: "System", desc: "Follow your OS setting" },
+        ];
+        return (
+          <div class="space-y-3">
+            <For each={THEME_OPTIONS}>
+              {(opt) => (
+                <button
+                  class={`w-full flex items-center gap-3 p-3.5 border transition-colors text-left rounded-md ${
+                    theme.mode() === opt.value
+                      ? "border-gh-accent bg-gh-accent-subtle"
+                      : "border-gh-border-muted bg-gh-surface hover:border-gh-border"
+                  }`}
+                  onClick={() => { haptics.tap(); theme.setMode(opt.value); }}
+                >
+                  <span class={`i ti ${opt.icon} text-xl ${
+                    theme.mode() === opt.value ? "text-gh-accent" : "text-gh-fg-subtle"
+                  }`} />
+                  <div>
+                    <div class={`text-[14px] font-medium ${
+                      theme.mode() === opt.value ? "text-gh-accent" : "text-gh-fg"
+                    }`}>{opt.label}</div>
+                    <div class="text-[12px] text-gh-fg-muted">{opt.desc}</div>
+                  </div>
+                </button>
+              )}
+            </For>
+          </div>
+        );
+      },
     },
     {
       id: "have-fun",
@@ -348,11 +570,11 @@ export const OnboardingDialog = (props: {
   return (
     <Show when={props.open}>
       <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4 py-6"
+        class="modal-backdrop py-6"
         onClick={() => { haptics.tap(); finish(); }}
       >
         <div
-          class="flex h-[min(90vh,35rem)] w-[min(32rem,92vw)] flex-col overflow-hidden rounded-xl border border-gh-border-muted bg-gh-surface shadow-lg"
+          class="modal-panel flex h-[min(90vh,35rem)] w-[min(32rem,92vw)] flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           <Show when={!currentStep()?.hideHeader}>

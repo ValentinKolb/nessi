@@ -10,8 +10,18 @@ import {
   type Provider,
   type ProviderCapabilities,
 } from "nessi-ai";
+import { createSignal } from "solid-js";
 import { readJson, readString, removeKey, writeJson, writeString } from "./json-storage.js";
 import { newId } from "./utils.js";
+
+/**
+ * Reactive version counter — incremented on every provider write.
+ * Any SolidJS component that calls a read function (loadProviders,
+ * getActiveProviderEntry, etc.) automatically tracks this signal
+ * and re-renders when providers change.
+ */
+const [providerVersion, setProviderVersion] = createSignal(0);
+const bumpVersion = () => setProviderVersion((v) => v + 1);
 
 export type ToolCallIdPolicy = "passthrough" | "strict9";
 export type ProviderType =
@@ -204,6 +214,7 @@ const migrate = () => {
 
 /** Load available provider configurations. */
 export const loadProviders = () => {
+  providerVersion(); // track for reactivity
   migrate();
   const storedRaw = readJson<unknown>(PROVIDERS_KEY, []);
   const stored = Array.isArray(storedRaw) ? storedRaw : [];
@@ -217,10 +228,12 @@ export const loadProviders = () => {
 /** Persist provider configurations. */
 export const saveProviders = (providers: ProviderEntry[]) => {
   writeJson(PROVIDERS_KEY, providers);
+  bumpVersion();
 };
 
 /** Read currently selected provider id. */
 export const getActiveProviderId = () => {
+  providerVersion(); // track for reactivity
   const value = readString(ACTIVE_KEY);
   return value || null;
 };
@@ -228,10 +241,12 @@ export const getActiveProviderId = () => {
 /** Set selected provider id. */
 export const setActiveProviderId = (id: string) => {
   writeString(ACTIVE_KEY, id);
+  bumpVersion();
 };
 
 /** Resolve active provider entry or fall back to first configured provider. */
 export const getActiveProviderEntry = () => {
+  providerVersion(); // track for reactivity
   const providers = loadProviders();
   const activeId = getActiveProviderId();
   if (activeId) {
