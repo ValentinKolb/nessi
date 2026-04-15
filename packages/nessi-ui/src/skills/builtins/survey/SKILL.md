@@ -1,6 +1,6 @@
 ---
 name: survey
-description: Ask the user structured single-choice questions in one batch. Use this when you need specific inputs before proceeding.
+description: Gather user preferences, choices, or parameters through an interactive UI. Use this BEFORE starting any complex task where you need to decide between multiple approaches — language, format, scope, style, audience, etc. Also use when the user wants to plan something or when you want to present multiple options for the user to choose from — a survey is always clearer than listing options in plain text. Always prefer a survey over asking questions one by one. One quick survey replaces 3-4 back-and-forth messages.
 metadata:
   nessi:
     command: survey
@@ -9,24 +9,41 @@ metadata:
 
 # Survey
 
-Run structured surveys with the `survey` command.
+Collect structured input from the user via an interactive survey UI.
+
+## When to use
+
+Use a survey when:
+- You need to decide between approaches before starting (language, format, detail level, audience)
+- The user asks you to create something and there are reasonable design choices to make
+- You need 2+ pieces of input and asking them one by one would be slow
+- The user says "help me decide", "what do you recommend", or asks you to plan something
+- You're about to start a multi-step task and want to confirm parameters upfront
+- You want to present multiple options or proposals — a survey with clear choices is always better than a text list the user has to reply to
+- The user wants to plan something (trip, project, event) — gather constraints and preferences in one go
+
+Don't use a survey when:
+- You only need one yes/no answer — just ask in text
+- The user already gave you all the details you need — just do the task
+- The answer is obvious from context or memories
 
 ## Commands
 
-### Ask (JSON format)
+### Ask (JSON format — preferred for 2+ questions)
 
 ```bash
-survey ask --json '{"title":"Language","questions":[{"question":"Preferred language?","options":["Deutsch","English"]}]}'
+survey ask --json '{"title":"Project Setup","questions":[{"question":"Language?","options":["TypeScript","Python","Go"]},{"question":"Include tests?","options":["Yes","No"]}]}'
 ```
 
-### Ask (shorthand, one question)
+### Ask (shorthand — good for a single quick choice)
 
 ```bash
-survey ask "Preferred language?" --options "Deutsch|English|Spanish" --title "Language"
+survey ask "Output format?" --options "PDF|Markdown|HTML" --title "Export"
 ```
 
 ## Notes
 
-- This opens an interactive survey UI for the user.
-- The command returns plain text question/answer pairs.
-- Use this instead of asking many questions one by one.
+- Renders as an interactive card in chat — much better UX than text-based Q&A.
+- Returns plain text question/answer pairs you can use directly.
+- Keep options short and clear (3–6 per question is ideal).
+- Use natural titles that tell the user what they're deciding.

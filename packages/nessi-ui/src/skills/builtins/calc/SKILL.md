@@ -1,6 +1,6 @@
 ---
 name: calc
-description: Calculations, date arithmetic, and live currency conversion. Use this for math expressions, date offsets, and exchange rates.
+description: Calculations, date arithmetic, and live currency conversion. Use this instead of guessing or doing mental math — for any numeric expression, date offset ("in 90 days"), or currency conversion at live rates.
 metadata:
   nessi:
     command: calc

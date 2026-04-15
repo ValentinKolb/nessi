@@ -1,6 +1,6 @@
 ---
 name: chart
-description: Generate bar, line, or pie charts from data. Charts are displayed inline in the chat and downloadable as SVG.
+description: Generate bar, line, or pie charts from data. Use this whenever data would be easier to understand as a visualization or when the user asqs about understanding some data — comparisons, trends, distributions, or proportions. Charts render inline and are downloadable as SVG.
 metadata:
   nessi:
     command: chart

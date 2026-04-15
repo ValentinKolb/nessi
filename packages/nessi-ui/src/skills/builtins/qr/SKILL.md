@@ -1,6 +1,6 @@
 ---
 name: qr
-description: Generate QR codes from text or URLs. The QR code is displayed inline in the chat and can be downloaded as SVG.
+description: Generate QR codes from text or URLs. Use this whenever the user mentions QR codes, wants to share a link as a scannable image, or needs a printable code. Renders inline with download.
 metadata:
   nessi:
     command: qr
