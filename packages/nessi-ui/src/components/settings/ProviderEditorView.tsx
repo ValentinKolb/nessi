@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, Show, type JSX } from "solid-js";
 import {
   getProviderPresets,
   getProviderCapabilities,
+  getProviderIconUrl,
   validateProviderEntry,
   type ProviderEntry,
   type ProviderType,
@@ -130,16 +131,19 @@ export const ProviderEditorView = (props: {
       {/* Provider type */}
       <div class="space-y-1">
         <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Provider</label>
-        <select
-          class="ui-input"
-          value={draft().type}
-          onInput={(e) => applyProviderType(e.currentTarget.value as ProviderType)}
-        >
-          <For each={PRESETS}>
-            {(preset) => <option value={preset.id}>{preset.label}</option>}
-          </For>
-          <option value="openai-compatible">Custom OpenAI-compatible</option>
-        </select>
+        <div class="flex items-center gap-2">
+          <img src={getProviderIconUrl(draft().type)} alt="" class="h-5 w-5 shrink-0" />
+          <select
+            class="ui-input flex-1"
+            value={draft().type}
+            onInput={(e) => applyProviderType(e.currentTarget.value as ProviderType)}
+          >
+            <For each={PRESETS}>
+              {(preset) => <option value={preset.id}>{preset.label}</option>}
+            </For>
+            <option value="openai-compatible">Custom OpenAI-compatible</option>
+          </select>
+        </div>
       </div>
 
       {/* Provider-specific hint */}
@@ -219,10 +223,10 @@ export const ProviderEditorView = (props: {
 
       {/* Capability badges */}
       <div class="flex items-center gap-2 text-[11px]">
-        <span class={`rounded-full px-2 py-0.5 ${capabilities().images ? "bg-emerald-50 text-emerald-700" : "bg-gh-surface text-gh-fg-subtle"}`}>
+        <span class={`rounded-full px-2 py-0.5 ${capabilities().images ? "bg-emerald-100 text-emerald-700" : "bg-gh-surface text-gh-fg-subtle"}`}>
           {capabilities().images ? "supports images" : "text only"}
         </span>
-        <span class={`rounded-full px-2 py-0.5 ${capabilities().tools ? "bg-sky-50 text-sky-700" : "bg-gh-surface text-gh-fg-subtle"}`}>
+        <span class={`rounded-full px-2 py-0.5 ${capabilities().tools ? "bg-sky-100 text-sky-700" : "bg-gh-surface text-gh-fg-subtle"}`}>
           {capabilities().tools ? "supports tools" : "no tools"}
         </span>
       </div>

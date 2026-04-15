@@ -2,6 +2,7 @@ import { createSignal, For, Show, onMount } from "solid-js";
 import { humanId } from "human-id";
 import {
   getProviderCapabilities,
+  getProviderIconUrl,
   loadProviders,
   saveProviders,
   getActiveProviderId,
@@ -120,8 +121,9 @@ export const ProvidersConfig = (props: {
               onClick={() => props.onEditProvider?.(p)}
             >
               <div class="flex items-center gap-2 min-w-0">
+                <img src={getProviderIconUrl(p.type)} alt="" class="h-4 w-4 shrink-0" />
                 <span class="shrink-0 text-gh-fg-secondary">{p.name}</span>
-                <span class="flex-1 min-w-0 truncate text-gh-fg-muted">{p.model} · {p.type}</span>
+                <span class="flex-1 min-w-0 truncate text-gh-fg-muted">{p.model}</span>
                 <Show when={activeId() !== p.id}>
                   <button
                     class="btn-minimal shrink-0 opacity-0 group-hover:opacity-100"
@@ -131,17 +133,17 @@ export const ProvidersConfig = (props: {
                   </button>
                 </Show>
                 <Show when={activeId() === p.id}>
-                  <span class="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">active</span>
+                  <span class="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">active</span>
                 </Show>
                 <Show when={getProviderCapabilities(p).images}>
-                  <span class="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700">images</span>
+                  <span class="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-700">images</span>
                 </Show>
               </div>
             </div>
           )}
         </For>
         <Show when={providers().length === 0}>
-          <div class="rounded-lg border border-gh-danger/20 bg-red-50 px-3 py-4 text-center space-y-2">
+          <div class="rounded-lg border border-gh-danger/20 bg-red-100 px-3 py-4 text-center space-y-2">
             <div class="flex items-center justify-center gap-2 text-gh-danger">
               <span class="i ti ti-alert-circle text-lg" />
               <span class="text-[13px] font-medium">No providers configured</span>

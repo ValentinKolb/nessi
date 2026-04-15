@@ -142,6 +142,9 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
 /** Return built-in provider presets for quick onboarding. */
 export const getProviderPresets = () => PROVIDER_PRESETS;
 
+/** Get the provider icon URL for a given provider type. */
+export const getProviderIconUrl = (type: ProviderType) => `/provider-icons/${type}.svg`;
+
 /** Parse tool-call id policy from unknown storage data. */
 const parseToolCallIdPolicy = (value: unknown): ToolCallIdPolicy =>
   value === "strict9" ? "strict9" : "passthrough";

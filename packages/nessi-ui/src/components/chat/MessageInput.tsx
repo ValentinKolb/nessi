@@ -2,7 +2,7 @@ import { createEffect, createSignal, on, onMount, Show, For } from "solid-js";
 import { matchCommands, registerCommand, type SlashCommand } from "../../lib/slash-commands.js";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
 import type { PendingChatFile } from "../../lib/chat-files.js";
-import type { ProviderEntry } from "../../lib/provider.js";
+import { getProviderIconUrl, type ProviderEntry } from "../../lib/provider.js";
 import { formatFileSize } from "../../lib/chat-files.js";
 import { PopoverMenu } from "../PopoverMenu.js";
 
@@ -246,22 +246,28 @@ export const MessageInput = (props: {
           <div class="flex items-center gap-1 px-2 py-1.5">
             {/* Model selector with chevron */}
             <Show when={providers().length > 0}>
-              {/* Grid trick: invisible span sizes the cell to the current label */}
-              <span class="inline-grid items-center relative">
-                <select
-                  class="col-start-1 row-start-1 min-w-0 appearance-none bg-transparent text-[12px] text-gh-fg-subtle hover:text-gh-fg-muted pl-1.5 pr-5 py-1 rounded-md hover:bg-gh-overlay cursor-pointer transition-colors focus:outline-none"
-                  value={props.activeProviderId ?? ""}
-                  onChange={(e) => props.onProviderChange?.(e.currentTarget.value)}
-                >
-                  <For each={providers()}>
-                    {(p) => <option value={p.id}>{p.model}</option>}
-                  </For>
-                </select>
-                <span class="col-start-1 row-start-1 invisible text-[12px] pl-1.5 pr-5 whitespace-pre pointer-events-none" aria-hidden="true">
-                  {providers().find(p => p.id === props.activeProviderId)?.model ?? ""}
-                </span>
-                <span class="i ti ti-chevron-down text-[9px] text-gh-fg-subtle absolute right-1.5 pointer-events-none" />
-              </span>
+              {(() => {
+                const active = () => providers().find(p => p.id === props.activeProviderId);
+                return (
+                  <PopoverMenu
+                    id="model-selector"
+                    trigger={
+                      <span class="flex items-center gap-1.5">
+                        <img src={getProviderIconUrl(active()?.type ?? "openai-compatible")} alt="" class="h-3 w-3" />
+                        <span class="text-[12px]">{active()?.model ?? "model"}</span>
+                        <span class="i ti ti-chevron-down text-[9px]" />
+                      </span>
+                    }
+                    triggerClass="flex items-center px-1.5 py-1 rounded-md text-gh-fg-subtle hover:text-gh-fg-muted hover:bg-gh-overlay transition-colors cursor-pointer"
+                    items={providers().map((p) => ({
+                      iconUrl: getProviderIconUrl(p.type),
+                      label: p.model,
+                      detail: p.name,
+                      onClick: () => props.onProviderChange?.(p.id),
+                    }))}
+                  />
+                );
+              })()}
             </Show>
 
             <Show when={providers().length > 0}>

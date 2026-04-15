@@ -1,26 +1,32 @@
-import { For, type JSX } from "solid-js";
+import { For, Show, type JSX } from "solid-js";
 
 export type PopoverMenuItem = {
-  icon: string;
+  /** Tabler icon class (e.g. "ti-paperclip"). Ignored if iconUrl is set. */
+  icon?: string;
+  /** URL to an image icon (e.g. "/provider-icons/openai.svg"). Takes precedence over icon. */
+  iconUrl?: string;
   label: string;
+  /** Optional secondary label shown right-aligned and muted. */
+  detail?: string;
   onClick: () => void;
 };
+
+const ItemIcon = (props: { icon?: string; iconUrl?: string }) => (
+  <Show
+    when={props.iconUrl}
+    fallback={
+      <Show when={props.icon}>
+        {(cls) => <span class={`i ti ${cls()} text-sm text-gh-fg-subtle`} />}
+      </Show>
+    }
+  >
+    {(url) => <img src={url()} alt="" class="h-3.5 w-3.5 shrink-0" />}
+  </Show>
+);
 
 /**
  * Minimal popover menu using the native Popover API.
  * Positions itself above or below the trigger button automatically.
- *
- * Usage:
- * ```tsx
- * <PopoverMenu
- *   id="add-menu"
- *   trigger={<span class="i ti ti-plus" />}
- *   items={[
- *     { icon: "ti-paperclip", label: "Add files", onClick: () => ... },
- *     { icon: "ti-folder",    label: "Add folder", onClick: () => ... },
- *   ]}
- * />
- * ```
  */
 export const PopoverMenu = (props: {
   id: string;
@@ -78,8 +84,11 @@ export const PopoverMenu = (props: {
                 class="w-full flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-gh-fg-muted hover:bg-gh-overlay hover:text-gh-fg transition-colors text-left"
                 onClick={() => { item.onClick(); close(); }}
               >
-                <span class={`i ti ${item.icon} text-sm text-gh-fg-subtle`} />
-                <span>{item.label}</span>
+                <ItemIcon icon={item.icon} iconUrl={item.iconUrl} />
+                <span class="flex-1">{item.label}</span>
+                <Show when={item.detail}>
+                  <span class="text-[11px] text-gh-fg-subtle">{item.detail}</span>
+                </Show>
               </button>
             )}
           </For>
