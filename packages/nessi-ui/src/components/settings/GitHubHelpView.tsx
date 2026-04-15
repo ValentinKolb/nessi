@@ -31,8 +31,8 @@ export const GitHubHelpView = () => (
           <p><strong>Expiration:</strong> Choose what you're comfortable with (90 days is a good default)</p>
           <p><strong>Scopes:</strong> Select these:</p>
           <div class="mt-1 ml-2 space-y-0.5 text-[10px]">
-            <div class="flex items-center gap-1.5"><span class="i ti ti-check text-green-600 text-xs" /><code class="bg-gh-overlay px-1 rounded">repo</code> — read repositories (public + private)</div>
-            <div class="flex items-center gap-1.5"><span class="i ti ti-check text-green-600 text-xs" /><code class="bg-gh-overlay px-1 rounded">read:org</code> — list organizations (optional)</div>
+            <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /><code class="bg-gh-overlay px-1 rounded">repo</code> — read repositories (public + private)</div>
+            <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /><code class="bg-gh-overlay px-1 rounded">read:org</code> — list organizations (optional)</div>
           </div>
           <p class="mt-1.5">For public repos only, <code class="bg-gh-overlay px-1 rounded">public_repo</code> is enough.</p>
         </div>

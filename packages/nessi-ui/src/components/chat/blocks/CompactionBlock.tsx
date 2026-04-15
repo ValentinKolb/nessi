@@ -30,20 +30,18 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
   return (
     <div
       class="overflow-hidden rounded-md text-[13px]"
-      style={{
-        "background-color": "color-mix(in oklab, #efe9ff 52%, white)",
-      }}
+      style={{ "background-color": "var(--color-compact-bg)" }}
     >
       <button
         ref={headRef}
         class="w-full flex items-center gap-2 px-2 py-1.5 bg-transparent text-left"
-        style={{ "background-color": "color-mix(in oklab, #ede5ff 65%, white)" }}
+        style={{ "background-color": "var(--color-compact-head)" }}
         onClick={toggle}
       >
-        <span class="i ti ti-fold text-[13px]" style={{ color: "#7c3aed" }} />
+        <span class="i ti ti-fold text-[13px]" style={{ color: "var(--color-compact-accent)" }} />
         <div class="flex-1 min-w-0 text-gh-fg-secondary truncate">{props.block.message}</div>
         <Show when={props.block.entriesBefore !== undefined && props.block.entriesAfter !== undefined}>
-          <span class="shrink-0 text-[11px]" style={{ color: "#7c3aed" }}>
+          <span class="shrink-0 text-[11px]" style={{ color: "var(--color-compact-accent)" }}>
             {props.block.entriesBefore}{" -> "}{props.block.entriesAfter}
           </span>
         </Show>
@@ -55,9 +53,7 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
       <Show when={expanded() && hasDetails()}>
         <div
           class="space-y-2 px-2 py-2 text-gh-fg-muted"
-          style={{
-            "background-color": "color-mix(in oklab, #f6f1ff 74%, white)",
-          }}
+          style={{ "background-color": "var(--color-compact-body)" }}
         >
           <div>Session: <span class="text-gh-fg-secondary">{props.block.sessionName}</span></div>
           <Show when={props.block.entriesBefore !== undefined && props.block.entriesAfter !== undefined}>
@@ -77,7 +73,7 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
                 <div class="text-gh-fg-secondary mb-1">Checkpoint summary preview</div>
                 <pre
                   class="whitespace-pre-wrap break-words max-h-48 overflow-y-auto px-2 py-1 rounded-md"
-                  style={{ "background-color": "color-mix(in oklab, white 86%, #ede5ff)" }}
+                  style={{ "background-color": "var(--color-compact-pre)" }}
                 >
                   {preview()}
                 </pre>

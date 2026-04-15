@@ -63,10 +63,10 @@ const FullscreenModal = (props: {
   <Show when={props.open}>
     <Portal>
       <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+        class="modal-backdrop"
         onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}
       >
-        <div class="relative flex flex-col items-center gap-3 bg-white rounded-xl p-6 m-4 w-[94vw] h-[94vh] overflow-auto shadow-2xl">
+        <div class="modal-panel relative flex flex-col items-center gap-3 p-6 m-4 w-[94vw] h-[94vh] overflow-auto">
           {/* toolbar */}
           <div class="absolute top-2 right-2 flex gap-1.5">
             <IconButton icon="ti-download" title="Download" onClick={props.onDownload} />
@@ -186,7 +186,7 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
   return (
     <div class="px-2 py-2 space-y-2">
       <Show when={ct() === "svg"}>
-        <div class="bg-white rounded p-2 flex flex-col items-center gap-2">
+        <div class="bg-gh-surface rounded p-2 flex flex-col items-center gap-2">
           <div class="max-w-md mx-auto w-full" innerHTML={content()} />
           <MaximizeButton onClick={() => { haptics.tap(); setFullscreen(true); }} />
         </div>
@@ -200,7 +200,7 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
       </Show>
 
       <Show when={ct() === "image"}>
-        <div class="bg-white rounded p-2 flex flex-col items-center gap-2">
+        <div class="bg-gh-surface rounded p-2 flex flex-col items-center gap-2">
           <img src={content()} alt={name()} class="max-w-full rounded" />
           <MaximizeButton onClick={() => { haptics.tap(); setFullscreen(true); }} />
         </div>

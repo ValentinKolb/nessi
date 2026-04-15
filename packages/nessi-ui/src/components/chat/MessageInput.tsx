@@ -194,7 +194,7 @@ export const MessageInput = (props: {
                       class="h-14 w-14 rounded-lg object-cover border border-gh-border-muted"
                     />
                     <button
-                      class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gh-fg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gh-fg text-gh-canvas opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => { haptics.tap(); props.onRemoveImage?.(index()); }}
                     >
                       <span class="i ti ti-x text-[8px]" />

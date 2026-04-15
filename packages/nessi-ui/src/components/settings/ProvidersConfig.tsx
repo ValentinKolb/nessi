@@ -137,17 +137,17 @@ export const ProvidersConfig = (props: {
                   </button>
                 </Show>
                 <Show when={activeId() === p.id}>
-                  <span class="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">active</span>
+                  <span class="shrink-0 rounded-full bg-status-ok-bg px-2 py-0.5 text-[11px] text-status-ok-fg">active</span>
                 </Show>
                 <Show when={getProviderCapabilities(p).images}>
-                  <span class="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-700">images</span>
+                  <span class="shrink-0 rounded-full bg-status-info-bg px-2 py-0.5 text-[11px] text-status-info-fg">images</span>
                 </Show>
               </div>
             </div>
           )}
         </For>
         <Show when={providers().length === 0}>
-          <div class="rounded-lg border border-gh-danger/20 bg-red-100 px-3 py-4 text-center space-y-2">
+          <div class="rounded-lg border border-gh-danger/20 bg-status-err-bg px-3 py-4 text-center space-y-2">
             <div class="flex items-center justify-center gap-2 text-gh-danger">
               <span class="i ti ti-alert-circle text-lg" />
               <span class="text-[13px] font-medium">No providers configured</span>

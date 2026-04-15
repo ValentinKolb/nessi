@@ -8,11 +8,11 @@ export const NotificationConsentDialog = (props: {
 }) => (
   <Show when={props.open}>
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4"
+      class="modal-backdrop"
       onClick={() => { haptics.tap(); props.onDismiss(); }}
     >
       <div
-        class="w-[min(32rem,92vw)] rounded-xl border border-gh-border-muted bg-gh-surface p-4 shadow-lg"
+        class="modal-panel w-[min(32rem,92vw)] p-4"
         onClick={(event) => event.stopPropagation()}
       >
         <div class="space-y-2">

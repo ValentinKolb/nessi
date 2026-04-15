@@ -79,7 +79,7 @@ export const SkillsConfig = (props: {
         <span class="text-gh-fg-subtle">Native tools:</span>
         <For each={NATIVE_TOOLS}>
           {(tool) => (
-            <span class="rounded-full bg-sky-100 px-2 py-0.5 text-sky-700">
+            <span class="rounded-full bg-status-info-bg px-2 py-0.5 text-status-info-fg">
               {tool}
             </span>
           )}
@@ -113,10 +113,10 @@ export const SkillsConfig = (props: {
                 <span class="shrink-0 text-gh-fg-secondary">{skill.command}</span>
                 <span class="flex-1 min-w-0 truncate text-gh-fg-muted">{skill.description}</span>
                 <span class={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
-                  skill.code?.trim() ? "bg-sky-100 text-sky-700" : "bg-gh-overlay text-gh-fg-subtle"
+                  skill.code?.trim() ? "bg-status-info-bg text-status-info-fg" : "bg-gh-overlay text-gh-fg-subtle"
                 }`}>{skill.code?.trim() ? "code" : "docs-only"}</span>
                 <Show when={skill.enabled}>
-                  <span class="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">enabled</span>
+                  <span class="shrink-0 rounded-full bg-status-ok-bg px-2 py-0.5 text-[11px] text-status-ok-fg">enabled</span>
                 </Show>
               </div>
             </div>

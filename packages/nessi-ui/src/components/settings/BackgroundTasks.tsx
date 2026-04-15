@@ -13,9 +13,9 @@ const JOBS = [
 const StatusBadge = (props: { status: JobRunLog["status"] }) => {
   const cls = () => {
     switch (props.status) {
-      case "running": return "bg-amber-100 text-amber-700";
-      case "success": return "bg-emerald-100 text-emerald-700";
-      case "error": return "bg-red-100 text-red-700";
+      case "running": return "bg-status-warn-bg text-status-warn-fg";
+      case "success": return "bg-status-ok-bg text-status-ok-fg";
+      case "error": return "bg-status-err-bg text-status-err-fg";
     }
   };
   return (

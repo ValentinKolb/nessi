@@ -277,7 +277,7 @@ export const App = () => {
 
       <dialog
         ref={chatInfoRef}
-        class="m-auto bg-gh-surface text-gh-fg p-0 w-[min(720px,92vw)] max-h-[82vh] overflow-hidden rounded-xl border border-gh-border-muted"
+        class="modal-dialog w-[min(720px,92vw)] max-h-[82vh]"
         onClick={(e) => { if (e.target === chatInfoRef) { haptics.tap(); chatInfoRef.close(); } }}
       >
         <div class="flex max-h-[82vh] min-h-0 flex-col">

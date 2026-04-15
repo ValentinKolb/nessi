@@ -138,7 +138,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
   return (
     <dialog
       ref={(el) => { dialogRef = el; props.ref(el); }}
-      class="m-auto bg-gh-surface text-gh-fg p-0 w-[min(980px,96vw)] max-h-[92vh] overflow-hidden shadow-lg"
+      class="modal-dialog w-[min(980px,96vw)] max-h-[92vh]"
       onClick={(e) => { if (e.target === dialogRef && route().kind === "root") close(true); }}
       onCancel={(e) => {
         if (route().kind !== "root") {

@@ -85,7 +85,7 @@ const FolderRow = (props: {
         <div class="relative">
           <div
             class="absolute top-0 bottom-0 border-l border-gh-border-muted"
-            style={{ left: `${props.depth * INDENT + 9}px` }}
+            style={{ left: `${props.depth * INDENT + 8.5}px` }}
           />
           <For each={props.node.children}>
             {(child) => (
@@ -160,9 +160,9 @@ export const ChatFilesModal = (props: {
 
   return (
     <Show when={props.open}>
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4" onClick={() => { haptics.tap(); props.onClose(); }}>
+      <div class="modal-backdrop" onClick={() => { haptics.tap(); props.onClose(); }}>
         <div
-          class="bg-gh-surface rounded-xl shadow-lg hide-scrollbar max-h-[82vh] w-[min(480px,94vw)] overflow-y-auto"
+          class="modal-panel hide-scrollbar max-h-[82vh] w-[min(480px,94vw)] overflow-y-auto"
           onClick={(event) => event.stopPropagation()}
         >
           {/* Header */}

@@ -122,7 +122,7 @@ export const SystemPrompt = (props: {
                 <span class="shrink-0 text-gh-fg-secondary">{prompt.name}</span>
                 <span class="flex-1 min-w-0 truncate text-gh-fg-muted">{promptPreview(prompt.content)}</span>
                 <Show when={activeId() === prompt.id}>
-                  <span class="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">active</span>
+                  <span class="shrink-0 rounded-full bg-status-ok-bg px-2 py-0.5 text-[11px] text-status-ok-fg">active</span>
                 </Show>
                 <Show when={activeId() !== prompt.id}>
                   <button

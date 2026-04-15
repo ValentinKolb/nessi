@@ -1245,7 +1245,7 @@ export const ChatView = (props: {
       onDrop={handleDrop}
     >
       <Show when={dropActive()}>
-        <div class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-emerald-400 bg-emerald-50/70 text-sm text-emerald-700">
+        <div class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-gh-accent bg-gh-accent-subtle/70 text-sm text-gh-accent">
           drop files to attach
         </div>
       </Show>
@@ -1260,7 +1260,7 @@ export const ChatView = (props: {
       />
       <Show when={!getActiveProviderEntry()}>
         <div class="px-3 pb-1">
-          <div class="max-w-4xl mx-auto px-3 py-2.5 rounded-lg border border-gh-danger/20 bg-red-50 text-[13px] text-gh-fg-muted flex items-center gap-2">
+          <div class="max-w-4xl mx-auto px-3 py-2.5 rounded-lg border border-gh-danger/20 bg-status-err-bg text-[13px] text-gh-fg-muted flex items-center gap-2">
             <span class="i ti ti-alert-circle text-gh-danger text-base shrink-0" />
             <span>
               No provider configured.{" "}

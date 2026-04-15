@@ -82,7 +82,7 @@ export const ChatModal = (props: {
 
       <dialog
         ref={dialogRef}
-        class="m-auto bg-gh-surface text-gh-fg p-0 w-[min(760px,94vw)] max-h-[84vh] overflow-hidden rounded-xl border border-gh-border-muted"
+        class="modal-dialog w-[min(760px,94vw)] max-h-[84vh]"
         onClick={(e) => { if (e.target === dialogRef) close(true); }}
       >
         <div class="flex max-h-[84vh] min-h-0 flex-col">

@@ -226,10 +226,10 @@ export const ProviderEditorView = (props: {
 
       {/* Capability badges */}
       <div class="flex items-center gap-2 text-[11px]">
-        <span class={`rounded-full px-2 py-0.5 ${capabilities().images ? "bg-emerald-100 text-emerald-700" : "bg-gh-surface text-gh-fg-subtle"}`}>
+        <span class={`rounded-full px-2 py-0.5 ${capabilities().images ? "bg-status-ok-bg text-status-ok-fg" : "bg-gh-surface text-gh-fg-subtle"}`}>
           {capabilities().images ? "supports images" : "text only"}
         </span>
-        <span class={`rounded-full px-2 py-0.5 ${capabilities().tools ? "bg-sky-100 text-sky-700" : "bg-gh-surface text-gh-fg-subtle"}`}>
+        <span class={`rounded-full px-2 py-0.5 ${capabilities().tools ? "bg-status-info-bg text-status-info-fg" : "bg-gh-surface text-gh-fg-subtle"}`}>
           {capabilities().tools ? "supports tools" : "no tools"}
         </span>
       </div>

@@ -93,8 +93,8 @@ export const AssistantActions = (props: { message: UIAssistantMessage }) => {
       </Show>
 
       <Show when={open()}>
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(18,23,30,0.22)] px-4" onClick={() => { haptics.tap(); setOpen(false); }}>
-          <div class="ui-panel w-[min(420px,92vw)] p-3 space-y-3" onClick={(event) => event.stopPropagation()}>
+        <div class="modal-backdrop" onClick={() => { haptics.tap(); setOpen(false); }}>
+          <div class="modal-panel w-[min(420px,92vw)] p-3 space-y-3" onClick={(event) => event.stopPropagation()}>
             <div class="flex items-center gap-2">
               <div class="text-[15px] font-semibold text-gh-fg flex-1">Message stats</div>
               <button class="flex h-7 w-7 items-center justify-center rounded-md nav-icon" onClick={() => { haptics.tap(); setOpen(false); }}>
