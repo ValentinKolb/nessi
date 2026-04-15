@@ -3,7 +3,7 @@ import { humanId } from "human-id";
 import { ChatModal } from "../../components/ChatModal.js";
 import { ChatView } from "../../components/chat/ChatView.js";
 import { Settings } from "../../components/settings/Settings.js";
-import { NotificationConsentDialog } from "./NotificationConsentDialog.js";
+import { OnboardingDialog, shouldShowOnboarding } from "./OnboardingDialog.js";
 import { loadProviders, getActiveProviderEntry, setActiveProviderId } from "../../lib/provider.js";
 import {
   hasPromptUpdate,
@@ -39,7 +39,7 @@ export const App = () => {
   const [showUpdateBanner, setShowUpdateBanner] = createSignal(false);
   const [isOverride, setIsOverride] = createSignal(false);
   const [openChats, setOpenChats] = createSignal<() => void>(() => {});
-  const [showNotificationConsent, setShowNotificationConsent] = createSignal(false);
+  const [showOnboarding, setShowOnboarding] = createSignal(false);
   let chatInfoRef!: HTMLDialogElement;
   let settingsRef!: HTMLDialogElement;
 
@@ -81,15 +81,7 @@ export const App = () => {
   const pageIsActive = () =>
     document.visibilityState === "visible" && document.hasFocus();
 
-  const dismissNotificationConsent = () => {
-    browserNotifications.dismissPrompt();
-    setShowNotificationConsent(false);
-  };
-
-  const enableNotifications = async () => {
-    await browserNotifications.requestAccess();
-    setShowNotificationConsent(false);
-  };
+  const openHelp = () => { setShowOnboarding(true); };
 
   const handleSessionComplete = (payload: { chatId: string; finishedAt: string; preview: string }) => {
     if (pageIsActive()) return;
@@ -143,13 +135,14 @@ export const App = () => {
 
   onMount(() => {
     pageAttention.init();
-    setShowNotificationConsent(browserNotifications.shouldShowStartupPrompt());
+    if (shouldShowOnboarding()) setShowOnboarding(true);
     void refreshActiveChatInfo();
     void refreshPromptBanner();
 
     registerCommand({ name: "new", description: "Start a new chat", action: newChat });
     registerCommand({ name: "chats", description: "Open chats", action: () => openChats()() });
     registerCommand({ name: "settings", description: "Open settings", action: openSettings });
+    registerCommand({ name: "help", description: "Open guide", action: openHelp });
     registerCommand({
       name: "clear",
       description: "Clear current chat",
@@ -205,6 +198,15 @@ export const App = () => {
         </Show>
 
         <div class="flex-1" />
+
+        {/* Help button */}
+        <button
+          class="flex h-8 w-8 items-center justify-center rounded-lg nav-icon"
+          onClick={openHelp}
+          title="Help & guide"
+        >
+          <span class="i ti ti-help text-base" />
+        </button>
 
         {/* Chat modal trigger: nav icon with hover animation */}
         <ChatModal
@@ -266,10 +268,10 @@ export const App = () => {
       </div>
 
       <Settings ref={(el) => { settingsRef = el; }} onClose={refreshProvider} />
-      <NotificationConsentDialog
-        open={showNotificationConsent()}
-        onEnable={() => { void enableNotifications(); }}
-        onDismiss={dismissNotificationConsent}
+      <OnboardingDialog
+        open={showOnboarding()}
+        onClose={() => setShowOnboarding(false)}
+        onOpenSettings={openSettings}
       />
 
       <dialog
