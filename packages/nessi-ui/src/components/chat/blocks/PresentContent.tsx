@@ -67,22 +67,24 @@ const FullscreenModal = (props: {
         class="modal-backdrop"
         onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}
       >
-        <div class="bg-gh-surface border border-gh-border-muted rounded-xl shadow-lg relative p-6 m-4 w-[min(960px,94vw)] min-h-[90vh] max-h-[94vh] overflow-y-auto">
+        <div
+          class="bg-gh-surface border border-gh-border-muted rounded-xl shadow-lg relative flex flex-col items-center p-6 m-4 w-[min(960px,94vw)] h-[90vh]"
+        >
           {/* toolbar */}
           <div class="absolute top-2 right-2 flex gap-1.5 z-10">
             <IconButton icon="ti-download" title="Download" onClick={props.onDownload} />
             <IconButton icon="ti-x" title="Close" onClick={props.onClose} />
           </div>
 
-          {/* content */}
+          {/* content — the container is sized, the SVG/img fills it */}
           <Show when={props.svgContent}>
-            <div class="w-full" innerHTML={props.svgContent} />
+            <div class="flex-1 min-h-0 w-full [&>svg]:w-full [&>svg]:h-full" innerHTML={props.svgContent} />
           </Show>
           <Show when={props.imageSrc}>
-            <img src={props.imageSrc} alt={props.name} class="w-full rounded" />
+            <img src={props.imageSrc} alt={props.name} class="flex-1 min-h-0 w-full object-contain rounded" />
           </Show>
 
-          <p class="text-xs text-gh-fg-subtle text-center mt-3">{props.name}</p>
+          <p class="text-xs text-gh-fg-subtle text-center mt-2 shrink-0">{props.name}</p>
         </div>
       </div>
     </Portal>
