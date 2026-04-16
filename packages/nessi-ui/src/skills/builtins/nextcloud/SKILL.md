@@ -33,7 +33,14 @@ cp /output/result.csv /nextcloud/Documents/result.csv
 nextcloud calendar
 nextcloud calendar --days 14
 nextcloud calendar --name work
+nextcloud calendar create "Team standup" --start "2025-06-15 09:00" --end "2025-06-15 09:30"
+nextcloud calendar create "Lunch" --start "2025-06-15 12:00" --calendar work --location "Cafeteria"
 ```
+
+- `--end` defaults to 1 hour after start if omitted
+- `--calendar` selects the calendar (default: "personal")
+- `--location` and `--description` are optional
+- Creating events requires user approval
 
 ## Talk
 

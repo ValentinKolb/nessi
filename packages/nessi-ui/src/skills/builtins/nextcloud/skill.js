@@ -61,8 +61,64 @@ export default function create(api) {
 
     .sub({
       name: "calendar",
-      usage: "calendar [--name personal] [--days 7]",
+      usage: 'calendar [--name personal] [--days 7] | calendar create "title" --start "YYYY-MM-DD HH:MM" [--end ...] [--calendar personal] [--location ...] [--description ...]',
       async handler(args) {
+        const sub = positionalArgs(args)[0];
+
+        // ── calendar create ──
+        if (sub === "create") {
+          const title = positionalArgs(args)[1];
+          if (!title) return err('Missing event title. Example: nextcloud calendar create "Meeting" --start "2025-06-15 14:00"');
+          const opts = parseArgs(args.slice(1));
+          const startStr = opts.get("start");
+          if (!startStr) return err('Missing --start. Example: --start "2025-06-15 14:00"');
+
+          const start = new Date(startStr.replace(" ", "T"));
+          if (isNaN(start.getTime())) return err(`Invalid start date: "${startStr}". Use format: "YYYY-MM-DD HH:MM"`);
+
+          let end;
+          const endStr = opts.get("end");
+          if (endStr) {
+            end = new Date(endStr.replace(" ", "T"));
+            if (isNaN(end.getTime())) return err(`Invalid end date: "${endStr}". Use format: "YYYY-MM-DD HH:MM"`);
+          } else {
+            end = new Date(start.getTime() + 3600_000);
+          }
+
+          const calName = opts.get("calendar") ?? opts.get("name") ?? "personal";
+          const location = opts.get("location") ?? "";
+          const description = opts.get("description") ?? "";
+
+          const uid = crypto.randomUUID();
+          const ics = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//nessi//EN",
+            "BEGIN:VEVENT",
+            `UID:${uid}`,
+            `DTSTAMP:${toTs(new Date())}`,
+            `DTSTART:${toTs(start)}`,
+            `DTEND:${toTs(end)}`,
+            `SUMMARY:${title}`,
+            ...(location ? [`LOCATION:${location}`] : []),
+            ...(description ? [`DESCRIPTION:${description}`] : []),
+            "END:VEVENT",
+            "END:VCALENDAR",
+          ].join("\r\n");
+
+          try {
+            const fmtStart = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")} ${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
+            const fmtEnd = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")} ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
+            const approved = await approve(`Create event in "${calName}":\n"${title}"\n${fmtStart} → ${fmtEnd}${location ? `\nLocation: ${location}` : ""}`);
+            if (!approved) return err("User denied creating the event.");
+            await nc.caldav("PUT", `/${calName}/${uid}.ics`, ics, { "Content-Type": "text/calendar; charset=utf-8" });
+            return ok(`Event "${title}" created (${fmtStart} → ${fmtEnd}).\n`);
+          } catch (e) {
+            return err(e instanceof Error ? e.message : "Failed to create event.");
+          }
+        }
+
+        // ── calendar list (default) ──
         const opts = parseArgs(args);
         const calName = opts.get("name") ?? "personal";
         const days = parseInt(opts.get("days") ?? "7", 10) || 7;
