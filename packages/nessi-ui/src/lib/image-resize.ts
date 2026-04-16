@@ -1,38 +1,13 @@
+import { images } from "@valentinkolb/stdlib/browser";
 import type { UIUserContentPart } from "./chat-content.js";
 
 const MAX_IMAGE_DIMENSION = 1600;
-
-const readFileAsDataURL = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error(`Failed to read ${file.name}.`));
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.readAsDataURL(file);
-  });
-
-const loadImage = (src: string) =>
-  new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Failed to decode image."));
-    image.src = src;
-  });
 
 const outputMediaType = (inputType: string) => {
   if (inputType === "image/png" || inputType === "image/webp" || inputType === "image/jpeg") {
     return inputType;
   }
   return "image/jpeg";
-};
-
-const resizedDimensions = (width: number, height: number) => {
-  const longest = Math.max(width, height);
-  if (longest <= MAX_IMAGE_DIMENSION) return { width, height };
-  const scale = MAX_IMAGE_DIMENSION / longest;
-  return {
-    width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale)),
-  };
 };
 
 /**
@@ -46,27 +21,22 @@ export const prepareImageUpload = async (
     throw new Error(`${file.name} is not an image.`);
   }
 
-  const originalSrc = await readFileAsDataURL(file);
-  const image = await loadImage(originalSrc);
-  const { width, height } = resizedDimensions(image.naturalWidth, image.naturalHeight);
+  const img = await images.create(file);
+  const longest = Math.max(img.width, img.height);
+  const needsResize = longest > MAX_IMAGE_DIMENSION;
+  const mediaType = outputMediaType(file.type) as "jpeg" | "webp" | "png";
+  const quality = mediaType === "png" ? undefined : 0.88;
 
-  let src = originalSrc;
-  let mediaType = file.type;
-
-  if (width !== image.naturalWidth || height !== image.naturalHeight) {
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Failed to create image canvas.");
-
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(image, 0, 0, width, height);
-
-    mediaType = outputMediaType(file.type);
-    src = canvas.toDataURL(mediaType, mediaType === "image/png" ? undefined : 0.88);
+  let src: string;
+  if (needsResize) {
+    const scale = MAX_IMAGE_DIMENSION / longest;
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    src = await images.create(file)
+      .then(images.resize(w, h))
+      .then(images.toBase64(mediaType, quality));
+  } else {
+    src = await images.toBase64(mediaType, quality)(Promise.resolve(img));
   }
 
   const [, data = ""] = src.split(",", 2);
@@ -74,7 +44,7 @@ export const prepareImageUpload = async (
     type: "image",
     src,
     data,
-    mediaType,
+    mediaType: outputMediaType(file.type),
     name: file.name,
   };
 };

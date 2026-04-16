@@ -1,3 +1,4 @@
+import { notifications } from "@valentinkolb/stdlib/browser";
 import { localStorageJson } from "../storage/local-storage.js";
 
 const NOTIFICATION_ASKED_KEY = "nessi:notifications:asked";
@@ -6,6 +7,7 @@ export type BrowserNotificationPayload = {
   title: string;
   body?: string;
   tag?: string;
+  onClick?: () => void;
 };
 
 export type BrowserNotificationStatus =
@@ -14,36 +16,31 @@ export type BrowserNotificationStatus =
   | "default"
   | "blocked";
 
-const isSupported = () =>
-  typeof window !== "undefined" && typeof Notification !== "undefined";
-
-const permission = () => (isSupported() ? Notification.permission : "denied");
-
 const loadAsked = () =>
-  isSupported() && localStorageJson.readString(NOTIFICATION_ASKED_KEY, "") === "1";
+  notifications.isSupported() && localStorageJson.readString(NOTIFICATION_ASKED_KEY, "") === "1";
 
 const markAsked = () => {
   localStorageJson.writeString(NOTIFICATION_ASKED_KEY, "1");
 };
 
 const getStatus = (): BrowserNotificationStatus => {
-  if (!isSupported()) return "unsupported";
-  if (permission() === "granted") return "enabled";
-  if (permission() === "denied") return "blocked";
+  if (!notifications.isSupported()) return "unsupported";
+  const perm = notifications.getPermission();
+  if (perm === "granted") return "enabled";
+  if (perm === "denied") return "blocked";
   return "default";
 };
 
 const shouldShowStartupPrompt = () =>
-  isSupported() && !loadAsked() && permission() === "default";
+  notifications.isSupported() && !loadAsked() && notifications.getPermission() === "default";
 
 const canNotify = () =>
-  getStatus() === "enabled";
+  notifications.getPermission() === "granted";
 
 const requestAccess = async () => {
-  if (!isSupported()) return "unsupported" as const;
-
+  if (!notifications.isSupported()) return false;
   markAsked();
-  return Notification.requestPermission();
+  return notifications.requestPermission();
 };
 
 const dismissPrompt = () => {
@@ -53,16 +50,17 @@ const dismissPrompt = () => {
 const notify = (payload: BrowserNotificationPayload) => {
   if (!canNotify()) return null;
 
-  return new Notification(payload.title, {
-    body: payload.body,
+  return notifications.show({
+    title: payload.title,
+    body: payload.body ?? "",
     tag: payload.tag,
     icon: "/favicon-notification.png",
+    onClick: payload.onClick,
   });
 };
 
 export const browserNotifications = {
-  isSupported,
-  permission,
+  isSupported: notifications.isSupported,
   getStatus,
   loadAsked,
   markAsked,

@@ -50,6 +50,7 @@ import {
   type ChatFileMeta,
   type PendingChatFile,
 } from "../../lib/chat-files.js";
+import { dropzone } from "@valentinkolb/stdlib/solid";
 import { haptics } from "../../shared/browser/haptics.js";
 import { parseSurveyQuestions } from "../../lib/tools/survey-tool.js";
 import { isNextcloudConfigured, type NextcloudRef } from "../../lib/nextcloud.js";
@@ -264,9 +265,6 @@ const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
 
 const textPart = (text: string): ContentPart => ({ type: "text", text });
 
-const hasFiles = (dataTransfer: DataTransfer | null) =>
-  Boolean(dataTransfer?.types && Array.from(dataTransfer.types).includes("Files"));
-
 const MAX_IMAGES_PER_MESSAGE = 6;
 
 type Runtime = {
@@ -298,13 +296,14 @@ export const ChatView = (props: {
   const [nextcloudRefs, setNextcloudRefs] = createSignal<NextcloudRef[]>([]);
   const [githubBrowserOpen, setGitHubBrowserOpen] = createSignal(false);
   const [githubRefs, setGitHubRefs] = createSignal<GitHubRef[]>([]);
-  const [dropActive, setDropActive] = createSignal(false);
+  const { isDragging: dropActive, handlers: dropHandlers } = dropzone.create({
+    onDrop: (files) => void addPendingFiles(files),
+  });
 
   let runtime: Runtime | null = null;
   let activeLoop: NessiLoop | null = null;
   let currentAssistantStartedAt: string | undefined;
   let pendingAutoCompactionEntriesBefore: number | null = null;
-  let dragDepth = 0;
   let resetVersion = 0;
   let attentionFeedbackSentForTurn = false;
   let streamFeedbackStartedForTurn = false;
@@ -381,8 +380,6 @@ export const ChatView = (props: {
     setNextcloudBrowserOpen(false);
     setGitHubBrowserOpen(false);
     currentAssistantStartedAt = undefined;
-    dragDepth = 0;
-    setDropActive(false);
     assistantIdx = -1;
     clearPendingCallMappings();
   };
@@ -1292,34 +1289,6 @@ export const ChatView = (props: {
     void sendPendingFiles();
   };
 
-  const handleDragEnter = (event: DragEvent) => {
-    if (!hasFiles(event.dataTransfer)) return;
-    event.preventDefault();
-    dragDepth++;
-    setDropActive(true);
-  };
-
-  const handleDragOver = (event: DragEvent) => {
-    if (!hasFiles(event.dataTransfer)) return;
-    event.preventDefault();
-  };
-
-  const handleDragLeave = (event: DragEvent) => {
-    if (!hasFiles(event.dataTransfer)) return;
-    event.preventDefault();
-    dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) setDropActive(false);
-  };
-
-  const handleDrop = (event: DragEvent) => {
-    if (!hasFiles(event.dataTransfer)) return;
-    event.preventDefault();
-    dragDepth = 0;
-    setDropActive(false);
-    const files = event.dataTransfer?.files;
-    if (files && files.length > 0) void addPendingFiles(files);
-  };
-
   const handleDeleteInputFile = async (file: ChatFileMeta) => {
     try {
       await removeChatFile(props.chatId, file.id);
@@ -1376,10 +1345,7 @@ export const ChatView = (props: {
   return (
     <div
       class="relative flex flex-col h-full"
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      {...dropHandlers}
     >
       <Show when={dropActive()}>
         <div class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-gh-accent bg-gh-accent-subtle/70 text-sm text-gh-accent">

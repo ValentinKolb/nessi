@@ -5,6 +5,7 @@
  */
 
 import type { IFileSystem, FsStat, FileContent, MkdirOptions } from "just-bash";
+import { createCache } from "@valentinkolb/stdlib";
 import type { NextcloudApi } from "./nextcloud.js";
 
 export const PROPFIND_BODY = `<?xml version="1.0"?>
@@ -39,8 +40,7 @@ export const parsePropfind = (xml: string): DavEntry[] => {
 };
 
 export const createNextcloudFs = (api: NextcloudApi): IFileSystem => {
-  const dirCache = new Map<string, { entries: DavEntry[]; ts: number }>();
-  const DIR_CACHE_TTL = 30_000;
+  const dirCache = createCache<DavEntry[]>({ ttl: 30_000 });
 
   const normalize = (path: string) => {
     const p = path.replace(/\/+/g, "/");
@@ -49,14 +49,14 @@ export const createNextcloudFs = (api: NextcloudApi): IFileSystem => {
 
   const listDir = async (path: string) => {
     const key = normalize(path);
-    const cached = dirCache.get(key);
-    if (cached && Date.now() - cached.ts < DIR_CACHE_TTL) return cached.entries;
+    const cached = await dirCache.get(key);
+    if (cached) return cached;
 
     const davPath = key === "" ? "/" : key;
     const xml = await api.webdav("PROPFIND", davPath, PROPFIND_BODY);
     const all = parsePropfind(xml);
     const entries = all.slice(1);
-    dirCache.set(key, { entries, ts: Date.now() });
+    await dirCache.set(key, entries);
     return entries;
   };
 
