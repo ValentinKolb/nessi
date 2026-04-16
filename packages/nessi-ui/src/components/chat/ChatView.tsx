@@ -16,6 +16,7 @@ import type { Bash } from "just-bash";
 import type { ChatState, UIMessage, UIBlock, UIAssistantMessage, UICompactionBlock } from "./types.js";
 import { MessageList } from "./MessageList.js";
 import { MessageInput } from "./MessageInput.js";
+import { TerminalView } from "./TerminalView.js";
 import { ChatFilesModal } from "./ChatFilesModal.js";
 import { NextcloudBrowserModal } from "./NextcloudBrowserModal.js";
 import { GitHubBrowserModal } from "./GitHubBrowserModal.js";
@@ -295,6 +296,7 @@ export const ChatView = (props: {
   const [nextcloudBrowserOpen, setNextcloudBrowserOpen] = createSignal(false);
   const [nextcloudRefs, setNextcloudRefs] = createSignal<NextcloudRef[]>([]);
   const [githubBrowserOpen, setGitHubBrowserOpen] = createSignal(false);
+  const [terminalOpen, setTerminalOpen] = createSignal(false);
   const [githubRefs, setGitHubRefs] = createSignal<GitHubRef[]>([]);
   const { isDragging: dropActive, handlers: dropHandlers } = dropzone.create({
     onDrop: (files) => void addPendingFiles(files),
@@ -1375,31 +1377,47 @@ export const ChatView = (props: {
           </div>
         </div>
       </Show>
-      <TopicSuggestions messages={state.messages} onSelect={handleSend} />
-      <MessageInput
-        onSend={handleSend}
-        onAddFiles={addPendingFiles}
-        onRemoveImage={removePendingImage}
-        onRemovePendingFile={removePendingFile}
-        onRemoveNextcloudRef={removeNextcloudRef}
-        onRemoveGitHubRef={removeGitHubRef}
-        onProviderChange={props.onProviderChange}
-        onOpenFiles={() => setFilesModalOpen(true)}
-        onOpenNextcloudBrowser={() => setNextcloudBrowserOpen(true)}
-        onOpenGitHubBrowser={() => setGitHubBrowserOpen(true)}
-        images={pendingImages()}
-        files={pendingFiles()}
-        nextcloudRefs={nextcloudRefs()}
-        githubRefs={githubRefs()}
-        providers={props.providers}
-        activeProviderId={props.activeProviderId}
-        inputFileCount={inputFiles().length}
-        outputFileCount={outputFiles().length}
-        isNextcloudConfigured={isNextcloudConfigured()}
-        isGitHubConfigured={hasGitHubToken()}
-        dropActive={dropActive()}
-        disabled={state.streaming}
-      />
+      <Show when={!terminalOpen()}>
+        <TopicSuggestions messages={state.messages} onSelect={handleSend} />
+        <MessageInput
+          onSend={handleSend}
+          onAddFiles={addPendingFiles}
+          onRemoveImage={removePendingImage}
+          onRemovePendingFile={removePendingFile}
+          onRemoveNextcloudRef={removeNextcloudRef}
+          onRemoveGitHubRef={removeGitHubRef}
+          onProviderChange={props.onProviderChange}
+          onOpenFiles={() => setFilesModalOpen(true)}
+          onOpenNextcloudBrowser={() => setNextcloudBrowserOpen(true)}
+          onOpenGitHubBrowser={() => setGitHubBrowserOpen(true)}
+          onOpenTerminal={() => setTerminalOpen(true)}
+          images={pendingImages()}
+          files={pendingFiles()}
+          nextcloudRefs={nextcloudRefs()}
+          githubRefs={githubRefs()}
+          providers={props.providers}
+          activeProviderId={props.activeProviderId}
+          inputFileCount={inputFiles().length}
+          outputFileCount={outputFiles().length}
+          isNextcloudConfigured={isNextcloudConfigured()}
+          isGitHubConfigured={hasGitHubToken()}
+          dropActive={dropActive()}
+          disabled={state.streaming}
+        />
+      </Show>
+      <Show when={terminalOpen()}>
+        <TerminalView
+          getBash={async () => {
+            const ensured = await ensureRuntime();
+            return ensured?.runtime.bash ?? null;
+          }}
+          afterExec={async (bash) => {
+            await syncRuntimeOutputs(props.chatId, bash);
+            await refreshChatFiles();
+          }}
+          onClose={() => setTerminalOpen(false)}
+        />
+      </Show>
       <ChatFilesModal
         open={filesModalOpen()}
         inputFiles={inputFiles()}

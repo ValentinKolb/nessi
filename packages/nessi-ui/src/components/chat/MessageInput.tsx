@@ -28,6 +28,7 @@ export const MessageInput = (props: {
   onOpenFiles?: () => void;
   onOpenNextcloudBrowser?: () => void;
   onOpenGitHubBrowser?: () => void;
+  onOpenTerminal?: () => void;
   images?: UIUserContentPart[];
   files?: PendingChatFile[];
   nextcloudRefs?: NextcloudRef[];
@@ -384,6 +385,16 @@ export const MessageInput = (props: {
                 </Show>
               </button>
             </Show>
+
+            {/* Terminal toggle */}
+            <span class="text-gh-border text-[10px] select-none">|</span>
+            <button
+              class="flex h-7 w-7 items-center justify-center rounded-md text-gh-fg-subtle hover:text-gh-fg hover:bg-gh-overlay transition-colors"
+              onClick={() => { haptics.tap(); props.onOpenTerminal?.(); }}
+              title="Open terminal"
+            >
+              <span class="i ti ti-terminal-2 text-[13px]" />
+            </button>
 
             <div class="flex-1" />
 
