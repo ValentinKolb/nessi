@@ -67,7 +67,7 @@ const FullscreenModal = (props: {
         class="modal-backdrop"
         onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}
       >
-        <div class="modal-panel relative p-6 m-4 max-w-[94vw] max-h-[94vh] overflow-y-auto">
+        <div class="modal-panel relative p-6 m-4 w-[min(960px,94vw)] min-h-[90vh] max-h-[94vh] overflow-y-auto">
           {/* toolbar */}
           <div class="absolute top-2 right-2 flex gap-1.5 z-10">
             <IconButton icon="ti-download" title="Download" onClick={props.onDownload} />
