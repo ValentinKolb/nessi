@@ -390,13 +390,15 @@ export const buildFileInfo = (
   newFiles: ChatFileMeta[],
   allFiles: ChatFileMeta[],
   nextcloudRefs?: import("./nextcloud.js").NextcloudRef[],
+  githubContext?: string,
 ) => {
   const inputFiles = allFiles.filter((meta) => meta.kind === "input");
   const outputFiles = allFiles.filter((meta) => meta.kind === "output");
   const hasLocalFiles = inputFiles.length > 0 || outputFiles.length > 0 || newFiles.length > 0;
   const hasNcRefs = nextcloudRefs && nextcloudRefs.length > 0;
+  const hasGhContext = githubContext && githubContext.trim().length > 0;
 
-  if (!hasLocalFiles && !hasNcRefs) return "";
+  if (!hasLocalFiles && !hasNcRefs && !hasGhContext) return "";
 
   const lines: string[] = ["# Chat files", ""];
 
@@ -436,6 +438,10 @@ export const buildFileInfo = (
       "Use file tools (read_file, list_files, etc.) or bash to access and process these Nextcloud files.",
       "",
     );
+  }
+
+  if (hasGhContext) {
+    lines.push(githubContext!, "");
   }
 
   return lines.join("\n").trim();

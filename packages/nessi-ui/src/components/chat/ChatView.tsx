@@ -18,6 +18,7 @@ import { MessageList } from "./MessageList.js";
 import { MessageInput } from "./MessageInput.js";
 import { ChatFilesModal } from "./ChatFilesModal.js";
 import { NextcloudBrowserModal } from "./NextcloudBrowserModal.js";
+import { GitHubBrowserModal } from "./GitHubBrowserModal.js";
 import { createMainBashRuntime } from "../../lib/skills.js";
 import { getActivePrompt, resolvePrompt } from "../../lib/prompts.js";
 import { createProvider, getActiveProviderEntry } from "../../lib/provider.js";
@@ -52,6 +53,7 @@ import {
 import { haptics } from "../../shared/browser/haptics.js";
 import { parseSurveyQuestions } from "../../lib/tools/survey-tool.js";
 import { isNextcloudConfigured, type NextcloudRef } from "../../lib/nextcloud.js";
+import { hasGitHubToken, fetchIssueDetail, fetchPRDetail, formatIssueForPrompt, formatPRForPrompt, type GitHubRef } from "../../lib/github.js";
 import type { UIMessage as UIMsg } from "./types.js";
 
 const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
@@ -294,6 +296,8 @@ export const ChatView = (props: {
   const [filesModalOpen, setFilesModalOpen] = createSignal(false);
   const [nextcloudBrowserOpen, setNextcloudBrowserOpen] = createSignal(false);
   const [nextcloudRefs, setNextcloudRefs] = createSignal<NextcloudRef[]>([]);
+  const [githubBrowserOpen, setGitHubBrowserOpen] = createSignal(false);
+  const [githubRefs, setGitHubRefs] = createSignal<GitHubRef[]>([]);
   const [dropActive, setDropActive] = createSignal(false);
 
   let runtime: Runtime | null = null;
@@ -370,10 +374,12 @@ export const ChatView = (props: {
     setPendingImages([]);
     setPendingFiles([]);
     setNextcloudRefs([]);
+    setGitHubRefs([]);
     setInputFiles(nextInputFiles);
     setOutputFiles(nextOutputFiles);
     setFilesModalOpen(false);
     setNextcloudBrowserOpen(false);
+    setGitHubBrowserOpen(false);
     currentAssistantStartedAt = undefined;
     dragDepth = 0;
     setDropActive(false);
@@ -1062,6 +1068,7 @@ export const ChatView = (props: {
     attachedFiles: ChatFileMeta[] = [],
     newFiles: ChatFileMeta[] = [],
     ncRefs: NextcloudRef[] = [],
+    githubContext?: string,
   ) => {
     const ensured = await ensureRuntime();
     if (!ensured) {
@@ -1097,11 +1104,12 @@ export const ChatView = (props: {
     setPendingImages([]);
     setPendingFiles([]);
     setNextcloudRefs([]);
+    setGitHubRefs([]);
     setState("streaming", true);
 
     const store = createProviderContextStore(ensured.runtime.store, await latestPersistedSeq());
     const prompt = await resolvePrompt(await getActivePrompt(), {
-      fileInfo: buildFileInfo(newFiles, await listChatFiles(props.chatId), ncRefs),
+      fileInfo: buildFileInfo(newFiles, await listChatFiles(props.chatId), ncRefs, githubContext),
     });
     const input: ContentPart[] = [
       ...(text ? [textPart(text)] : []),
@@ -1113,6 +1121,8 @@ export const ChatView = (props: {
         input.push(textPart("The user attached files for this turn."));
       } else if (ncRefs.length > 0) {
         input.push(textPart("The user selected Nextcloud files for this turn."));
+      } else if (githubContext) {
+        input.push(textPart("The user selected GitHub resources for this turn. See the system prompt for details."));
       }
     }
 
@@ -1184,19 +1194,95 @@ export const ChatView = (props: {
     setNextcloudRefs((prev) => prev.filter((r) => r.id !== id));
   };
 
+  const handleGitHubSelect = (refs: GitHubRef[]) => {
+    setGitHubRefs((prev) => [...prev, ...refs]);
+    setGitHubBrowserOpen(false);
+  };
+
+  const removeGitHubRef = (id: string) => {
+    setGitHubRefs((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  /** Mount referenced repos and fetch issue/PR details for prompt injection. */
+  const prepareGitHubContext = async (ghRefs: GitHubRef[]): Promise<string> => {
+    if (ghRefs.length === 0) return "";
+
+    const repoGroups = new Map<string, GitHubRef[]>();
+    for (const ref of ghRefs) {
+      const list = repoGroups.get(ref.repo) ?? [];
+      list.push(ref);
+      repoGroups.set(ref.repo, list);
+    }
+
+    const sections = await Promise.all(
+      [...repoGroups.entries()].map(async ([repo, refs]) => {
+        const repoLines: string[] = [`## GitHub: ${repo}`, ""];
+        const fileRefs = refs.filter((r) => r.kind === "file" || r.kind === "dir");
+        const issueRefs = refs.filter((r) => r.kind === "issue" && r.number != null);
+        const prRefs = refs.filter((r) => r.kind === "pr" && r.number != null);
+
+        if (fileRefs.length > 0) {
+          repoLines.push(
+            `Repository files are available at \`/github/${repo}/\` (loaded on demand from the GitHub API).`,
+            "",
+            "The user specifically wants you to look at:",
+          );
+          for (const ref of fileRefs) {
+            const fullPath = `/github/${repo}/${ref.path}`;
+            repoLines.push(`- \`${fullPath}\` — read with \`cat ${fullPath}\` or \`read_file ${fullPath}\``);
+          }
+          repoLines.push("");
+        }
+
+        // Fetch issue + PR details in parallel
+        const [issueDetails, prDetails] = await Promise.all([
+          Promise.all(issueRefs.map((r) => fetchIssueDetail(repo, r.number!))),
+          Promise.all(prRefs.map((r) => fetchPRDetail(repo, r.number!))),
+        ]);
+
+        for (let i = 0; i < issueRefs.length; i++) {
+          const detail = issueDetails[i];
+          if (detail) {
+            repoLines.push(formatIssueForPrompt(detail, repo), "");
+          } else {
+            repoLines.push(`### Issue ${issueRefs[i]!.title}`, `> Could not fetch details. Use \`github issue ${repo} ${issueRefs[i]!.number}\` to load.`, "");
+          }
+        }
+
+        for (let i = 0; i < prRefs.length; i++) {
+          const detail = prDetails[i];
+          if (detail) {
+            repoLines.push(formatPRForPrompt(detail, repo), "");
+          } else {
+            repoLines.push(`### PR ${prRefs[i]!.title}`, `> Could not fetch details. Use \`github pr ${repo} ${prRefs[i]!.number}\` to load.`, "");
+          }
+        }
+
+        return repoLines.join("\n");
+      }),
+    );
+
+    return sections.join("\n\n");
+  };
+
   const handleSend = (text: string) => {
     if (state.streaming) return;
     const images = pendingImages();
     const files = pendingFiles();
     const ncRefs = nextcloudRefs();
+    const ghRefs = githubRefs();
     const trimmed = text.trim();
-    if (!trimmed && images.length === 0 && files.length === 0 && ncRefs.length === 0) return;
+    if (!trimmed && images.length === 0 && files.length === 0 && ncRefs.length === 0 && ghRefs.length === 0) return;
 
     const sendPendingFiles = async () => {
       try {
         const persistedFiles = await Promise.all(files.map((file) => putInputFile(props.chatId, file)));
         await refreshChatFiles();
-        await runTurn(trimmed, images, persistedFiles, persistedFiles, ncRefs);
+
+        // Build GitHub context: auto-clone repos + fetch issue/PR details
+        const githubContext = await prepareGitHubContext(ghRefs);
+
+        await runTurn(trimmed, images, persistedFiles, persistedFiles, ncRefs, githubContext);
       } catch (error) {
         haptics.error();
         appendStatusMessage(error instanceof Error ? error.message : String(error));
@@ -1330,17 +1416,21 @@ export const ChatView = (props: {
         onRemoveImage={removePendingImage}
         onRemovePendingFile={removePendingFile}
         onRemoveNextcloudRef={removeNextcloudRef}
+        onRemoveGitHubRef={removeGitHubRef}
         onProviderChange={props.onProviderChange}
         onOpenFiles={() => setFilesModalOpen(true)}
         onOpenNextcloudBrowser={() => setNextcloudBrowserOpen(true)}
+        onOpenGitHubBrowser={() => setGitHubBrowserOpen(true)}
         images={pendingImages()}
         files={pendingFiles()}
         nextcloudRefs={nextcloudRefs()}
+        githubRefs={githubRefs()}
         providers={props.providers}
         activeProviderId={props.activeProviderId}
         inputFileCount={inputFiles().length}
         outputFileCount={outputFiles().length}
         isNextcloudConfigured={isNextcloudConfigured()}
+        isGitHubConfigured={hasGitHubToken()}
         dropActive={dropActive()}
         disabled={state.streaming}
       />
@@ -1357,6 +1447,11 @@ export const ChatView = (props: {
         open={nextcloudBrowserOpen()}
         onClose={() => setNextcloudBrowserOpen(false)}
         onSelect={handleNextcloudSelect}
+      />
+      <GitHubBrowserModal
+        open={githubBrowserOpen()}
+        onClose={() => setGitHubBrowserOpen(false)}
+        onSelect={handleGitHubSelect}
       />
     </div>
   );
