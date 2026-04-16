@@ -60,7 +60,19 @@ export const GitHubHelpView = () => (
     </div>
 
     <div class="ui-note text-[11px]">
-      <strong>Security note:</strong> The token is only stored in your browser's localStorage and sent directly to <code>api.github.com</code> over HTTPS. nessi has no server — your token never leaves your device.
+      <p>
+        <strong>Security & permissions:</strong> The token is only stored in your browser's localStorage and sent directly to <code>api.github.com</code> over HTTPS. nessi has no server — your token never leaves your device.
+      </p>
+      <p class="mt-1.5">
+        All GitHub features are provided by the built-in <strong>github</strong> skill (see Settings → Skills). The integration is <strong>read-only</strong>:
+      </p>
+      <div class="mt-1.5 ml-1 space-y-0.5 text-[10px]">
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> Browse repositories, tags, and releases</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> Read issues, pull requests, and commits</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> Read file contents and directory listings</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> Search issues and code</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-x text-gh-danger text-xs" /> Create, edit, or delete anything</div>
+      </div>
     </div>
   </div>
 );

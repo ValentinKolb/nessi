@@ -71,7 +71,23 @@ RewriteRule ^(.*)$ $1 [R=204,L]`}
     </div>
 
     <div class="ui-note text-[11px]">
-      <strong>Security:</strong> The app password is stored in your browser's localStorage and sent directly to your Nextcloud server over HTTPS. You can revoke it anytime in Nextcloud under Settings → Security.
+      <p>
+        <strong>Security & permissions:</strong> The app password is stored in your browser's localStorage and sent directly to your Nextcloud server over HTTPS. You can revoke it anytime in Nextcloud under Settings → Security.
+      </p>
+      <p class="mt-1.5">
+        All Nextcloud features are provided by the built-in <strong>nextcloud</strong> skill (see Settings → Skills). For safety, destructive actions are blocked:
+      </p>
+      <div class="mt-1.5 ml-1 space-y-0.5 text-[10px]">
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> Read files, directories, and calendar events</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> Create files, directories, and calendar events</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> Copy files between local and Nextcloud</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> List and read Talk conversations</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-check text-status-ok-fg text-xs" /> Send Talk messages (requires your approval)</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-x text-gh-danger text-xs" /> Delete, move, or rename files</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-x text-gh-danger text-xs" /> Edit or delete calendar events</div>
+        <div class="flex items-center gap-1.5"><span class="i ti ti-x text-gh-danger text-xs" /> Delete Talk messages or conversations</div>
+      </div>
+      <p class="mt-1.5">The agent can still create and overwrite files, so use with care.</p>
     </div>
   </div>
 );
