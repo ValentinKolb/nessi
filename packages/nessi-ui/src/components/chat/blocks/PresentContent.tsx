@@ -43,7 +43,8 @@ const IconButton = (props: { icon: string; title: string; onClick: () => void })
 );
 
 const MaximizeButton = (props: { onClick: () => void }) => (
-  <button class="icon-action text-sm" title="Maximize" onClick={props.onClick}>
+  <button class="icon-action sm:text-sm text-xs" title="Maximize" onClick={props.onClick}>
+    <span class="font-semibold mr-1">Maximize</span>
     <span class="i ti ti-arrows-maximize" />
   </button>
 );
@@ -136,7 +137,7 @@ const DataTable = (props: { data: TableData }) => {
             <span class="i ti ti-chevron-left text-[10px]" />
           </button>
         </Show>
-        <span>{props.data.rows.length} rows{maxPage() > 1 ? ` · page ${page()} / ${maxPage()}` : ""}</span>
+        <span class="font-mono text-md">{props.data.rows.length} rows{maxPage() > 1 ? ` · page ${page()} / ${maxPage()}` : ""}</span>
         <Show when={maxPage() > 1}>
           <button class="btn-secondary py-0.5 px-1.5" disabled={page() >= maxPage()} onClick={() => { haptics.tap(); setPage(page() + 1); }}>
             <span class="i ti ti-chevron-right text-[10px]" />

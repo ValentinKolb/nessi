@@ -26,7 +26,7 @@ const init = () => {
 };
 
 const markUnread = () => {
-  ensureDefaultHref();
+  if (!active) ensureDefaultHref();
   active = true;
   setFavicon("/favicon-notification.png");
 };

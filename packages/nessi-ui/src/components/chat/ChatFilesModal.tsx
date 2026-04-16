@@ -65,6 +65,9 @@ const FolderRow = (props: {
   depth: number;
   onAction: (file: ChatFileMeta) => void;
   actionIcon: string;
+  onSecondaryAction?: (file: ChatFileMeta) => void;
+  secondaryActionIcon?: string;
+  secondaryActionHoverClass?: string;
 }) => {
   const [open, setOpen] = createSignal(true);
   const count = () => countFiles(props.node);
@@ -97,6 +100,9 @@ const FolderRow = (props: {
                     depth={props.depth + 1}
                     onAction={props.onAction}
                     actionIcon={props.actionIcon}
+                    onSecondaryAction={props.onSecondaryAction}
+                    secondaryActionIcon={props.secondaryActionIcon}
+                    secondaryActionHoverClass={props.secondaryActionHoverClass}
                   />
                 }
               >
@@ -105,6 +111,9 @@ const FolderRow = (props: {
                   depth={props.depth + 1}
                   onAction={props.onAction}
                   actionIcon={props.actionIcon}
+                  onSecondaryAction={props.onSecondaryAction}
+                  secondaryActionIcon={props.secondaryActionIcon}
+                  secondaryActionHoverClass={props.secondaryActionHoverClass}
                 />
               </Show>
             )}
@@ -120,6 +129,9 @@ const FileRow = (props: {
   depth: number;
   onAction: (file: ChatFileMeta) => void;
   actionIcon: string;
+  onSecondaryAction?: (file: ChatFileMeta) => void;
+  secondaryActionIcon?: string;
+  secondaryActionHoverClass?: string;
 }) => {
   const meta = () => props.node.meta!;
 
@@ -132,6 +144,14 @@ const FileRow = (props: {
       <span class="text-gh-fg-muted min-w-0" title={props.node.name}>{middleTruncate(props.node.name)}</span>
       <span class="text-[11px] text-gh-fg-subtle shrink-0 tabular-nums">{formatFileSize(meta().size)}</span>
       <div class="flex-1" />
+      <Show when={props.onSecondaryAction && props.secondaryActionIcon}>
+        <button
+          class={`shrink-0 text-gh-fg-subtle ${props.secondaryActionHoverClass ?? "hover:text-gh-fg"} opacity-0 group-hover:opacity-100 transition-opacity`}
+          onClick={() => { haptics.tap(); props.onSecondaryAction!(meta()); }}
+        >
+          <span class={`i ti ${props.secondaryActionIcon} text-sm`} />
+        </button>
+      </Show>
       <button
         class="shrink-0 text-gh-fg-subtle hover:text-gh-fg opacity-0 group-hover:opacity-100 transition-opacity"
         onClick={() => { haptics.tap(); props.onAction(meta()); }}
@@ -151,6 +171,7 @@ export const ChatFilesModal = (props: {
   onClose: () => void;
   onDeleteInput: (file: ChatFileMeta) => void;
   onDownloadOutput: (file: ChatFileMeta) => void;
+  onDeleteOutput?: (file: ChatFileMeta) => void;
 }) => {
   const tree = () => buildTree([...props.inputFiles, ...props.outputFiles]);
 
@@ -186,7 +207,15 @@ export const ChatFilesModal = (props: {
               </Show>
               <Show when={outputRoot()}>
                 {(node) => (
-                  <FolderRow node={node()} depth={0} onAction={props.onDownloadOutput} actionIcon="ti-download" />
+                  <FolderRow
+                    node={node()}
+                    depth={0}
+                    onAction={props.onDownloadOutput}
+                    actionIcon="ti-download"
+                    onSecondaryAction={props.onDeleteOutput}
+                    secondaryActionIcon="ti-trash"
+                    secondaryActionHoverClass="hover:text-gh-danger"
+                  />
                 )}
               </Show>
             </Show>

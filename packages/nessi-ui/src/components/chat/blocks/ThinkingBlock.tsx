@@ -9,10 +9,7 @@ export const ThinkingBlock = (props: { block: UIThinkingBlock }) => {
   // Estimate thinking duration from text length (rough heuristic: ~15 tokens/sec, ~4 chars/token)
   const estimatedSeconds = () => Math.max(1, Math.round(props.block.text.length / 60));
 
-  const isStreaming = () => !props.block.text || props.block.text.length === 0;
-
   const headline = () => {
-    if (isStreaming()) return "thinking";
     const secs = estimatedSeconds();
     if (secs < 60) return `thought for ${secs}s`;
     const mins = Math.floor(secs / 60);

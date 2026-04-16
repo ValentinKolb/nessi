@@ -44,10 +44,11 @@ const WorkingTimer = (props: { startedAt?: string }) => {
   return (
     <div class="px-3 py-2 text-[12px] text-gh-fg-subtle flex items-center gap-2">
       <PulseDots />
-      <span class="select-none">Thinking</span>
-      <Show when={visible()}>
-        <span class="tabular-nums select-none">Working for {label()}</span>
-      </Show>
+      <span class="select-none">
+        <Show when={visible()} fallback="Thinking">
+          Thinking for {label()}
+        </Show>
+      </span>
     </div>
   );
 };

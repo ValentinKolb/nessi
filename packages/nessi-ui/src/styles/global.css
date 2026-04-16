@@ -467,6 +467,12 @@ dialog::backdrop {
   animation: nessi-pulse-dot 1s ease-in-out infinite;
 }
 
+.ui-pulse-icon {
+  font-size: 0.6rem;
+  opacity: 0.22;
+  animation: nessi-pulse-dot 1s ease-in-out infinite;
+}
+
 @keyframes nessi-pulse-dot {
   0%, 80%, 100% {
     opacity: 0.22;
