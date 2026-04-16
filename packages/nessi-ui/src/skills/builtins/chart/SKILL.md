@@ -1,6 +1,6 @@
 ---
 name: chart
-description: Generate bar, line, or pie charts from data. Use this whenever data would be easier to understand as a visualization or when the user asqs about understanding some data — comparisons, trends, distributions, or proportions. Charts render inline and are downloadable as SVG.
+description: "Generate bar, line, or pie charts — from CSV files or inline data. Use whenever data needs visualization: comparisons, trends, distributions. Charts render inline as SVG."
 metadata:
   nessi:
     command: chart
@@ -9,39 +9,49 @@ metadata:
 
 # Chart
 
-Use the `chart` command to create data visualizations.
+Create data visualizations as SVG. Charts render inline in the chat with a download button.
 
-Prefer this when the user wants to:
-- visualize data as a bar, line, or pie chart
-- compare values across categories
-- show trends over time
+## From CSV file (recommended)
 
-## Commands
+Read data directly from a CSV file — no manual value copying needed:
 
-### Bar Chart
+```bash
+chart bar /output/data.csv --x "region" --y "revenue" --title "Revenue by Region"
+chart pie /output/data.csv --x "category" --y "amount" --title "Distribution"
+chart line /output/data.csv --x "quarter" --y "revenue,cost,profit" --title "Trends"
+```
+
+- `--x` selects the label column (categories, time periods, names)
+- `--y` selects the value column(s) — for line charts, use comma-separated columns for multiple series
+
+## From inline data
+
+For quick ad-hoc charts without a file:
 
 ```bash
 chart bar --labels "Jan,Feb,Mar" --values "100,200,150" --title "Sales"
-chart bar --labels "A,B,C,D" --values "40,30,20,10"
+chart pie --labels "Chrome,Firefox,Safari" --values "65,20,15" --title "Browsers"
+chart line --labels "Q1,Q2,Q3,Q4" --series '{"Revenue":[100,200,150,250],"Cost":[80,120,100,180]}'
 ```
 
-### Line Chart
+## Full pipeline: table → chart
 
 ```bash
-chart line --labels "Q1,Q2,Q3,Q4" --series '{"Revenue":[100,200,150,250],"Cost":[80,120,100,180]}' --title "Revenue vs Cost"
-chart line --labels "Mon,Tue,Wed,Thu,Fri" --series '{"Visitors":[500,800,600,900,700]}'
-```
+# 1. Aggregate data
+table query /input/sales.xlsx \
+  --select "region as Region, sum(revenue) as Revenue" \
+  --group "region" --sort "Revenue desc" \
+  --output /output/by-region.csv
 
-### Pie Chart
+# 2. Chart from aggregated CSV
+chart bar /output/by-region.csv --x "Region" --y "Revenue" --title "Revenue by Region"
 
-```bash
-chart pie --labels "Chrome,Firefox,Safari,Other" --values "65,20,10,5" --title "Browser Market Share"
+# 3. Display inline
+present /output/bar-chart.svg
 ```
 
 ## Notes
 
-- Charts are rendered inline in the chat with a download button.
-- Output format is SVG.
-- Use `--output` to also save the SVG to a file.
-- For line charts, `--series` is a JSON object mapping series names to value arrays.
-- Labels and values are comma-separated strings.
+- Output is SVG, saved to `/output/` by default.
+- Use `--output /output/custom-name.svg` to override the filename.
+- Use `present` to display the chart inline after generating it.
