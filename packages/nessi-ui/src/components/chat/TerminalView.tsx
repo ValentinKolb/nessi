@@ -38,6 +38,29 @@ export const TerminalView = (props: {
 
   onMount(() => inputRef?.focus());
 
+  const CHUNK_SIZE = 80;
+  const CHUNK_DELAY = 12;
+
+  /** Reveal text chunk-by-chunk into the last history entry's stdout or stderr field. */
+  const typewrite = (field: "stdout" | "stderr", full: string): Promise<void> => {
+    if (full.length <= CHUNK_SIZE) {
+      setHistory((h) => { const a = [...h]; const e = a[a.length - 1]; if (e) a[a.length - 1] = { ...e, [field]: full }; return a; });
+      scrollToBottom();
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      let offset = 0;
+      const tick = () => {
+        offset = Math.min(offset + CHUNK_SIZE, full.length);
+        setHistory((h) => { const a = [...h]; const e = a[a.length - 1]; if (e) a[a.length - 1] = { ...e, [field]: full.slice(0, offset) }; return a; });
+        scrollToBottom();
+        if (offset < full.length) setTimeout(tick, CHUNK_DELAY);
+        else resolve();
+      };
+      tick();
+    });
+  };
+
   const execCommand = async (cmd: string) => {
     if (!cmd.trim() || running()) return;
 
@@ -54,13 +77,22 @@ export const TerminalView = (props: {
     setInput("");
     haptics.tap();
 
+    // Push a placeholder entry immediately (shows the command line)
+    setHistory((prev) => [...prev, { cwd: cwd(), command: cmd, stdout: "", stderr: "", exitCode: 0 }]);
+    scrollToBottom();
+
     try {
       const result = await bash.exec(cmd);
-      setHistory((prev) => [...prev, { cwd: cwd(), command: cmd, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }]);
       if (result.env?.PWD) setCwd(result.env.PWD);
+      // Typewrite stdout, then stderr
+      if (result.stdout) await typewrite("stdout", result.stdout);
+      if (result.stderr) await typewrite("stderr", result.stderr);
+      // Set final exit code
+      setHistory((h) => { const a = [...h]; const e = a[a.length - 1]; if (e) a[a.length - 1] = { ...e, exitCode: result.exitCode }; return a; });
       await props.afterExec?.(bash);
     } catch (e) {
-      setHistory((prev) => [...prev, { cwd: cwd(), command: cmd, stdout: "", stderr: e instanceof Error ? e.message : "Unexpected error", exitCode: 1 }]);
+      await typewrite("stderr", e instanceof Error ? e.message : "Unexpected error");
+      setHistory((h) => { const a = [...h]; const e = a[a.length - 1]; if (e) a[a.length - 1] = { ...e, exitCode: 1 }; return a; });
     }
 
     setRunning(false);
