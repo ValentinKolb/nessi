@@ -199,17 +199,17 @@ export const OnboardingDialog = (props: {
     {
       id: "welcome",
       title: "Welcome to nessi",
-      subtitle: "A local-first assistant that runs entirely in your browser",
+      subtitle: "A local-first assistant that stores all your data on your device",
       render: () => (
         <div class="space-y-3">
           <div class="space-y-1">
             <div class="ui-subpanel p-3.5 space-y-1.5">
               <div class="flex items-center gap-2 text-[14px] text-gh-fg">
                 <span class="i ti ti-cpu text-lg text-gh-fg-subtle" />
-                <span class="font-medium">Built for smaller, local models</span>
+                <span class="font-medium">Built for all models - small to large</span>
               </div>
               <p class="text-[13px] text-gh-fg-muted leading-relaxed">
-                nessi is designed to work great with open-source models like Gemma 4 26B, Qwen 3.5 27B, or Llama 3 running on your own hardware. Cloud providers work too.
+                nessi is designed to work great with open-source models like Gemma 4 26B, Qwen 3.5 27B, or Llama 3 running on your own hardware. Of course, cloud providers work too.
               </p>
             </div>
 
@@ -313,7 +313,8 @@ export const OnboardingDialog = (props: {
             { icon: "ti-clock-play", text: "Background tasks — chat suggestions plus manual triggers and logs directly in settings" },
             { icon: "ti-fold", text: "Smarter compaction — keeps full conversation loops and exposes all important settings and prompt controls" },
             { icon: "ti-brain", text: "Prompt and memory improvements — rewritten system prompt plus more automatic background memory handling" },
-            { icon: "ti-code", text: "Code blocks — language headers with copy button" },
+            { icon: "ti-moon-stars", text: "New Terminal color theme — for those who prefer dark mode and work into the night" },
+            { icon: "ti-text-plus", text: "... and much more minor improvements and bug fixes" },
           ] as const).map((item) => (
             <div class="flex items-start gap-2.5 px-1">
               <span class={`i ti ${item.icon} text-base text-gh-fg-subtle mt-0.5 shrink-0`} />
