@@ -1,6 +1,6 @@
 ---
 name: pdf
-description: Extract text from PDFs and create new PDF files by splitting or merging. Use this whenever the user wants to read, split, or combine PDF documents.
+description: "Extract text from PDFs, split pages, or merge multiple PDFs. Use whenever the user uploads a PDF or asks about PDF content. Handles selectable text only (no OCR)."
 metadata:
   nessi:
     command: pdf

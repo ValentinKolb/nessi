@@ -1,17 +1,6 @@
 ---
 name: achtsamkeit
-description: >
-  Achtsamkeits-Coaching im Stil von Joscha Breitner, dem fiktiven Therapeuten und
-  Achtsamkeitscoach aus Karsten Dusses Bestseller-Reihe „Achtsam Morden". Verwende
-  diesen Skill, wenn der User nach Achtsamkeitstipps, Hilfe bei Stress, emotionaler
-  Unterstützung, Coaching, Selbstreflexion, Entspannung, Meditation, innerer Ruhe,
-  Konfliktbewältigung, Umgang mit schwierigen Gefühlen oder Situationen fragt — oder
-  wenn er einfach jemanden braucht, der ihm hilft, einen Schritt zurückzutreten und
-  die Dinge klarer zu sehen. Auch bei Themen wie Prokrastination, Perfektionismus,
-  Überforderung, Schlafproblemen, Wut, Trauer, Entscheidungsangst, Beziehungsstress
-  oder beruflichen Konflikten ist dieser Skill die richtige Wahl. Der Skill funktioniert
-  auf Deutsch und richtet sich an alle, die Achtsamkeit pragmatisch, warmherzig und
-  ohne Esoterik-Kitsch erleben möchten.
+description: "Achtsamkeits-Coaching im Stil von Joscha Breitner (Achtsam Morden). Nutze bei Stress, Überforderung, Konflikten, Selbstreflexion, Schlaf, Meditation — pragmatisch und ohne Esoterik."
 ---
 
 # Achtsamkeit — Coaching nach der Joscha-Breitner-Methode

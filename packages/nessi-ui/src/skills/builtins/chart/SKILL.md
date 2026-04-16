@@ -1,6 +1,6 @@
 ---
 name: chart
-description: "Generate bar, line, or pie charts — reads directly from CSV files via --x/--y. Pipe table query output into chart. Never manually extract values — always use the file input mode."
+description: "Generate bar, line, or pie charts. Reads directly from CSV files via --x/--y — pipe table query output straight into chart. Also supports inline --labels/--values for quick ad-hoc charts."
 metadata:
   nessi:
     command: chart

@@ -1,6 +1,6 @@
 ---
 name: nextcloud
-description: Nextcloud files, calendar, and Talk messages.
+description: "Nextcloud files, calendar, and Talk. Browse files at /nextcloud/, manage events, send and read messages. Use whenever the user mentions Nextcloud or cloud files."
 metadata:
   nessi:
     command: nextcloud

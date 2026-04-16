@@ -1,6 +1,6 @@
 ---
 name: web
-description: Search the internet and read web pages. Use this skill whenever the user asks about current events, news, prices, weather, facts you're unsure about, or anything that might have changed recently. Also use when the user shares a URL or asks you to look something up. When in doubt, search first — don't guess.
+description: "Search the web and extract page content. Use for current facts, docs, versions, prices, or any URL the user shares. Do NOT use for github.com URLs — use the github skill instead."
 metadata:
   nessi:
     command: web

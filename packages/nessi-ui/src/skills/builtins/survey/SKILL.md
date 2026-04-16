@@ -1,6 +1,6 @@
 ---
 name: survey
-description: Gather user preferences, choices, or parameters through an interactive UI. Use this BEFORE starting any complex task where you need to decide between multiple approaches — language, format, scope, style, audience, etc. Also use when the user wants to plan something or when you want to present multiple options for the user to choose from — a survey is always clearer than listing options in plain text. Always prefer a survey over asking questions one by one. One quick survey replaces 3-4 back-and-forth messages.
+description: "Interactive choice cards for user decisions. Always use instead of numbered option lists. One survey replaces 3-4 back-and-forth messages."
 metadata:
   nessi:
     command: survey
