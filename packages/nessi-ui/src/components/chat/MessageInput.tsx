@@ -2,6 +2,7 @@ import { createEffect, createSignal, on, onMount, Show, For } from "solid-js";
 import { matchCommands, registerCommand, type SlashCommand } from "../../lib/slash-commands.js";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
 import type { PendingChatFile } from "../../lib/chat-files.js";
+import type { NextcloudRef } from "../../lib/nextcloud.js";
 import { getProviderIconUrl, type ProviderEntry } from "../../lib/provider.js";
 import { formatFileSize } from "../../lib/chat-files.js";
 import { haptics } from "../../shared/browser/haptics.js";
@@ -20,14 +21,18 @@ export const MessageInput = (props: {
   onAddFiles?: (files: FileList | File[]) => void;
   onRemoveImage?: (index: number) => void;
   onRemovePendingFile?: (id: string) => void;
+  onRemoveNextcloudRef?: (id: string) => void;
   onProviderChange?: (id: string) => void;
   onOpenFiles?: () => void;
+  onOpenNextcloudBrowser?: () => void;
   images?: UIUserContentPart[];
   files?: PendingChatFile[];
+  nextcloudRefs?: NextcloudRef[];
   providers?: ProviderEntry[];
   activeProviderId?: string;
   inputFileCount?: number;
   outputFileCount?: number;
+  isNextcloudConfigured?: boolean;
   dropActive?: boolean;
   disabled: boolean;
   placeholder?: string;
@@ -41,8 +46,9 @@ export const MessageInput = (props: {
 
   const images = () => props.images ?? [];
   const files = () => props.files ?? [];
+  const ncRefs = () => props.nextcloudRefs ?? [];
   const providers = () => props.providers ?? [];
-  const hasAttachments = () => images().some(p => p.type === "image") || files().length > 0;
+  const hasAttachments = () => images().some(p => p.type === "image") || files().length > 0 || ncRefs().length > 0;
   const canSend = () => Boolean(text().trim()) || hasAttachments();
   const inputCount = () => props.inputFileCount ?? 0;
   const outputCount = () => props.outputFileCount ?? 0;
@@ -60,6 +66,11 @@ export const MessageInput = (props: {
       name: "folder",
       description: "Add folder",
       action: () => folderInputRef.click(),
+    });
+    registerCommand({
+      name: "nextcloud",
+      description: "Browse Nextcloud files",
+      action: () => props.onOpenNextcloudBrowser?.(),
     });
   });
 
@@ -230,6 +241,29 @@ export const MessageInput = (props: {
             </div>
           </Show>
 
+          {/* Nextcloud refs */}
+          <Show when={ncRefs().length > 0}>
+            <div class="px-3 pt-2 pb-1 flex flex-wrap gap-1.5">
+              <For each={ncRefs()}>
+                {(ref) => (
+                  <div class="flex items-center gap-1.5 rounded-md bg-gh-muted px-2 py-1 text-xs text-gh-fg-muted group">
+                    <span class="i ti ti-brand-nextcloud text-[13px] text-gh-fg-subtle" />
+                    <span class="max-w-[160px] truncate">{ref.name}</span>
+                    <Show when={!ref.isDir && ref.size > 0}>
+                      <span class="text-[10px] text-gh-fg-subtle">{formatFileSize(ref.size)}</span>
+                    </Show>
+                    <button
+                      class="text-gh-fg-subtle hover:text-gh-fg ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => { haptics.tap(); props.onRemoveNextcloudRef?.(ref.id); }}
+                    >
+                      <span class="i ti ti-x text-[9px]" />
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+
           {/* Textarea */}
           <div class="px-3 pt-2 pb-1">
             <textarea
@@ -284,6 +318,7 @@ export const MessageInput = (props: {
               items={[
                 { icon: "ti-paperclip", label: "Add files", onClick: () => fileInputRef.click() },
                 { icon: "ti-folder", label: "Add folder", onClick: () => folderInputRef.click() },
+                ...(props.isNextcloudConfigured ? [{ icon: "ti-brand-nextcloud", label: "Nextcloud", onClick: () => props.onOpenNextcloudBrowser?.() }] : []),
               ]}
             />
 

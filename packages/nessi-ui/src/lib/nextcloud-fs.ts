@@ -7,14 +7,14 @@
 import type { IFileSystem, FsStat, FileContent, MkdirOptions } from "just-bash";
 import type { NextcloudApi } from "./nextcloud.js";
 
-const PROPFIND_BODY = `<?xml version="1.0"?>
+export const PROPFIND_BODY = `<?xml version="1.0"?>
 <d:propfind xmlns:d="DAV:">
   <d:prop>
     <d:displayname/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/><d:getcontenttype/>
   </d:prop>
 </d:propfind>`;
 
-type DavEntry = {
+export type DavEntry = {
   name: string;
   href: string;
   isDir: boolean;
@@ -23,7 +23,7 @@ type DavEntry = {
   mime: string;
 };
 
-const parsePropfind = (xml: string): DavEntry[] => {
+export const parsePropfind = (xml: string): DavEntry[] => {
   const entries: DavEntry[] = [];
   const responses = xml.split("<d:response>").slice(1);
   for (const r of responses) {
@@ -133,9 +133,8 @@ export const createNextcloudFs = (api: NextcloudApi): IFileSystem => {
       return entries.map((e) => e.name);
     },
 
-    async rm(path) {
-      await api.webdav("DELETE", normalize(path));
-      invalidateDir(path);
+    async rm() {
+      throw new Error("Deleting files on Nextcloud is not allowed. Please delete files manually through the Nextcloud web interface.");
     },
 
     async cp(src, dest) {
@@ -143,9 +142,8 @@ export const createNextcloudFs = (api: NextcloudApi): IFileSystem => {
       await fs.writeFile(dest, content);
     },
 
-    async mv(src, dest) {
-      await fs.cp(src, dest);
-      await fs.rm(src);
+    async mv() {
+      throw new Error("Moving or renaming files on Nextcloud is not allowed. Please manage files manually through the Nextcloud web interface.");
     },
 
     resolvePath(base, path) {

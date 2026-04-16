@@ -386,31 +386,56 @@ const fileSection = (title: string, items: ChatFileMeta[], limit = 15) => {
   ];
 };
 
-export const buildFileInfo = (newFiles: ChatFileMeta[], allFiles: ChatFileMeta[]) => {
+export const buildFileInfo = (
+  newFiles: ChatFileMeta[],
+  allFiles: ChatFileMeta[],
+  nextcloudRefs?: import("./nextcloud.js").NextcloudRef[],
+) => {
   const inputFiles = allFiles.filter((meta) => meta.kind === "input");
   const outputFiles = allFiles.filter((meta) => meta.kind === "output");
+  const hasLocalFiles = inputFiles.length > 0 || outputFiles.length > 0 || newFiles.length > 0;
+  const hasNcRefs = nextcloudRefs && nextcloudRefs.length > 0;
 
-  if (inputFiles.length === 0 && outputFiles.length === 0 && newFiles.length === 0) return "";
+  if (!hasLocalFiles && !hasNcRefs) return "";
 
-  const lines: string[] = [
-    "# Chat files",
-    "",
-    "The user has uploaded local files to this chat. They are available at `/input/`.",
-    "Use file tools (read_file, list_files, etc.), bash, or your skills to process them.",
-    "Write results to `/output/` and call `present` to show them inline with a direct download button.",
-    "",
-    "These are **local uploads** — not Nextcloud files. Only use `/nextcloud/` when the user explicitly mentions Nextcloud.",
-    "",
-  ];
+  const lines: string[] = ["# Chat files", ""];
 
-  if (newFiles.length > 0) {
-    lines.push(...fileSection("New files in this message", newFiles));
+  if (hasLocalFiles) {
+    lines.push(
+      "The user has uploaded local files to this chat. They are available at `/input/`.",
+      "Use file tools (read_file, list_files, etc.), bash, or your skills to process them.",
+      "Write results to `/output/` and call `present` to show them inline with a direct download button.",
+      "",
+      "These are **local uploads** — not Nextcloud files. Only use `/nextcloud/` when the user explicitly mentions Nextcloud.",
+      "",
+    );
+
+    if (newFiles.length > 0) {
+      lines.push(...fileSection("New files in this message", newFiles));
+    }
+
+    lines.push(...fileSection("All input files", inputFiles));
+
+    if (outputFiles.length > 0) {
+      lines.push(...fileSection("Output files", outputFiles));
+    }
   }
 
-  lines.push(...fileSection("All input files", inputFiles));
-
-  if (outputFiles.length > 0) {
-    lines.push(...fileSection("Output files", outputFiles));
+  if (hasNcRefs) {
+    lines.push("The user has pointed to these Nextcloud paths for this message:");
+    for (const ref of nextcloudRefs!) {
+      const fullPath = `/nextcloud${ref.path}`;
+      if (ref.isDir) {
+        lines.push(`- ${fullPath} (folder)`);
+      } else {
+        lines.push(`- ${fullPath} (${ref.mime}, ${formatFileSize(ref.size)})`);
+      }
+    }
+    lines.push(
+      "",
+      "Use file tools (read_file, list_files, etc.) or bash to access and process these Nextcloud files.",
+      "",
+    );
   }
 
   return lines.join("\n").trim();

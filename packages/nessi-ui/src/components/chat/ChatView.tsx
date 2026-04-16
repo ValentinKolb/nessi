@@ -17,6 +17,7 @@ import type { ChatState, UIMessage, UIBlock, UIAssistantMessage, UICompactionBlo
 import { MessageList } from "./MessageList.js";
 import { MessageInput } from "./MessageInput.js";
 import { ChatFilesModal } from "./ChatFilesModal.js";
+import { NextcloudBrowserModal } from "./NextcloudBrowserModal.js";
 import { createMainBashRuntime } from "../../lib/skills.js";
 import { getActivePrompt, resolvePrompt } from "../../lib/prompts.js";
 import { createProvider, getActiveProviderEntry } from "../../lib/provider.js";
@@ -49,6 +50,8 @@ import {
   type PendingChatFile,
 } from "../../lib/chat-files.js";
 import { haptics } from "../../shared/browser/haptics.js";
+import { parseSurveyQuestions } from "../../lib/tools/survey-tool.js";
+import { isNextcloudConfigured, type NextcloudRef } from "../../lib/nextcloud.js";
 import type { UIMessage as UIMsg } from "./types.js";
 
 const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
@@ -289,6 +292,8 @@ export const ChatView = (props: {
   const [inputFiles, setInputFiles] = createSignal<ChatFileMeta[]>([]);
   const [outputFiles, setOutputFiles] = createSignal<ChatFileMeta[]>([]);
   const [filesModalOpen, setFilesModalOpen] = createSignal(false);
+  const [nextcloudBrowserOpen, setNextcloudBrowserOpen] = createSignal(false);
+  const [nextcloudRefs, setNextcloudRefs] = createSignal<NextcloudRef[]>([]);
   const [dropActive, setDropActive] = createSignal(false);
 
   let runtime: Runtime | null = null;
@@ -364,9 +369,11 @@ export const ChatView = (props: {
     setState({ messages, streaming: false });
     setPendingImages([]);
     setPendingFiles([]);
+    setNextcloudRefs([]);
     setInputFiles(nextInputFiles);
     setOutputFiles(nextOutputFiles);
     setFilesModalOpen(false);
+    setNextcloudBrowserOpen(false);
     currentAssistantStartedAt = undefined;
     dragDepth = 0;
     setDropActive(false);
@@ -411,7 +418,18 @@ export const ChatView = (props: {
 
   const ensureAssistantTurnMessage = () => {
     const current = state.messages[assistantIdx];
-    if (isAssistantMessage(current)) return;
+    if (isAssistantMessage(current)) {
+      // Re-entering for a follow-up turn — make sure the message stays in
+      // streaming state so the actions footer doesn't render mid-conversation.
+      if (!current.streaming) {
+        mapMessages((messages) => {
+          const next = [...messages];
+          next[assistantIdx] = { ...current, streaming: true };
+          return next;
+        });
+      }
+      return;
+    }
 
     mapMessages((messages) => [
       ...messages,
@@ -785,18 +803,17 @@ export const ChatView = (props: {
         }
 
         if (event.kind === "client_tool" && event.name === "survey") {
-          const args = event.args as {
-            title?: string;
-            questions?: Array<{ question: string; options: string[] }>;
-          };
-          const questions = Array.isArray(args.questions) ? args.questions : [];
+          const args = event.args as { title?: string; questions?: string | Array<{ question: string; options: string[] }> };
+          const questions = typeof args.questions === "string"
+            ? parseSurveyQuestions(args.questions)
+            : Array.isArray(args.questions) ? args.questions : [];
           if (questions.length === 0) {
             activeLoop?.push({
               type: "tool_result",
               callId: event.callId,
               result: {
                 result:
-                  "Error: survey requires a non-empty questions array. Example input: {\"title\":\"Language preference\",\"questions\":[{\"question\":\"Preferred language?\",\"options\":[\"Deutsch\",\"English\"]}]}",
+                  "Error: survey requires questions in pipe format. Example: {\"title\":\"Setup\",\"questions\":\"Language? | TypeScript | Python\\nTests? | Yes | No\"}",
               },
             });
             break;
@@ -831,8 +848,9 @@ export const ChatView = (props: {
       }
 
       case "turn_end": {
-        if (streamFeedbackStartedForTurn) haptics.success();
-        const preview = assistantPreviewFromBlocks(getCurrentBlocks());
+        // Update meta with latest model/usage info, but do NOT close the
+        // streaming message or fire notifications — the loop may continue
+        // with another turn (tool_call → execution → next provider call).
         const persistedAssistant = [...await loadPersistedEntries(props.chatId)]
           .reverse()
           .find((entry) => entry.kind === "message" && entry.message.role === "assistant");
@@ -848,6 +866,13 @@ export const ChatView = (props: {
             ? Math.max(0, new Date(completedAt).getTime() - new Date(meta.startedAt).getTime())
             : undefined,
         }));
+        break;
+      }
+
+      case "done": {
+        // The entire agent loop has finished — close the message and notify.
+        if (streamFeedbackStartedForTurn) haptics.success();
+        const preview = assistantPreviewFromBlocks(getCurrentBlocks());
         closeStreamingAssistantMessage();
         currentAssistantStartedAt = undefined;
         streamFeedbackStartedForTurn = false;
@@ -855,7 +880,7 @@ export const ChatView = (props: {
         streamedCharsSinceFeedback = 0;
         props.onSessionComplete?.({
           chatId: props.chatId,
-          finishedAt: completedAt,
+          finishedAt: new Date().toISOString(),
           preview,
         });
         break;
@@ -867,7 +892,6 @@ export const ChatView = (props: {
         break;
       }
 
-      case "done":
       case "steer_applied":
         break;
 
@@ -1037,6 +1061,7 @@ export const ChatView = (props: {
     images: Array<Extract<UIUserContentPart, { type: "image" }>>,
     attachedFiles: ChatFileMeta[] = [],
     newFiles: ChatFileMeta[] = [],
+    ncRefs: NextcloudRef[] = [],
   ) => {
     const ensured = await ensureRuntime();
     if (!ensured) {
@@ -1071,19 +1096,24 @@ export const ChatView = (props: {
     assistantIdx = -1;
     setPendingImages([]);
     setPendingFiles([]);
+    setNextcloudRefs([]);
     setState("streaming", true);
 
     const store = createProviderContextStore(ensured.runtime.store, await latestPersistedSeq());
     const prompt = await resolvePrompt(await getActivePrompt(), {
-      fileInfo: buildFileInfo(newFiles, await listChatFiles(props.chatId)),
+      fileInfo: buildFileInfo(newFiles, await listChatFiles(props.chatId), ncRefs),
     });
     const input: ContentPart[] = [
       ...(text ? [textPart(text)] : []),
       ...images.map((image) => ({ type: "file", data: image.data, mediaType: image.mediaType } as const)),
     ];
 
-    if (!text && images.length === 0 && attachedFiles.length > 0) {
-      input.push(textPart("The user attached files for this turn."));
+    if (!text && images.length === 0) {
+      if (attachedFiles.length > 0) {
+        input.push(textPart("The user attached files for this turn."));
+      } else if (ncRefs.length > 0) {
+        input.push(textPart("The user selected Nextcloud files for this turn."));
+      }
     }
 
     const loop = nessi({
@@ -1145,18 +1175,28 @@ export const ChatView = (props: {
     void runTurn(text, images, files, []);
   };
 
+  const handleNextcloudSelect = (refs: NextcloudRef[]) => {
+    setNextcloudRefs((prev) => [...prev, ...refs]);
+    setNextcloudBrowserOpen(false);
+  };
+
+  const removeNextcloudRef = (id: string) => {
+    setNextcloudRefs((prev) => prev.filter((r) => r.id !== id));
+  };
+
   const handleSend = (text: string) => {
     if (state.streaming) return;
     const images = pendingImages();
     const files = pendingFiles();
+    const ncRefs = nextcloudRefs();
     const trimmed = text.trim();
-    if (!trimmed && images.length === 0 && files.length === 0) return;
+    if (!trimmed && images.length === 0 && files.length === 0 && ncRefs.length === 0) return;
 
     const sendPendingFiles = async () => {
       try {
         const persistedFiles = await Promise.all(files.map((file) => putInputFile(props.chatId, file)));
         await refreshChatFiles();
-        await runTurn(trimmed, images, persistedFiles, persistedFiles);
+        await runTurn(trimmed, images, persistedFiles, persistedFiles, ncRefs);
       } catch (error) {
         haptics.error();
         appendStatusMessage(error instanceof Error ? error.message : String(error));
@@ -1209,6 +1249,17 @@ export const ChatView = (props: {
   const handleDownloadOutputFile = async (file: ChatFileMeta) => {
     try {
       await downloadChatFile(file);
+    } catch (error) {
+      haptics.error();
+      appendStatusMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleDeleteOutputFile = async (file: ChatFileMeta) => {
+    try {
+      await removeChatFile(props.chatId, file.id);
+      runtime = null;
+      await refreshChatFiles();
     } catch (error) {
       haptics.error();
       appendStatusMessage(error instanceof Error ? error.message : String(error));
@@ -1278,14 +1329,18 @@ export const ChatView = (props: {
         onAddFiles={addPendingFiles}
         onRemoveImage={removePendingImage}
         onRemovePendingFile={removePendingFile}
+        onRemoveNextcloudRef={removeNextcloudRef}
         onProviderChange={props.onProviderChange}
         onOpenFiles={() => setFilesModalOpen(true)}
+        onOpenNextcloudBrowser={() => setNextcloudBrowserOpen(true)}
         images={pendingImages()}
         files={pendingFiles()}
+        nextcloudRefs={nextcloudRefs()}
         providers={props.providers}
         activeProviderId={props.activeProviderId}
         inputFileCount={inputFiles().length}
         outputFileCount={outputFiles().length}
+        isNextcloudConfigured={isNextcloudConfigured()}
         dropActive={dropActive()}
         disabled={state.streaming}
       />
@@ -1296,6 +1351,12 @@ export const ChatView = (props: {
         onClose={() => setFilesModalOpen(false)}
         onDeleteInput={handleDeleteInputFile}
         onDownloadOutput={handleDownloadOutputFile}
+        onDeleteOutput={handleDeleteOutputFile}
+      />
+      <NextcloudBrowserModal
+        open={nextcloudBrowserOpen()}
+        onClose={() => setNextcloudBrowserOpen(false)}
+        onSelect={handleNextcloudSelect}
       />
     </div>
   );

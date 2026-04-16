@@ -4,6 +4,23 @@ const STORAGE_KEY = "nessi:nextcloud";
 
 type NextcloudConfig = { url?: string; user?: string; appPassword?: string };
 
+/** Lightweight reference to a Nextcloud file or folder selected by the user. */
+export type NextcloudRef = {
+  id: string;
+  /** Nextcloud-internal path, e.g. "/Documents/report.pdf" */
+  path: string;
+  name: string;
+  isDir: boolean;
+  size: number;
+  mime: string;
+};
+
+/** Check whether Nextcloud credentials are configured (non-throwing). */
+export const isNextcloudConfigured = () => {
+  const raw = readJson<NextcloudConfig | null>(STORAGE_KEY, null);
+  return Boolean(raw?.url?.trim() && raw?.user?.trim() && raw?.appPassword?.trim());
+};
+
 const getConfig = () => {
   const raw = readJson<NextcloudConfig | null>(STORAGE_KEY, null);
   if (!raw?.url?.trim() || !raw?.user?.trim() || !raw?.appPassword?.trim()) {
@@ -52,7 +69,7 @@ export type NextcloudApi = {
   /** WebDAV on /remote.php/dav/files/{user}/... */
   webdav: (method: string, path: string, body?: string) => Promise<string>;
   /** CalDAV on /remote.php/dav/calendars/{user}/... */
-  caldav: (method: string, path: string, body?: string) => Promise<string>;
+  caldav: (method: string, path: string, body?: string, extraHeaders?: Record<string, string>) => Promise<string>;
   /** Download binary file from files DAV */
   downloadBinary: (path: string) => Promise<Uint8Array>;
   /** OCS REST API */
@@ -66,8 +83,8 @@ export const nextcloudApi: NextcloudApi = {
     return res.text();
   },
 
-  caldav: async (method, path, body) => {
-    const res = await davFetch(method, calPath(path), body);
+  caldav: async (method, path, body, extraHeaders) => {
+    const res = await davFetch(method, calPath(path), body, extraHeaders);
     return res.text();
   },
 
