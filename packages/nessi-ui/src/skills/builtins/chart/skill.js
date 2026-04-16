@@ -26,6 +26,9 @@ export default function create(api) {
         throw new Error(`Could not read file: ${filePath}`);
       }
     }
+    if (!filePath.toLowerCase().endsWith(".csv")) {
+      throw new Error("Chart file input only supports CSV. Convert XLSX first with: table export <file> --output /output/data.csv");
+    }
     if (!xCol) throw new Error("--x is required when reading from a CSV file.");
     if (!yCols) throw new Error("--y is required when reading from a CSV file.");
     const yList = yCols.split(",").map((s) => s.trim()).filter(Boolean);

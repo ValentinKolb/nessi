@@ -385,13 +385,13 @@ const outputName = (expr: SelectExpr): string => {
 
 const computeAgg = (fn: AggFn, values: string[]): string => {
   if (fn === "count") return String(values.length);
-  const nums = values.map(Number).filter((n) => !isNaN(n));
+  const nums = values.filter((v) => v !== "").map(Number).filter((n) => !isNaN(n));
   if (nums.length === 0) return "";
   switch (fn) {
     case "sum": return String(nums.reduce((a, b) => a + b, 0));
     case "avg": return String(nums.reduce((a, b) => a + b, 0) / nums.length);
-    case "min": return String(Math.min(...nums));
-    case "max": return String(Math.max(...nums));
+    case "min": return String(nums.reduce((a, b) => a < b ? a : b));
+    case "max": return String(nums.reduce((a, b) => a > b ? a : b));
     case "median": {
       const sorted = [...nums].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
@@ -498,8 +498,8 @@ export const tableQuery = async (
     resultRows.sort((a, b) => {
       const va = a[col] ?? "";
       const vb = b[col] ?? "";
-      const na = Number(va);
-      const nb = Number(vb);
+      const na = va !== "" ? Number(va) : NaN;
+      const nb = vb !== "" ? Number(vb) : NaN;
       const cmp = (!isNaN(na) && !isNaN(nb)) ? na - nb : va.localeCompare(vb);
       return desc ? -cmp : cmp;
     });
@@ -543,7 +543,9 @@ export const parseCsvForChart = (
   const series: Record<string, number[]> = {};
   for (const y of yColumns) {
     series[y] = sheet.rows.map((r) => {
-      const n = Number(r[y] ?? "");
+      const v = r[y] ?? "";
+      if (v === "") return 0;
+      const n = Number(v);
       return isNaN(n) ? 0 : n;
     });
   }

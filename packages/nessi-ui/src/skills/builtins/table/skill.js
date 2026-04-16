@@ -220,8 +220,14 @@ export default function create(api) {
           const sortRaw = opts.get("sort");
           let sort;
           if (sortRaw) {
-            const parts = sortRaw.trim().split(/\s+/);
-            sort = { column: parts[0], desc: (parts[1] ?? "").toLowerCase() === "desc" };
+            const trimmed = sortRaw.trim();
+            const lastSpace = trimmed.lastIndexOf(" ");
+            const lastWord = lastSpace >= 0 ? trimmed.slice(lastSpace + 1).toLowerCase() : "";
+            if (lastWord === "asc" || lastWord === "desc") {
+              sort = { column: trimmed.slice(0, lastSpace).trim(), desc: lastWord === "desc" };
+            } else {
+              sort = { column: trimmed, desc: false };
+            }
           }
           const limitStr = opts.get("limit");
           const limit = limitStr ? parseInt(limitStr, 10) : undefined;
