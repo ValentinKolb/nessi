@@ -116,7 +116,7 @@ export const TerminalView = (props: {
           style={{ height: "min(420px, 55vh)" }}
         >
           {/* Header */}
-          <div class="flex items-center gap-2 px-3 py-1.5 shrink-0">
+          <div class="flex items-center gap-2 px-3 pt-3 pb-1.5 shrink-0">
             <span class="i ti ti-terminal-2 text-[13px] text-gh-fg-subtle" />
             <span class="text-[12px] text-gh-fg-muted font-medium flex-1">Terminal</span>
             <button
@@ -132,24 +132,21 @@ export const TerminalView = (props: {
             ref={scrollRef}
             class="flex-1 overflow-y-auto hide-scrollbar px-3 pb-2 font-mono text-[13px] leading-[1.6]"
           >
-            {/* Empty state with quick-action buttons */}
+            {/* Empty state — looks like terminal output with clickable commands */}
             <Show when={history().length === 0 && !running()}>
-              <div class="flex flex-col items-center justify-center h-full gap-3 font-sans">
-                <p class="text-[12px] text-gh-fg-subtle">
-                  Same environment as the agent — all skills, files, and mounts available.
-                </p>
-                <div class="flex flex-wrap justify-center gap-2">
-                  <For each={QUICK_ACTIONS}>
-                    {(action) => (
-                      <button
-                        class="px-2.5 py-1 text-[12px] text-gh-fg-muted bg-gh-muted rounded-md hover:bg-gh-overlay hover:text-gh-fg transition-colors"
-                        onClick={() => { haptics.tap(); void execCommand(action.command); }}
-                      >
-                        {action.label}
-                      </button>
-                    )}
-                  </For>
-                </div>
+              <div class="pt-2 text-gh-fg-subtle">
+                <div class="mb-3">Try one of these:</div>
+                <For each={QUICK_ACTIONS}>
+                  {(action) => (
+                    <button
+                      class="block w-full text-left mb-0.5 hover:text-gh-fg transition-colors group"
+                      onClick={() => { haptics.tap(); void execCommand(action.command); }}
+                    >
+                      <span class="text-gh-fg-subtle select-none">{promptText()} $ </span>
+                      <span class="text-gh-accent group-hover:underline">{action.command}</span>
+                    </button>
+                  )}
+                </For>
               </div>
             </Show>
 
