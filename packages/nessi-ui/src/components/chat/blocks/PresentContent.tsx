@@ -67,22 +67,22 @@ const FullscreenModal = (props: {
         class="modal-backdrop"
         onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}
       >
-        <div class="modal-panel relative flex flex-col items-center gap-3 p-6 m-4 w-[94vw] h-[94vh] overflow-auto">
+        <div class="modal-panel relative flex flex-col items-center gap-3 p-6 m-4 w-[94vw] max-h-[94vh] overflow-y-auto">
           {/* toolbar */}
-          <div class="absolute top-2 right-2 flex gap-1.5">
+          <div class="sticky top-0 self-end flex gap-1.5 z-10">
             <IconButton icon="ti-download" title="Download" onClick={props.onDownload} />
             <IconButton icon="ti-x" title="Close" onClick={props.onClose} />
           </div>
 
           {/* content */}
           <Show when={props.svgContent}>
-            <div class="flex-1 min-h-0 w-full flex items-center justify-center present-svg-fit" innerHTML={props.svgContent} />
+            <div class="w-full flex items-center justify-center present-svg-fit" innerHTML={props.svgContent} />
           </Show>
           <Show when={props.imageSrc}>
-            <img src={props.imageSrc} alt={props.name} class="flex-1 min-h-0 w-full object-contain rounded" />
+            <img src={props.imageSrc} alt={props.name} class="w-full object-contain rounded" />
           </Show>
 
-          <span class="text-xs text-gh-fg-subtle">{props.name}</span>
+          <span class="text-xs text-gh-fg-subtle shrink-0">{props.name}</span>
         </div>
       </div>
     </Portal>

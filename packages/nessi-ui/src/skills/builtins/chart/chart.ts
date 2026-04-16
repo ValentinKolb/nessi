@@ -184,12 +184,18 @@ export type PieChartData = {
 };
 
 export const pieChart = (data: PieChartData) => {
-  const W = 400, H = 400;
+  const W = 400;
   const cx = W / 2, cy = 190;
   const R = 130;
   const n = data.labels.length;
   const total = data.values.reduce((a, b) => a + b, 0);
-  if (n === 0 || total === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${LABEL_COLOR}" font-family="${FONT}" font-size="12">No data</text></svg>`;
+  if (n === 0 || total === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} 400"><text x="${W / 2}" y="200" text-anchor="middle" fill="${LABEL_COLOR}" font-family="${FONT}" font-size="12">No data</text></svg>`;
+
+  // compute height dynamically to fit legend
+  const cols = Math.min(n, 3);
+  const legendRows = Math.ceil(n / cols);
+  const legendY = cy + R + 24;
+  const H = legendY + legendRows * 18 + 16;
 
   const lines: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="${FONT}">`,
@@ -231,8 +237,6 @@ export const pieChart = (data: PieChartData) => {
   }
 
   // legend
-  const legendY = cy + R + 24;
-  const cols = Math.min(n, 3);
   const colW = W / cols;
   for (let i = 0; i < n; i++) {
     const col = i % cols;
