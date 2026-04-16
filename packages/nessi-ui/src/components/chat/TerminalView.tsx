@@ -1,4 +1,4 @@
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { Bash } from "just-bash";
 import { haptics } from "../../shared/browser/haptics.js";
 
@@ -38,12 +38,15 @@ export const TerminalView = (props: {
 
   onMount(() => inputRef?.focus());
 
+  let cancelled = false;
+  let activeTimer: ReturnType<typeof setTimeout> | null = null;
+  onCleanup(() => { cancelled = true; if (activeTimer) clearTimeout(activeTimer); });
+
   const CHUNK_SIZE = 80;
   const CHUNK_DELAY = 12;
 
-  /** Reveal text chunk-by-chunk into the last history entry's stdout or stderr field. */
   const typewrite = (field: "stdout" | "stderr", full: string): Promise<void> => {
-    if (full.length <= CHUNK_SIZE) {
+    if (cancelled || full.length <= CHUNK_SIZE) {
       setHistory((h) => { const a = [...h]; const e = a[a.length - 1]; if (e) a[a.length - 1] = { ...e, [field]: full }; return a; });
       scrollToBottom();
       return Promise.resolve();
@@ -51,11 +54,12 @@ export const TerminalView = (props: {
     return new Promise((resolve) => {
       let offset = 0;
       const tick = () => {
+        if (cancelled) { resolve(); return; }
         offset = Math.min(offset + CHUNK_SIZE, full.length);
         setHistory((h) => { const a = [...h]; const e = a[a.length - 1]; if (e) a[a.length - 1] = { ...e, [field]: full.slice(0, offset) }; return a; });
         scrollToBottom();
-        if (offset < full.length) setTimeout(tick, CHUNK_DELAY);
-        else resolve();
+        if (offset < full.length) activeTimer = setTimeout(tick, CHUNK_DELAY);
+        else { activeTimer = null; resolve(); }
       };
       tick();
     });
@@ -63,15 +67,15 @@ export const TerminalView = (props: {
 
   const execCommand = async (cmd: string) => {
     if (!cmd.trim() || running()) return;
+    setRunning(true);
 
     const bash = await props.getBash();
     if (!bash) {
       setHistory((prev) => [...prev, { cwd: cwd(), command: cmd, stdout: "", stderr: "No provider configured. Open Settings to add one.", exitCode: 1 }]);
+      setRunning(false);
       scrollToBottom();
       return;
     }
-
-    setRunning(true);
     setCmdHistory((prev) => [cmd, ...prev.filter((c) => c !== cmd).slice(0, 99)]);
     setHistIdx(-1);
     setInput("");
