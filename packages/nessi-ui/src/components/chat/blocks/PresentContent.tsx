@@ -76,7 +76,7 @@ const FullscreenModal = (props: {
 
           {/* content */}
           <Show when={props.svgContent}>
-            <div class="flex-1 w-full flex items-center justify-center overflow-auto" innerHTML={props.svgContent} />
+            <div class="flex-1 min-h-0 w-full flex items-center justify-center present-svg-fit" innerHTML={props.svgContent} />
           </Show>
           <Show when={props.imageSrc}>
             <img src={props.imageSrc} alt={props.name} class="flex-1 min-h-0 w-full object-contain rounded" />
