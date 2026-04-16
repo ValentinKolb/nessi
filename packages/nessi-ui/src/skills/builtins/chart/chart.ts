@@ -215,7 +215,7 @@ export const pieChart = (data: PieChartData) => {
       const y2 = cy + R * Math.sin(angle + sliceAngle);
       const large = sliceAngle > Math.PI ? 1 : 0;
 
-      lines.push(`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${color}" opacity="0.85" stroke="${BG_COLOR}" stroke-width="2"/>`);
+      lines.push(`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${color}" opacity="0.85" stroke="${BG_COLOR}" stroke-width="2" stroke-linejoin="round"/>`);
     }
 
     // percentage label on slice
