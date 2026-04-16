@@ -16,6 +16,7 @@ export type DbSkill = {
   enabled: boolean;
   doc: string;
   code?: string;
+  references?: Array<{ name: string; content: string }>;
   builtin?: boolean;
   updatedAt: string;
 };

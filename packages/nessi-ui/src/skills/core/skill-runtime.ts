@@ -10,13 +10,13 @@ const getSkillsSummary = async (skillIds?: string[]) => {
   if (selected.length === 0) return "No skills available.";
 
   return [
-    "Available skills (bash commands):",
+    "These skills are available via bash. Scan this list before every task — use a skill if one fits.",
     "",
     ...[...selected]
       .sort((a, b) => a.command.localeCompare(b.command))
-      .map((skill) => `- ${skill.command}: ${skill.description}`),
+      .map((skill) => `- \`${skill.command}\`: ${skill.description}`),
     "",
-    "Before using a skill for the first time, read its docs: `cat /skills/<name>/SKILL.md`",
+    "Usage: bash(\"cat /skills/<name>/SKILL.md\") to read docs, then bash(\"<command> ...\") to run.",
   ].join("\n");
 };
 
@@ -25,7 +25,9 @@ const buildReadme = (skillIds: string[]) => {
   const skills = all.filter((skill) => skillIds.includes(skill.id));
   const lines = skills.map((skill) => {
     const state = skill.code?.trim() ? "ready" : "docs-only";
-    return `- ${skill.command}: ${skill.description} (${state}) -> \`cat ${skillPaths.doc(skill.id)}\``;
+    const refCount = skill.references?.length ?? 0;
+    const refInfo = refCount > 0 ? ` [${refCount} ref${refCount > 1 ? "s" : ""}]` : "";
+    return `- ${skill.command}: ${skill.description} (${state}${refInfo}) -> \`cat ${skillPaths.doc(skill.id)}\``;
   });
 
   return [
@@ -38,6 +40,7 @@ const buildReadme = (skillIds: string[]) => {
     ...lines,
     "",
     "Every command supports `--help`.",
+    "Some skills have reference files under `/skills/<name>/references/` — use `ls` to discover them.",
   ].join("\n");
 };
 

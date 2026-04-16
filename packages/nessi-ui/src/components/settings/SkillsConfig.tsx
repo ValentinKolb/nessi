@@ -7,7 +7,7 @@ import {
   type SkillEntry,
 } from "../../lib/skill-registry.js";
 import { haptics } from "../../shared/browser/haptics.js";
-const NATIVE_TOOLS = ["memory", "web", "list_files", "read_file", "write_file", "edit_file", "bash"] as const;
+const NATIVE_TOOLS = ["memory", "web", "survey", "list_files", "read_file", "write_file", "edit_file", "bash"] as const;
 
 export const SkillsConfig = (props: {
   onCreateSkill: () => void;
@@ -42,6 +42,7 @@ export const SkillsConfig = (props: {
         enabled: parsed.enabled ?? true,
         doc: parsed.doc,
         code: parsed.code,
+        references: Array.isArray(parsed.references) ? parsed.references : undefined,
         builtin: false,
       };
       await saveSkills([...existing, skill]);

@@ -12,10 +12,11 @@ import { memoryAddTool, memoryRemoveTool, memoryReplaceTool, memoryRecallTool } 
 import { createPresentTool } from "./tools/present-tool.js";
 import { nextcloudApi } from "./nextcloud.js";
 import { createNextcloudFs } from "./nextcloud-fs.js";
-import { listCachedSkills, listEnabledCachedSkills, skillPath, type SkillEntry } from "./skill-registry.js";
+import { listCachedSkills, listEnabledCachedSkills, skillPath, skillReferencePath, type SkillEntry } from "./skill-registry.js";
 import type { ChatFileService } from "./file-service.js";
 import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
 import { webTool } from "../skills/builtins/web/web-tool.js";
+import { surveyTool } from "./tools/survey-tool.js";
 import { skillRuntime } from "../skills/core/index.js";
 import { truncateText } from "./utils.js";
 
@@ -333,6 +334,11 @@ export const createBashWithSkills = (
 
   for (const skill of skills) {
     files[skillPath(skill.id)] = skill.doc;
+    if (skill.references) {
+      for (const ref of skill.references) {
+        files[skillReferencePath(skill.id, ref.name)] = ref.content;
+      }
+    }
   }
 
   const skillCommands = buildSkillCommands(skills, helpers);
@@ -392,6 +398,7 @@ export const createMainBashRuntime = (options?: {
       memoryReplaceTool,
       memoryRecallTool,
       webTool,
+      surveyTool,
       ...(options?.fileService ? [...createFileTools(options.fileService), createPresentTool(options.fileService)] : []),
       createBashToolWithHook(bash, helpers, options?.afterExec),
     ] satisfies Tool[],

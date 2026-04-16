@@ -1,7 +1,7 @@
 import { db } from "../../shared/db/db.js";
 import { dbEvents } from "../../shared/db/db-events.js";
 import { skillDoc } from "./skill-doc.js";
-import type { SkillEntry } from "./skill.types.js";
+import type { SkillEntry, SkillReference } from "./skill.types.js";
 
 const DIRECT_TOOL_SKILL_IDS = new Set(["web"]);
 
@@ -12,6 +12,12 @@ const BUILTIN_SKILL_DOCS = import.meta.glob("../builtins/*/SKILL.md", {
 }) as Record<string, string>;
 
 const BUILTIN_SKILL_SOURCES = import.meta.glob("../builtins/*/skill.js", {
+  eager: true,
+  query: "?raw",
+  import: "default",
+}) as Record<string, string>;
+
+const BUILTIN_SKILL_REFERENCES = import.meta.glob("../builtins/*/references/*", {
   eager: true,
   query: "?raw",
   import: "default",
@@ -38,6 +44,15 @@ const builtinSourceForFolder = (folder: string) => {
   return path ? BUILTIN_SKILL_SOURCES[path] : undefined;
 };
 
+const builtinRefsForFolder = (folder: string): SkillReference[] => {
+  const refs: SkillReference[] = [];
+  for (const [path, content] of Object.entries(BUILTIN_SKILL_REFERENCES)) {
+    const match = path.match(new RegExp(`/builtins/${folder}/references/(.+)$`));
+    if (match?.[1]) refs.push({ name: match[1], content });
+  }
+  return refs;
+};
+
 const builtinSeedFromPath = (path: string, raw: string): SkillEntry | null => {
   const parsed = parseSkillDoc(raw);
   if (!parsed) return null;
@@ -45,11 +60,13 @@ const builtinSeedFromPath = (path: string, raw: string): SkillEntry | null => {
   const folder = path.match(/\/builtins\/([^/]+)\/SKILL\.md$/)?.[1] ?? parsed.name;
   const id = skillDoc.slugifyCommand(parsed.name || folder);
   const code = builtinSourceForFolder(folder);
+  const references = builtinRefsForFolder(folder);
 
   return {
     id,
     ...parsed,
     code,
+    references: references.length > 0 ? references : undefined,
     builtin: true,
   };
 };

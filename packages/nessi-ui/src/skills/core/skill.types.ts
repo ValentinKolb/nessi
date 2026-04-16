@@ -1,3 +1,8 @@
+export type SkillReference = {
+  name: string;
+  content: string;
+};
+
 export type SkillEntry = {
   id: string;
   name: string;
@@ -6,5 +11,6 @@ export type SkillEntry = {
   command: string;
   enabled: boolean;
   code?: string;
+  references?: SkillReference[];
   builtin?: boolean;
 };

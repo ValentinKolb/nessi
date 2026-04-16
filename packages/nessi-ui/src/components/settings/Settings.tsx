@@ -149,7 +149,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
         close(true);
       }}
     >
-      <div class="flex max-h-[92vh] min-h-0 flex-col">
+      <div class={`flex max-h-[92vh] min-h-0 flex-col ${route().kind !== "root" ? "h-[92vh]" : ""}`}>
         <div class="flex items-center gap-2 px-4 py-3 bg-gh-overlay rounded-t-md">
           <Show when={route().kind !== "root"}>
             <button
@@ -211,7 +211,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
             </div>
           </Match>
           <Match when={route().kind === "skill-editor"}>
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+            <div class="min-h-0 flex-1 px-4 pb-4 pt-3">
               <SkillEditorView
                 skill={currentSkill()}
                 onCancel={backToRoot}
