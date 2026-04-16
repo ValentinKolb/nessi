@@ -16,7 +16,7 @@ import { haptics } from "../../shared/browser/haptics.js";
 import { theme, type ThemeMode } from "../../shared/theme/theme.js";
 
 const ONBOARD_KEY = "nessi:onboard-version";
-const CURRENT_VERSION = "0.0.3";
+const CURRENT_VERSION = "0.0.4";
 
 export const shouldShowOnboarding = () => {
   const seen = readString(ONBOARD_KEY);
@@ -307,14 +307,13 @@ export const OnboardingDialog = (props: {
       render: () => (
         <div class="space-y-2">
           {([
-            { icon: "ti-help", text: "New welcome guide — onboarding, startup guidance, and /help now point to the same step-by-step intro" },
-            { icon: "ti-device-mobile-vibration", text: "Haptics — subtle feedback for taps, saves, approvals, sends, and other important UI interactions on supported devices" },
-            { icon: "ti-sparkles-2", text: "Provider setup polish — cleaner selector, provider icons, and a dedicated editor with better guidance" },
-            { icon: "ti-clock-play", text: "Background tasks — chat suggestions plus manual triggers and logs directly in settings" },
-            { icon: "ti-fold", text: "Smarter compaction — keeps full conversation loops and exposes all important settings and prompt controls" },
-            { icon: "ti-brain", text: "Prompt and memory improvements — rewritten system prompt plus more automatic background memory handling" },
-            { icon: "ti-moon-stars", text: "New Terminal color theme — for those who prefer dark mode and work into the night" },
-            { icon: "ti-text-plus", text: "... and much more minor improvements and bug fixes" },
+            { icon: "ti-terminal-2", text: "Built-in terminal — open a shell right below the chat, same environment as the agent with all skills and files" },
+            { icon: "ti-brand-github", text: "GitHub integration — browse repos, attach files, issues, and PRs from a modal, plus a lazy VFS at /github/" },
+            { icon: "ti-table", text: "Powerful table queries — filter, aggregate, group, sort, and alias in one command with table query" },
+            { icon: "ti-chart-bar", text: "Chart from CSV — pipe table query results directly into chart commands, no manual value copying" },
+            { icon: "ti-brain", text: "Improved prompts and memory — rewritten system prompt, smarter background handling, and better skill descriptions" },
+            { icon: "ti-package", text: "Stdlib integration — replaced many internal utilities with @valentinkolb/stdlib for smaller bundle and less maintenance" },
+            { icon: "ti-text-plus", text: "... plus dark terminal theme, haptics, background tasks, and many more improvements" },
           ] as const).map((item) => (
             <div class="flex items-start gap-2.5 px-1">
               <span class={`i ti ${item.icon} text-base text-gh-fg-subtle mt-0.5 shrink-0`} />
