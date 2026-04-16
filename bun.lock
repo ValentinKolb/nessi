@@ -34,8 +34,8 @@
         "@fontsource-variable/bricolage-grotesque": "^5.2.10",
         "@fontsource-variable/jetbrains-mono": "^5.2.8",
         "@tabler/icons-webfont": "^3.36.1",
+        "@valentinkolb/stdlib": "^0.0.3",
         "@valentinkolb/sync-browser": "^0.0.2",
-        "dayjs": "^1.11.19",
         "dexie": "^4.4.2",
         "diff": "^8.0.3",
         "human-id": "^4.1.3",
@@ -420,6 +420,8 @@
     "@types/sax": ["@types/sax@1.2.7", "", { "dependencies": { "@types/node": "*" } }, "sha512-rO73L89PJxeYM3s3pPPjiPgVVcymqU490g0YO5n5By0k2Erzj6tay/4lr1CHAAU4JyOWd1rpQ8bCf6cZfHU96A=="],
 
     "@types/trusted-types": ["@types/trusted-types@2.0.7", "", {}, "sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw=="],
+
+    "@valentinkolb/stdlib": ["@valentinkolb/stdlib@0.0.3", "", { "peerDependencies": { "lean-qr": "", "solid-js": "" }, "optionalPeers": ["lean-qr", "solid-js"] }, "sha512-rcEgiRO0UcXk7jqQBP+fPq+bGz4yM+gI5tp4u+JrDh0CnDXJn0HT13L0X6HCGr5aTIuJxfvCeDuVa1+AE/i4Fg=="],
 
     "@valentinkolb/sync-browser": ["@valentinkolb/sync-browser@0.0.2", "", { "peerDependencies": { "zod": "^4" } }, "sha512-Go5muwkudra5xiUW+nn2+eg9mTzrm7vClhCv0dq8fcRXz53ZYNdUM9s5TBdXVlHGEsRHbWjprCRLKpvlK/7RNQ=="],
 
