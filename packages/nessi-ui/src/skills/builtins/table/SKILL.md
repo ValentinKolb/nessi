@@ -1,6 +1,6 @@
 ---
 name: table
-description: Read, filter, and transform CSV or XLSX files. Use this for ALL spreadsheet operations — never use grep, python, or pandas on tabular data.
+description: "Query, filter, aggregate, and transform CSV/XLSX files. Use for any spreadsheet or tabular data task — inspection, filtering, grouping, statistics, export."
 metadata:
   nessi:
     command: table
@@ -9,74 +9,106 @@ metadata:
 
 # Table
 
-Use the `table` command for CSV and XLSX files. This is the only way to work with spreadsheet data — never fall back to grep, python, awk, or other tools.
+Work with CSV and XLSX files: inspect structure, query with filters and aggregations, and export results.
 
-## Workflow
-
-1. `table info <file>` → see sheets, row counts, column counts
-2. `table columns <file>` → list column names (you need exact names for filtering)
-3. `table peek <file> --rows 5` → preview the first rows
-4. `table filter <file> --where "..." --output /output/result.csv` → filter rows
-5. Call the `present` tool on the output file so the user can see it
-
-## Commands
-
-### Inspect
+## Inspect
 
 ```bash
-table info /input/sales.xlsx
-table sheets /input/sales.xlsx
-table columns /input/sales.xlsx --sheet "Q1"
+table info /input/data.xlsx
+table columns /input/data.xlsx --sheet "Sales"
+table peek /input/data.xlsx --rows 10 --columns "name,revenue"
 ```
 
-### Preview
+## Query (filter + aggregate + sort)
+
+The `query` command combines filtering, aggregation, projection, aliases, sorting, and limiting in one step.
+
+### Filter rows
 
 ```bash
-table peek /input/sales.xlsx --sheet "Q1" --rows 20
-table peek /input/contacts.csv --columns "name,email" --rows 25
+table query /input/sales.xlsx --where "year = 2024" --output /output/filtered.csv
+table query /input/sales.xlsx --where "status = active" --where "amount > 100" --output /output/result.csv
 ```
 
-### Filter
-
-Filter rows with `--where`. Multiple conditions are AND-combined.
-
-**Operators:** `=`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `starts_with`, `matches` (regex)
+### Aggregate with grouping
 
 ```bash
-table filter /input/data.csv --where "status = active" --output /output/active.csv
-table filter /input/data.csv --where "amount > 100" --where "category = Electronics" --output /output/big-electronics.csv
-table filter /input/data.csv --where "name contains Smith" --columns "name,email" --limit 50 --output /output/smiths.csv
-table filter /input/data.csv --where "date > 2024-01-01" --where "date < 2024-12-31" --output /output/2024.csv
-table filter /input/data.xlsx --where "Einlieferer contains Intartis" --output /output/intartis.csv
-table filter /input/data.csv --where "email matches ^.*@gmail\.com$" --output /output/gmail-users.csv
-table filter /input/data.csv --where "code matches ^[A-Z]{2}-\d+" --output /output/coded.csv
+table query /input/sales.xlsx \
+  --select "region, sum(revenue) as Total, count() as Deals, avg(price) as Avg" \
+  --group "region" \
+  --output /output/by-region.csv
 ```
 
-**Important:** Use exact column names from `table columns`. String matching with `=` and `contains` is case-insensitive. Number and date comparisons are automatic.
+Aggregation functions: `count()`, `sum(col)`, `avg(col)`, `min(col)`, `max(col)`, `median(col)`.
 
-### Export
+### Global aggregation (no group)
 
 ```bash
-table export /input/sales.xlsx --output /output/sales.csv
-table export /input/sales.xlsx --sheet "Q1" --columns "name,revenue" --rows 100 --output /output/q1-summary.csv
+table query /input/sales.xlsx --select "sum(revenue), count(), avg(price)"
 ```
 
-### Append Rows
+### Project and rename columns
 
 ```bash
-table append /input/contacts.csv --json '[{"name":"Alice","email":"alice@example.com"}]' --output /output/contacts-updated.csv
+table query /input/data.xlsx --select "product as Produkt, revenue as Umsatz"
 ```
 
-### Replace Values
+### Sort and limit
 
 ```bash
-table replace /input/tasks.csv --column "status" --old "pending" --new "done" --output /output/tasks-updated.csv
+table query /input/sales.xlsx \
+  --select "product, sum(revenue) as Revenue" \
+  --group "product" \
+  --sort "Revenue desc" \
+  --limit 5 \
+  --output /output/top5.csv
 ```
+
+### Full example: filter + aggregate + sort
+
+```bash
+table query /input/sales.xlsx \
+  --select "region, sum(revenue) as Revenue, count() as Orders" \
+  --where "year >= 2023" \
+  --group "region" \
+  --sort "Revenue desc" \
+  --limit 10 \
+  --output /output/by-region.csv
+```
+
+## Pipeline: table → chart
+
+Query results feed directly into chart commands:
+
+```bash
+table query /input/sales.xlsx \
+  --select "region as Region, sum(revenue) as Revenue" \
+  --group "region" --output /output/agg.csv
+
+chart bar /output/agg.csv --x "Region" --y "Revenue" --title "Revenue by Region"
+present /output/bar-chart.svg
+```
+
+## Export & Transform
+
+```bash
+table export /input/data.xlsx --output /output/data.csv
+table append /input/data.csv --json '[{"name":"Alice","age":"30"}]' --output /output/appended.csv
+table replace /input/data.csv --column "status" --old "pending" --new "done" --output /output/replaced.csv
+```
+
+## Filter operators
+
+| Operator | Example | Notes |
+|----------|---------|-------|
+| `=` / `!=` | `status = active` | Case-insensitive |
+| `>` `<` `>=` `<=` | `amount > 100` | Auto-detects numbers and dates |
+| `contains` | `name contains Smith` | Substring match |
+| `starts_with` | `email starts_with admin` | Prefix match |
+| `matches` | `email matches ^.*@gmail\.com$` | Regex (case-insensitive) |
 
 ## Notes
 
-- Supported input formats: CSV and XLSX.
-- Write operations always output CSV files under `/output`.
-- Use exact column names (from `table columns`) in `--where` and `--columns`.
-- For XLSX, `--sheet` defaults to the first sheet.
-- After creating an output file, always use the `present` tool to show it to the user.
+- Output goes to `/output/` (required).
+- For XLSX with multiple sheets, use `--sheet "SheetName"`.
+- All cell values are treated as strings internally; numeric comparisons auto-detect numbers.

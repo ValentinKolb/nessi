@@ -13,12 +13,15 @@ import {
   getTableInfo,
   getTablePreview,
   parseFilterExpr,
+  parseSelectList,
   tableAppendRows,
   tableFilter,
+  tableQuery,
   tableReplaceValues,
   tableToCsv,
+  parseCsvForChart,
 } from "../../skills/builtins/table/table-ops.js";
-import type { FilterCondition, TableFilterResult, TableWriteResult } from "../../skills/builtins/table/table-ops.js";
+import type { FilterCondition, SelectExpr, QueryResult, TableFilterResult, TableWriteResult } from "../../skills/builtins/table/table-ops.js";
 
 export type CommandHelpers = {
   requestApproval: (message: string) => Promise<boolean>;
@@ -79,7 +82,26 @@ export type CommandHelpers = {
       conditions: FilterCondition[],
       options?: { sheet?: string; columns?: string[]; limit?: number },
     ) => Promise<TableFilterResult>;
+    query: (
+      bytes: Uint8Array,
+      filename: string,
+      options?: {
+        select?: SelectExpr[];
+        where?: FilterCondition[];
+        groupBy?: string;
+        sort?: { column: string; desc: boolean };
+        limit?: number;
+        sheet?: string;
+      },
+    ) => Promise<QueryResult>;
     parseFilter: (expr: string) => FilterCondition;
+    parseSelect: (raw: string) => SelectExpr[];
+    csvForChart: (
+      bytes: Uint8Array,
+      filename: string,
+      xColumn: string,
+      yColumns: string[],
+    ) => { labels: string[]; series: Record<string, number[]> };
   };
   pdf: {
     text: (bytes: Uint8Array, format?: "txt" | "md") => Promise<{
@@ -119,7 +141,10 @@ export const createCommandHelpers = (): CommandHelpers => ({
     appendRows: tableAppendRows,
     replaceValues: tableReplaceValues,
     filter: tableFilter,
+    query: tableQuery,
     parseFilter: parseFilterExpr,
+    parseSelect: parseSelectList,
+    csvForChart: parseCsvForChart,
   },
   pdf: {
     text: exportPdfText,

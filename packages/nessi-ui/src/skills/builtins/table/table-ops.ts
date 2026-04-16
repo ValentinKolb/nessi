@@ -321,6 +321,239 @@ export const tableReplaceValues = async (
 // Filter API
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Query API (aggregation, projection, aliases)
+// ---------------------------------------------------------------------------
+
+export type AggFn = "count" | "sum" | "avg" | "min" | "max" | "median";
+
+export type SelectExpr =
+  | { kind: "column"; column: string; alias?: string }
+  | { kind: "agg"; fn: AggFn; column?: string; alias?: string };
+
+export type QueryResult = TableWriteResult & {
+  matchedRows: number;
+  totalRows: number;
+  columns: string[];
+};
+
+const AGG_RE = /^(count|sum|avg|min|max|median)\(([^)]*)\)(?:\s+as\s+(.+))?$/i;
+const COL_RE = /^(.+?)(?:\s+as\s+(.+))?$/;
+
+export const parseSelectExpr = (expr: string): SelectExpr => {
+  const trimmed = expr.trim();
+  const aggMatch = trimmed.match(AGG_RE);
+  if (aggMatch) {
+    const fn = aggMatch[1]!.toLowerCase() as AggFn;
+    const col = aggMatch[2]?.trim() || undefined;
+    const alias = aggMatch[3]?.trim();
+    return { kind: "agg", fn, column: col, alias };
+  }
+  const colMatch = trimmed.match(COL_RE);
+  if (colMatch) {
+    const column = colMatch[1]!.trim();
+    const alias = colMatch[2]?.trim();
+    return { kind: "column", column, alias };
+  }
+  return { kind: "column", column: trimmed };
+};
+
+/** Parse a comma-separated select list, respecting parentheses. */
+export const parseSelectList = (raw: string): SelectExpr[] => {
+  const exprs: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const ch of raw) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    if (ch === "," && depth === 0) {
+      exprs.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) exprs.push(current);
+  return exprs.map(parseSelectExpr);
+};
+
+const outputName = (expr: SelectExpr): string => {
+  if (expr.alias) return expr.alias;
+  if (expr.kind === "column") return expr.column;
+  return expr.column ? `${expr.fn}_${expr.column}` : expr.fn;
+};
+
+const computeAgg = (fn: AggFn, values: string[]): string => {
+  if (fn === "count") return String(values.length);
+  const nums = values.map(Number).filter((n) => !isNaN(n));
+  if (nums.length === 0) return "";
+  switch (fn) {
+    case "sum": return String(nums.reduce((a, b) => a + b, 0));
+    case "avg": return String(nums.reduce((a, b) => a + b, 0) / nums.length);
+    case "min": return String(Math.min(...nums));
+    case "max": return String(Math.max(...nums));
+    case "median": {
+      const sorted = [...nums].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return String(sorted.length % 2 ? sorted[mid] : (sorted[mid - 1]! + sorted[mid]!) / 2);
+    }
+  }
+};
+
+export const tableQuery = async (
+  bytes: Uint8Array,
+  filename: string,
+  options: {
+    select?: SelectExpr[];
+    where?: FilterCondition[];
+    groupBy?: string;
+    sort?: { column: string; desc: boolean };
+    limit?: number;
+    sheet?: string;
+  } = {},
+): Promise<QueryResult> => {
+  const workbook = await parseWorkbook(bytes, filename);
+  const sheet = selectSheet(workbook, options.sheet);
+  const totalRows = sheet.rows.length;
+
+  // Validate where columns
+  if (options.where) {
+    for (const cond of options.where) {
+      if (!sheet.columns.includes(cond.column)) throw new Error(`Unknown column in --where: ${cond.column}`);
+      if (cond.op === "matches") regexCache(cond.value);
+    }
+  }
+
+  // Validate select columns (non-aggregation ones)
+  const selects = options.select ?? sheet.columns.map((c) => ({ kind: "column" as const, column: c }));
+  for (const expr of selects) {
+    if (expr.kind === "column" && !sheet.columns.includes(expr.column)) {
+      throw new Error(`Unknown column in --select: ${expr.column}`);
+    }
+    if (expr.kind === "agg" && expr.column && !sheet.columns.includes(expr.column)) {
+      throw new Error(`Unknown column in --select: ${expr.column}`);
+    }
+  }
+
+  if (options.groupBy && !sheet.columns.includes(options.groupBy)) {
+    throw new Error(`Unknown column in --group: ${options.groupBy}`);
+  }
+
+  // Apply WHERE
+  let rows = options.where
+    ? sheet.rows.filter((row) => options.where!.every((c) => matchRow(row, c)))
+    : sheet.rows;
+  const matchedRows = rows.length;
+
+  const hasAggs = selects.some((s) => s.kind === "agg");
+  const outColumns = selects.map(outputName);
+  let resultRows: Array<Record<string, string>>;
+
+  if (hasAggs) {
+    // Group rows
+    const groups = new Map<string, Array<Record<string, string>>>();
+    if (options.groupBy) {
+      for (const row of rows) {
+        const key = row[options.groupBy] ?? "";
+        const list = groups.get(key) ?? [];
+        list.push(row);
+        groups.set(key, list);
+      }
+    } else {
+      groups.set("__all__", rows);
+    }
+
+    resultRows = [];
+    for (const [, groupRows] of groups) {
+      const resultRow: Record<string, string> = {};
+      for (const expr of selects) {
+        const name = outputName(expr);
+        if (expr.kind === "column") {
+          resultRow[name] = groupRows[0]?.[expr.column] ?? "";
+        } else {
+          const values = expr.column
+            ? groupRows.map((r) => r[expr.column!] ?? "")
+            : groupRows.map(() => "1");
+          resultRow[name] = computeAgg(expr.fn, values);
+        }
+      }
+      resultRows.push(resultRow);
+    }
+  } else {
+    // Pure projection with optional aliases
+    resultRows = rows.map((row) => {
+      const out: Record<string, string> = {};
+      for (const expr of selects) {
+        if (expr.kind === "column") out[outputName(expr)] = row[expr.column] ?? "";
+      }
+      return out;
+    });
+  }
+
+  // Sort
+  if (options.sort) {
+    const col = options.sort.column;
+    if (!outColumns.includes(col)) throw new Error(`Unknown column in --sort: ${col}`);
+    const desc = options.sort.desc;
+    resultRows.sort((a, b) => {
+      const va = a[col] ?? "";
+      const vb = b[col] ?? "";
+      const na = Number(va);
+      const nb = Number(vb);
+      const cmp = (!isNaN(na) && !isNaN(nb)) ? na - nb : va.localeCompare(vb);
+      return desc ? -cmp : cmp;
+    });
+  }
+
+  // Limit
+  if (options.limit && options.limit > 0) resultRows = resultRows.slice(0, options.limit);
+
+  return {
+    ...csvResult(toCsv(outColumns, resultRows)),
+    matchedRows,
+    totalRows,
+    columns: outColumns,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// CSV → Chart helper
+// ---------------------------------------------------------------------------
+
+export const parseCsvForChart = (
+  bytes: Uint8Array,
+  filename: string,
+  xColumn: string,
+  yColumns: string[],
+): { labels: string[]; series: Record<string, number[]> } => {
+  const workbook = parseCsvWorkbook(bytes, filename);
+  const sheet = workbook.sheets[0];
+  if (!sheet) throw new Error("Empty CSV file.");
+
+  if (!sheet.columns.includes(xColumn)) {
+    throw new Error(`Column "${xColumn}" not found. Available: ${sheet.columns.join(", ")}`);
+  }
+  for (const y of yColumns) {
+    if (!sheet.columns.includes(y)) {
+      throw new Error(`Column "${y}" not found. Available: ${sheet.columns.join(", ")}`);
+    }
+  }
+
+  const labels = sheet.rows.map((r) => r[xColumn] ?? "");
+  const series: Record<string, number[]> = {};
+  for (const y of yColumns) {
+    series[y] = sheet.rows.map((r) => {
+      const n = Number(r[y] ?? "");
+      return isNaN(n) ? 0 : n;
+    });
+  }
+  return { labels, series };
+};
+
+// ---------------------------------------------------------------------------
+// Filter API
+// ---------------------------------------------------------------------------
+
 export type FilterOp = "=" | "!=" | ">" | "<" | ">=" | "<=" | "contains" | "starts_with" | "matches";
 
 export type FilterCondition = {

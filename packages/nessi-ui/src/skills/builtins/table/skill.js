@@ -193,13 +193,13 @@ export default function create(api) {
       },
     })
     .sub({
-      name: "filter",
-      usage: 'filter <file> --where "column = value" [--where "amount > 100"] [--columns "a,b"] [--limit 50] [--sheet "Sheet1"] [--output /output/filtered.csv]',
+      name: "query",
+      usage: 'query <file> [--select "region, sum(revenue) as Total, count()"] [--where "year = 2024"] [--group "region"] [--sort "Total desc"] [--limit 10] [--sheet "Sheet1"] [--output /output/result.csv]',
       async handler(args, _helpers, ctx) {
         const path = positionalArgs(args)[0];
-        if (!path) return err('Usage: table filter <file> --where "column = value"');
+        if (!path) return err('Usage: table query <file> [--select "..."] [--where "..."] [--group "..."]');
 
-        // collect all --where clauses (parseArgs only gets the last one, so parse manually)
+        // collect all --where clauses manually (parseArgs only keeps the last one)
         const wheres = [];
         for (let i = 0; i < args.length; i++) {
           if (args[i] === "--where" && args[i + 1]) {
@@ -207,26 +207,37 @@ export default function create(api) {
             i++;
           }
         }
-        if (wheres.length === 0) return err("At least one --where clause is required.");
 
         const opts = parseArgs(args);
-        const outputPath = opts.get("output") ?? defaultOutput(path, "csv", "-filtered");
+        const outputPath = opts.get("output") ?? defaultOutput(path, "csv", "-query");
         if (!outputPath.startsWith("/output/")) return err("Output path must be under /output.");
 
         try {
-          const conditions = wheres.map((w) => helpers.table.parseFilter(w));
+          const selectRaw = opts.get("select");
+          const select = selectRaw ? helpers.table.parseSelect(selectRaw) : undefined;
+          const where = wheres.length > 0 ? wheres.map((w) => helpers.table.parseFilter(w)) : undefined;
+          const groupBy = opts.get("group");
+          const sortRaw = opts.get("sort");
+          let sort;
+          if (sortRaw) {
+            const parts = sortRaw.trim().split(/\s+/);
+            sort = { column: parts[0], desc: (parts[1] ?? "").toLowerCase() === "desc" };
+          }
           const limitStr = opts.get("limit");
           const limit = limitStr ? parseInt(limitStr, 10) : undefined;
+
           const bytes = await readBytes(ctx, path);
-          const result = await helpers.table.filter(bytes, path, conditions, {
-            sheet: opts.get("sheet"),
-            columns: parseColumns(opts.get("columns")),
-            limit,
-          });
+          const result = await helpers.table.query(bytes, path, { select, where, groupBy, sort, limit, sheet: opts.get("sheet") });
+
           await writeText(ctx, outputPath, result.content);
-          return ok(`Matched ${result.matchedRows} of ${result.totalRows} rows${limit ? ` (limited to ${limit})` : ""}, wrote CSV to ${outputPath}\n`);
+
+          const lines = [`${result.matchedRows} of ${result.totalRows} rows matched`];
+          if (groupBy) lines.push(`Grouped by: ${groupBy}`);
+          lines.push(`Columns: ${result.columns.join(", ")}`);
+          lines.push(`Wrote CSV to ${outputPath}`);
+          return ok(lines.join("\n") + "\n");
         } catch (error) {
-          return err(error instanceof Error ? error.message : "Failed to filter table.");
+          return err(error instanceof Error ? error.message : "Failed to query table.");
         }
       },
     });
