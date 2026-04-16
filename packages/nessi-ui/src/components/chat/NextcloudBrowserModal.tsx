@@ -3,7 +3,7 @@ import { nextcloudApi } from "../../lib/nextcloud.js";
 import type { NextcloudRef } from "../../lib/nextcloud.js";
 import { parsePropfind, PROPFIND_BODY, type DavEntry } from "../../lib/nextcloud-fs.js";
 import { getFileIcon } from "../../lib/file-icons.js";
-import { formatFileSize } from "../../lib/chat-files.js";
+import { pprintBytes } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
 
 /** Nextcloud file browser modal for selecting files/folders as context references. */
@@ -170,7 +170,7 @@ export const NextcloudBrowserModal = (props: {
                         <SelectIcon entry={entry} icon={getFileIcon(entry.name)} />
                         <span class="text-gh-fg-muted min-w-0 truncate flex-1">{entry.name}</span>
                         <span class="text-[11px] text-gh-fg-subtle shrink-0 tabular-nums">
-                          {formatFileSize(entry.size)}
+                          {pprintBytes(entry.size)}
                         </span>
                       </button>
                     }

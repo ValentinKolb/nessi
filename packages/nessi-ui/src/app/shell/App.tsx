@@ -16,7 +16,13 @@ import { deleteChat, getChatMeta, type ChatMeta } from "../../lib/chat-storage.j
 import { startScheduler, stopScheduler, triggerMetadataRefresh } from "../../lib/scheduler.js";
 import { readString, writeString } from "../../lib/json-storage.js";
 import { loadPersistedEntries } from "../../lib/store.js";
-import { messageTime, timeAgo } from "../../lib/date-format.js";
+import { formatDateTimeRelative, formatTime, formatDateTime, isToday } from "@valentinkolb/stdlib";
+
+/** Full timestamp for message metadata: "14:32" for today, "12 Apr 2026, 14:32" otherwise. */
+const messageTime = (input: string): string => {
+  const d = new Date(input);
+  return isToday(d) ? formatTime(input) : formatDateTime(input);
+};
 import { dbEvents } from "../../shared/db/db-events.js";
 import { browserNotifications } from "../../shared/browser/browser-notifications.js";
 import { haptics } from "../../shared/browser/haptics.js";
@@ -90,20 +96,19 @@ export const App = () => {
 
     const title = activeChatTitle().trim() || activeChatMeta()?.title?.trim() || "Nessi";
     const body = payload.preview.trim() || `A reply in "${title}" is ready.`;
-    const notification = browserNotifications.notify({
+    const handle = browserNotifications.notify({
       title: `${title} is ready`,
       body,
       tag: `chat:${payload.chatId}`,
+      onClick: () => {
+        pageAttention.clear();
+        window.focus();
+      },
     });
 
-    if (!notification) return;
+    if (!handle) return;
 
     pageAttention.markUnread();
-    notification.onclick = () => {
-      pageAttention.clear();
-      notification.close();
-      window.focus();
-    };
   };
 
   const resumeScheduler = () => {
@@ -325,19 +330,19 @@ export const App = () => {
                 <div class="ui-metric">
                   <p class="ui-metric-label">Last chat</p>
                   <p class="ui-metric-value">
-                    {activeChatLastMessageAt() ? `${timeAgo(activeChatLastMessageAt()!)} · ${messageTime(activeChatLastMessageAt()!)}` : "No messages yet"}
+                    {activeChatLastMessageAt() ? `${formatDateTimeRelative(activeChatLastMessageAt()!)} · ${messageTime(activeChatLastMessageAt()!)}` : "No messages yet"}
                   </p>
                 </div>
                 <div class="ui-metric">
                   <p class="ui-metric-label">Chat exists since</p>
                   <p class="ui-metric-value">
-                    {activeChatMeta()?.createdAt ? `${timeAgo(activeChatMeta()!.createdAt)} · ${messageTime(activeChatMeta()!.createdAt)}` : "Unknown"}
+                    {activeChatMeta()?.createdAt ? `${formatDateTimeRelative(activeChatMeta()!.createdAt)} · ${messageTime(activeChatMeta()!.createdAt)}` : "Unknown"}
                   </p>
                 </div>
                 <div class="ui-metric">
                   <p class="ui-metric-label">Last indexed</p>
                   <p class="ui-metric-value">
-                    {activeChatMeta()?.lastIndexedAt ? `${timeAgo(activeChatMeta()!.lastIndexedAt!)} · ${messageTime(activeChatMeta()!.lastIndexedAt!)}` : "Not indexed yet"}
+                    {activeChatMeta()?.lastIndexedAt ? `${formatDateTimeRelative(activeChatMeta()!.lastIndexedAt!)} · ${messageTime(activeChatMeta()!.lastIndexedAt!)}` : "Not indexed yet"}
                   </p>
                 </div>
               </div>

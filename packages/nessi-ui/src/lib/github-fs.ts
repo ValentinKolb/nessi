@@ -7,6 +7,7 @@
  */
 
 import type { IFileSystem, FsStat } from "just-bash";
+import { fromBase64, createCache } from "@valentinkolb/stdlib";
 import { githubApi } from "./github.js";
 
 /* ------------------------------------------------------------------ */
@@ -25,8 +26,6 @@ type GhEntry = {
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
-const DIR_CACHE_TTL = 60_000;
-
 const normalize = (path: string) => {
   const p = path.replace(/\/+/g, "/");
   return p === "/" ? "/" : p.replace(/\/$/, "");
@@ -39,13 +38,6 @@ const parsePath = (path: string): ParsedPath | null => {
   const parts = normalize(path).replace(/^\//, "").split("/");
   if (parts.length < 2 || !parts[0] || !parts[1]) return null;
   return { owner: parts[0], repo: parts[1], repoPath: parts.slice(2).join("/") };
-};
-
-const base64ToBytes = (b64: string): Uint8Array => {
-  const binary = atob(b64.replace(/\s/g, ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 };
 
 const dirStat = (): FsStat => ({
@@ -62,7 +54,7 @@ const dirStat = (): FsStat => ({
 /* ------------------------------------------------------------------ */
 
 export const createGitHubFs = (): IFileSystem => {
-  const dirCache = new Map<string, { entries: GhEntry[]; ts: number }>();
+  const dirCache = createCache<GhEntry[]>({ ttl: 60_000 });
 
   const contentsUrl = (p: ParsedPath) => {
     const base = `/repos/${p.owner}/${p.repo}/contents/${p.repoPath}`;
@@ -71,12 +63,12 @@ export const createGitHubFs = (): IFileSystem => {
 
   const listDir = async (p: ParsedPath): Promise<GhEntry[]> => {
     const cacheKey = `${p.owner}/${p.repo}/${p.repoPath}`;
-    const cached = dirCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < DIR_CACHE_TTL) return cached.entries;
+    const cached = await dirCache.get(cacheKey);
+    if (cached) return cached;
 
     const data = (await githubApi.fetch(contentsUrl(p))) as GhEntry[];
     if (!Array.isArray(data)) throw new Error("Expected directory listing");
-    dirCache.set(cacheKey, { entries: data, ts: Date.now() });
+    await dirCache.set(cacheKey, data);
     return data;
   };
 
@@ -96,7 +88,7 @@ export const createGitHubFs = (): IFileSystem => {
     const data = (await githubApi.fetch(contentsUrl(p))) as { content?: string; encoding?: string };
     if (Array.isArray(data)) throw new Error(`EISDIR: illegal operation on a directory, read '${p.repoPath}'`);
     if (data.encoding === "base64" && data.content) {
-      const bytes = base64ToBytes(data.content);
+      const bytes = fromBase64(data.content.replace(/\s/g, ""));
       return { content: new TextDecoder().decode(bytes), bytes };
     }
     throw new Error(`Cannot decode file: ${p.repoPath}`);

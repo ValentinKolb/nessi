@@ -1,4 +1,6 @@
 import { filesRepo, type ChatFileKind, type ChatFileMeta, type ChatFileSourceType, type PendingChatFile } from "../domains/files/index.js";
+import { pprintBytes } from "@valentinkolb/stdlib";
+import { files as stdlibFiles } from "@valentinkolb/stdlib/browser";
 import { newId } from "./utils.js";
 
 export type { ChatFileKind, ChatFileMeta, ChatFileSourceType, PendingChatFile } from "../domains/files/index.js";
@@ -53,12 +55,6 @@ export const guessMimeTypeFromName = (name: string) => {
     case "yml": return "application/yaml";
     default: return "text/plain";
   }
-};
-
-export const formatFileSize = (size: number) => {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
 export const classifyPendingChatFile = (file: File): PendingChatFile | null => {
@@ -347,16 +343,7 @@ export const removeOutputFilesMissingFromPaths = async (chatId: string, mountPat
 
 export const downloadChatFile = async (meta: ChatFileMeta) => {
   const bytes = await readChatFile(meta);
-  const blob = new Blob([toArrayBuffer(bytes)], { type: meta.mimeType || "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
-  try {
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = meta.name;
-    anchor.click();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  stdlibFiles.downloadFileFromContent(bytes, meta.name, meta.mimeType || "application/octet-stream");
 };
 
 export const downloadChatFileByPath = async (chatId: string, mountPath: string) => {
@@ -372,7 +359,7 @@ export const deleteAllChatFiles = async (chatId: string) => {
 };
 
 const fileInfoLine = (meta: ChatFileMeta) =>
-  `- ${meta.mountPath} (${meta.mimeType || meta.sourceType}, ${formatFileSize(meta.size)})`;
+  `- ${meta.mountPath} (${meta.mimeType || meta.sourceType}, ${pprintBytes(meta.size)})`;
 
 const fileSection = (title: string, items: ChatFileMeta[], limit = 15) => {
   if (items.length === 0) return [];
@@ -430,7 +417,7 @@ export const buildFileInfo = (
       if (ref.isDir) {
         lines.push(`- ${fullPath} (folder)`);
       } else {
-        lines.push(`- ${fullPath} (${ref.mime}, ${formatFileSize(ref.size)})`);
+        lines.push(`- ${fullPath} (${ref.mime}, ${pprintBytes(ref.size)})`);
       }
     }
     lines.push(

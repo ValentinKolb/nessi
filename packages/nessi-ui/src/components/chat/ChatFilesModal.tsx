@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { ChatFileMeta } from "../../lib/chat-files.js";
-import { formatFileSize } from "../../lib/chat-files.js";
+import { pprintBytes } from "@valentinkolb/stdlib";
 import { getFileIcon } from "../../lib/file-icons.js";
 import { haptics } from "../../shared/browser/haptics.js";
 
@@ -142,7 +142,7 @@ const FileRow = (props: {
     >
       <span class={`i ti ${getFileIcon(props.node.name)} text-sm text-gh-fg-subtle shrink-0`} />
       <span class="text-gh-fg-muted min-w-0" title={props.node.name}>{middleTruncate(props.node.name)}</span>
-      <span class="text-[11px] text-gh-fg-subtle shrink-0 tabular-nums">{formatFileSize(meta().size)}</span>
+      <span class="text-[11px] text-gh-fg-subtle shrink-0 tabular-nums">{pprintBytes(meta().size)}</span>
       <div class="flex-1" />
       <Show when={props.onSecondaryAction && props.secondaryActionIcon}>
         <button

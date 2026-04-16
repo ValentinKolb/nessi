@@ -1,7 +1,12 @@
 import { For, Show } from "solid-js";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
-import { formatFileSize } from "../../lib/chat-files.js";
-import { messageTime } from "../../lib/date-format.js";
+import { pprintBytes, formatTime, formatDateTime, isToday } from "@valentinkolb/stdlib";
+
+/** Full timestamp for message metadata: "14:32" for today, "12 Apr 2026, 14:32" otherwise. */
+const messageTime = (input: string): string => {
+  const d = new Date(input);
+  return isToday(d) ? formatTime(input) : formatDateTime(input);
+};
 import { haptics } from "../../shared/browser/haptics.js";
 
 /** Render right-aligned user text bubble with optional timestamp metadata. */
@@ -39,7 +44,7 @@ export const UserBubble = (props: {
               <div class="ui-subpanel flex items-center gap-2 px-2.5 py-1 text-xs text-gh-fg-secondary">
                 <span class={`i ${part.mimeType === "application/pdf" ? "ti ti-file-type-pdf" : "ti ti-file-text"} text-sm text-gh-fg-subtle`} />
                 <span class="max-w-[180px] truncate">{part.name}</span>
-                <span class="text-[10px] text-gh-fg-subtle">{formatFileSize(part.size)}</span>
+                <span class="text-[10px] text-gh-fg-subtle">{pprintBytes(part.size)}</span>
               </div>
             )}
           </For>

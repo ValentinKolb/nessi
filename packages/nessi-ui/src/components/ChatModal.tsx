@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import { deleteChat as deleteChatData, listChatMetas, type ChatMeta } from "../lib/chat-storage.js";
-import { timeAgo } from "../lib/date-format.js";
+import { formatDateTimeRelative } from "@valentinkolb/stdlib";
 import { dbEvents } from "../shared/db/db-events.js";
 import { haptics } from "../shared/browser/haptics.js";
 
@@ -148,7 +148,7 @@ export const ChatModal = (props: {
                             </span>
                             <div class="flex shrink-0 items-center gap-1.5">
                               <span class="text-[11px] text-gh-fg-subtle tabular-nums">
-                                {timeAgo(chat.createdAt)}
+                                {formatDateTimeRelative(chat.createdAt)}
                               </span>
                               <span
                                 class="group/delete flex h-5 w-5 items-center justify-center rounded-md text-gh-fg-subtle transition-all hover:text-gh-danger"

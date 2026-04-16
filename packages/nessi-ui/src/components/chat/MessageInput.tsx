@@ -5,7 +5,7 @@ import type { PendingChatFile } from "../../lib/chat-files.js";
 import type { NextcloudRef } from "../../lib/nextcloud.js";
 import type { GitHubRef } from "../../lib/github.js";
 import { getProviderIconUrl, type ProviderEntry } from "../../lib/provider.js";
-import { formatFileSize } from "../../lib/chat-files.js";
+import { pprintBytes } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
 import { PopoverMenu } from "../PopoverMenu.js";
 
@@ -239,7 +239,7 @@ export const MessageInput = (props: {
                         : "ti ti-file-text"
                     } text-[13px] text-gh-fg-subtle`} />
                     <span class="max-w-[160px] truncate">{file.name}</span>
-                    <span class="text-[10px] text-gh-fg-subtle">{formatFileSize(file.size)}</span>
+                    <span class="text-[10px] text-gh-fg-subtle">{pprintBytes(file.size)}</span>
                     <button
                       class="text-gh-fg-subtle hover:text-gh-fg ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => { haptics.tap(); props.onRemovePendingFile?.(file.id); }}
@@ -261,7 +261,7 @@ export const MessageInput = (props: {
                     <span class="i ti ti-brand-nextcloud text-[13px] text-gh-fg-subtle" />
                     <span class="max-w-[160px] truncate">{ref.name}</span>
                     <Show when={!ref.isDir && ref.size > 0}>
-                      <span class="text-[10px] text-gh-fg-subtle">{formatFileSize(ref.size)}</span>
+                      <span class="text-[10px] text-gh-fg-subtle">{pprintBytes(ref.size)}</span>
                     </Show>
                     <button
                       class="text-gh-fg-subtle hover:text-gh-fg ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"

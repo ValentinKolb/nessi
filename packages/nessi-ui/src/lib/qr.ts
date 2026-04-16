@@ -1,19 +1,7 @@
-import { generate } from "lean-qr";
-import { toSvgSource } from "lean-qr/extras/svg";
+import { qr } from "@valentinkolb/stdlib";
 
-export type QrOptions = {
-  scale?: number;
-  on?: string;
-  off?: string;
-};
+export type QrOptions = { on?: string; off?: string };
 
 /** Generate a QR code as an SVG string. */
-export const generateQrSvg = (data: string, options?: QrOptions) => {
-  const code = generate(data);
-  return toSvgSource(code, {
-    on: options?.on ?? "#000",
-    off: options?.off ?? "#fff",
-    scale: options?.scale ?? 8,
-    xmlDeclaration: false,
-  });
-};
+export const generateQrSvg = (data: string, options?: QrOptions) =>
+  qr.toSvg(data, { on: options?.on, off: options?.off });

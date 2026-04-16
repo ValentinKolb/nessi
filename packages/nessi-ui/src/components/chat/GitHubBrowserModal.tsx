@@ -1,8 +1,8 @@
 import { createEffect, createSignal, on, Show, For, onCleanup } from "solid-js";
+import { timed } from "@valentinkolb/stdlib/solid";
 import { githubApi, type GitHubRef } from "../../lib/github.js";
 import { getFileIcon } from "../../lib/file-icons.js";
-import { formatFileSize } from "../../lib/chat-files.js";
-import { timeAgo } from "../../lib/date-format.js";
+import { pprintBytes, formatDateTimeRelative } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
 
 /* ------------------------------------------------------------------ */
@@ -88,18 +88,13 @@ export const GitHubBrowserModal = (props: {
 
   /* ---- debounced search ---- */
 
-  let searchTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const clearSearch = () => {
-    if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = null;
-  };
-
-  onCleanup(clearSearch);
+  const { debouncedFn: debouncedSearch, cancel: cancelSearch } = timed.debounce(
+    (q: string) => void searchRepos(q), 350,
+  );
 
   const handleSearchInput = (value: string) => {
     setQuery(value);
-    clearSearch();
+    cancelSearch();
     const trimmed = value.trim();
 
     if (!trimmed) {
@@ -107,7 +102,7 @@ export const GitHubBrowserModal = (props: {
       return;
     }
 
-    searchTimer = setTimeout(() => void searchRepos(trimmed), 350);
+    debouncedSearch(trimmed);
   };
 
   const searchRepos = async (q: string) => {
@@ -452,7 +447,7 @@ export const GitHubBrowserModal = (props: {
                             {repo.stargazers_count}
                           </span>
                         </Show>
-                        <span>{timeAgo(repo.updated_at)}</span>
+                        <span>{formatDateTimeRelative(repo.updated_at)}</span>
                       </div>
                     </div>
                     <span class="i ti ti-chevron-right text-[12px] text-gh-fg-subtle mt-1 shrink-0" />
@@ -529,7 +524,7 @@ export const GitHubBrowserModal = (props: {
                             <SelectIcon selected={isFileSelected(file)} icon={getFileIcon(file.name)} />
                             <span class="text-gh-fg-muted min-w-0 truncate flex-1">{file.name}</span>
                             <span class="text-[11px] text-gh-fg-subtle shrink-0 tabular-nums">
-                              {formatFileSize(file.size)}
+                              {pprintBytes(file.size)}
                             </span>
                           </button>
                         }

@@ -1,6 +1,6 @@
 import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import { getBackgroundLogs, getRunLog, triggerJob, type JobRunLog } from "../../lib/scheduler.js";
-import { timeAgo } from "../../lib/date-format.js";
+import { formatDateTimeRelative } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
 import { PulseDots } from "../PulseDots.js";
 
@@ -75,7 +75,7 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
                         <StatusBadge status={run().status} />
                         <Show when={run().finishedAt}>
                           <span class="shrink-0 rounded-full bg-gh-overlay px-2 py-0.5 text-[11px] text-gh-fg-subtle tabular-nums">
-                            {timeAgo(run().finishedAt!)}
+                            {formatDateTimeRelative(run().finishedAt!)}
                           </span>
                         </Show>
                       </>
