@@ -18,6 +18,7 @@ import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
 import { webTool } from "../skills/builtins/web/web-tool.js";
 import { surveyTool } from "./tools/survey-tool.js";
 import { skillRuntime } from "../skills/core/index.js";
+import { createGitHubFs } from "./github-fs.js";
 import { truncateText } from "./utils.js";
 
 const MAX_OUTPUT_LENGTH = 30_000;
@@ -317,6 +318,42 @@ const wrapWithNextcloud = (base: IFileSystem): IFileSystem => {
   });
 };
 
+/** Wrap a bash fs to route /github/ paths to GitHubFs. */
+const wrapWithGitHub = (base: IFileSystem): IFileSystem => {
+  const ghFs = createGitHubFs();
+
+  const GH = "/github";
+  const isGh = (p: string) => p === GH || p.startsWith(GH + "/");
+  const ghPath = (p: string) => p.slice(GH.length) || "/";
+
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      const val = Reflect.get(target, prop, receiver);
+      if (typeof val !== "function") return val;
+
+      return (...args: unknown[]) => {
+        const path = typeof args[0] === "string" ? args[0] : null;
+        if (path && isGh(path)) {
+          const ghArgs = [ghPath(path), ...args.slice(1)] as Parameters<typeof val>;
+          const ghMethod = Reflect.get(ghFs, prop);
+          if (typeof ghMethod === "function") {
+            return ghMethod.call(ghFs, ...ghArgs);
+          }
+        }
+        if (prop === "readdir" && path === "/") {
+          return (val as (...a: unknown[]) => Promise<string[]>)(...args).then((entries: string[]) =>
+            entries.includes("github") ? entries : [...entries, "github"],
+          );
+        }
+        if (prop === "exists" && path === GH) return Promise.resolve(true);
+        if (prop === "stat" && path === GH) return Promise.resolve({ isFile: false, isDirectory: true, isSymbolicLink: false, mode: 0o755, size: 0, mtime: new Date() });
+        if (prop === "resolvePath") return val.call(target, ...args);
+        return val.call(target, ...args);
+      };
+    },
+  });
+};
+
 /** Create a Bash instance exposing only the selected skills. */
 export const createBashWithSkills = (
   skillIds: string[],
@@ -349,8 +386,10 @@ export const createBashWithSkills = (
     customCommands: [...skillCommands, ...(extraCommands ?? [])],
   });
 
-  // Mount Nextcloud at /nextcloud/ via fs proxy
-  (bash as { fs: IFileSystem }).fs = wrapWithNextcloud(bash.fs);
+  // Mount Nextcloud at /nextcloud/ and GitHub at /github/ via fs proxy
+  let wrappedFs = wrapWithNextcloud(bash.fs);
+  wrappedFs = wrapWithGitHub(wrappedFs);
+  (bash as { fs: IFileSystem }).fs = wrappedFs;
 
   return bash;
 };

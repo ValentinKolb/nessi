@@ -1,6 +1,6 @@
 ---
 name: github
-description: Browse GitHub repos, issues, PRs, and files.
+description: "Read files, issues, and PRs from GitHub. Use this for ANY github.com URL or repo reference — never use web search for GitHub content."
 metadata:
   nessi:
     command: github
@@ -9,38 +9,22 @@ metadata:
 
 # GitHub
 
-Use the `github` command to interact with GitHub repositories.
+Access GitHub repositories, issues, and pull requests via API.
+**Always use this skill instead of web search for any github.com content.**
 
-## Commands
+## Reading Files
 
-### List Repos
-
-```bash
-github repos octocat
-github repos octocat --sort stars --limit 10
-```
-
-### Repository Info
+Files from any public repo (or private with token) are available at `/github/owner/repo/`:
 
 ```bash
-github repo owner/repo
+ls /github/facebook/react/src/
+cat /github/facebook/react/README.md
+read_file /github/vercel/ai/src/index.ts
 ```
 
-### Tags & Releases
+No setup required — files load on demand from the GitHub API.
 
-```bash
-github tags owner/repo
-github releases owner/repo --limit 5
-```
-
-### Commits
-
-```bash
-github commits owner/repo
-github commits owner/repo --ref develop --limit 20
-```
-
-### Issues
+## Issues
 
 ```bash
 github issues owner/repo
@@ -48,7 +32,7 @@ github issues owner/repo --state closed --limit 5
 github issue owner/repo 42
 ```
 
-### Pull Requests
+## Pull Requests
 
 ```bash
 github prs owner/repo
@@ -56,28 +40,26 @@ github prs owner/repo --state closed --limit 5
 github pr owner/repo 42
 ```
 
-### Files
+## Repository Info
 
 ```bash
-github files owner/repo
-github files owner/repo --path src/lib
-github file owner/repo src/index.ts
+github repo owner/repo
+github repos octocat --sort stars --limit 10
+github commits owner/repo --ref develop --limit 20
+github tags owner/repo
+github releases owner/repo --limit 5
 ```
 
-### Search
+## Search
 
 ```bash
 github search "query" --in owner/repo
-github search "query" --in username
-github search "bug fix" --in owner/repo --type issues
-github search "function handleClick" --in owner/repo --type code
+github search "query" --in username --type code
 ```
 
-`--in` accepts both `owner/repo` (search within a repo) or just `username` (search across all user repos).
+## Important
 
-## Notes
-
-- All commands use the format `owner/repo` (e.g. `facebook/react`).
-- Default state for issues/PRs is `open`.
-- File content is returned as text (max 100KB).
-- If you get a token error, tell the user to add their GitHub token in Settings → API Keys.
+- When a user shares a GitHub URL like `https://github.com/owner/repo/blob/main/file.ts`, extract the owner, repo, and path, then use `cat /github/owner/repo/file.ts` or `read_file /github/owner/repo/file.ts`.
+- **Do not** use the `web` command to scrape github.com — it will fail or return HTML. Always use this skill.
+- All CLI commands use `owner/repo` format (e.g. `facebook/react`).
+- If you get a token error, tell the user to add a GitHub token in Settings.

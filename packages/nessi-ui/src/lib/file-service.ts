@@ -11,7 +11,7 @@ import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
 
 const DEFAULT_READ_LIMIT = 200;
 const MAX_READ_LIMIT = 400;
-const READ_ROOTS = ["/input", "/output", "/nextcloud"];
+const READ_ROOTS = ["/input", "/output", "/nextcloud", "/github"];
 const WRITE_ROOTS = ["/output"];
 
 export type FileListScope = "input" | "output" | "all";
@@ -96,6 +96,30 @@ const splitLines = (text: string) => {
   return lines;
 };
 
+/** Roots whose files live only in the bash VFS (not persisted in Dexie). */
+const VFS_ONLY_ROOTS = ["/github", "/nextcloud"];
+const isVfsOnlyPath = (p: string) =>
+  VFS_ONLY_ROOTS.some((r) => p === r || p.startsWith(`${r}/`));
+
+/** Best-effort MIME type from file extension. */
+const EXT_MIME: Record<string, string> = {
+  txt: "text/plain", md: "text/markdown", json: "application/json",
+  xml: "text/xml", html: "text/html", css: "text/css", csv: "text/csv",
+  tsv: "text/tab-separated-values", yaml: "text/yaml", yml: "text/yaml",
+  toml: "text/toml", svg: "image/svg+xml", png: "image/png",
+  jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+  pdf: "application/pdf",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls: "application/vnd.ms-excel",
+  js: "text/javascript", mjs: "text/javascript", cjs: "text/javascript",
+  ts: "text/typescript", tsx: "text/typescript", jsx: "text/javascript",
+  py: "text/x-python", rb: "text/x-ruby", rs: "text/x-rust",
+  go: "text/x-go", java: "text/x-java", c: "text/x-c", cpp: "text/x-c++",
+  h: "text/x-c", hpp: "text/x-c++", sh: "text/x-sh", bash: "text/x-sh",
+};
+const guessMimeType = (path: string) =>
+  EXT_MIME[path.split(".").pop()?.toLowerCase() ?? ""] ?? "text/plain";
+
 const readBytesFromMountedPath = async (chatId: string, path: string, bash: Bash | null) => {
   const meta = await getChatFileByPath(chatId, path);
   if (!meta) throw new Error(`File not found: ${path}`);
@@ -128,13 +152,29 @@ export const createChatFileService = (options: {
     await bash.fs.writeFile(path, content, "utf8");
   };
 
+  const readVfsBytes = async (path: string): Promise<{ mimeType: string; bytes: Uint8Array }> => {
+    const bash = options.getBash();
+    if (!bash) throw new Error("Filesystem not available.");
+    if (!(await bash.fs.exists(path))) throw new Error(`File not found: ${path}`);
+    return { mimeType: guessMimeType(path), bytes: await bash.fs.readFileBuffer(path) };
+  };
+
   const readImpl = async (path: string, offset = 1, limit = DEFAULT_READ_LIMIT): Promise<ReadFileResult> => {
     const normalized = validateMountedPath(path, READ_ROOTS);
     const safeOffset = Math.max(1, Math.floor(offset));
     const safeLimit = Math.min(MAX_READ_LIMIT, Math.max(1, Math.floor(limit)));
-    const { meta, bytes } = await readBytesFromMountedPath(options.getChatId(), normalized, options.getBash());
 
-    const text = meta.mimeType === "application/pdf"
+    let mimeType: string;
+    let bytes: Uint8Array;
+    if (isVfsOnlyPath(normalized)) {
+      ({ mimeType, bytes } = await readVfsBytes(normalized));
+    } else {
+      const result = await readBytesFromMountedPath(options.getChatId(), normalized, options.getBash());
+      mimeType = result.meta.mimeType;
+      bytes = result.bytes;
+    }
+
+    const text = mimeType === "application/pdf"
       ? await extractPdfText(bytes)
       : decoder.decode(bytes);
 
@@ -144,7 +184,7 @@ export const createChatFileService = (options: {
 
     return {
       path: normalized,
-      mimeType: meta.mimeType,
+      mimeType,
       content: toNumberedContent(visibleLines, startIndex + 1),
       totalLines: allLines.length,
       linesReturned: visibleLines.length,
@@ -239,21 +279,9 @@ export const createChatFileService = (options: {
     async readBytes(path) {
       const normalized = validateMountedPath(path, READ_ROOTS);
 
-      // Nextcloud paths: read directly from bash VFS (MountableFs → NextcloudFs)
-      if (normalized.startsWith("/nextcloud/")) {
-        const bash = options.getBash();
-        if (!bash) throw new Error("Nextcloud filesystem not available.");
-        const bytes = await bash.fs.readFileBuffer(normalized);
-        const ext = normalized.split(".").pop()?.toLowerCase() ?? "";
-        const mimeMap: Record<string, string> = {
-          csv: "text/csv", tsv: "text/tab-separated-values", txt: "text/plain",
-          md: "text/markdown", json: "application/json", xml: "text/xml", html: "text/html",
-          svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-          gif: "image/gif", webp: "image/webp", pdf: "application/pdf",
-          xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          xls: "application/vnd.ms-excel",
-        };
-        return { mimeType: mimeMap[ext] ?? "application/octet-stream", bytes };
+      // VFS-only paths (GitHub clones, Nextcloud files): read from bash VFS
+      if (isVfsOnlyPath(normalized)) {
+        return readVfsBytes(normalized);
       }
 
       const { meta, bytes } = await readBytesFromMountedPath(options.getChatId(), normalized, options.getBash());
