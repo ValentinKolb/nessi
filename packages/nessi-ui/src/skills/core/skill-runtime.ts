@@ -10,13 +10,15 @@ const getSkillsSummary = async (skillIds?: string[]) => {
   if (selected.length === 0) return "No skills available.";
 
   return [
-    "These skills are available via bash. Scan this list before every task — use a skill if one fits.",
+    "## Skills",
+    "",
+    "These skills are available as bash commands. **Always prefer a skill over raw code** (no node -e, awk, python, or manual CSV parsing). Skills handle edge cases, formatting, and output automatically.",
     "",
     ...[...selected]
       .sort((a, b) => a.command.localeCompare(b.command))
       .map((skill) => `- \`${skill.command}\`: ${skill.description}`),
     "",
-    "Usage: bash(\"cat /skills/<name>/SKILL.md\") to read docs, then bash(\"<command> ...\") to run.",
+    "Read docs with: bash(\"cat /skills/<name>/SKILL.md\"), then run: bash(\"<command> ...\")",
   ].join("\n");
 };
 

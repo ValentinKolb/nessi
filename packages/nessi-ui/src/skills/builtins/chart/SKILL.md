@@ -1,6 +1,6 @@
 ---
 name: chart
-description: "Generate bar, line, or pie charts — from CSV files or inline data. Use whenever data needs visualization: comparisons, trends, distributions. Charts render inline as SVG."
+description: "Generate bar, line, or pie charts — reads directly from CSV files via --x/--y. Pipe table query output into chart. Never manually extract values — always use the file input mode."
 metadata:
   nessi:
     command: chart
@@ -50,8 +50,8 @@ chart bar /output/by-region.csv --x "Region" --y "Revenue" --title "Revenue by R
 present /output/bar-chart.svg
 ```
 
-## Notes
+## Important
 
+- **Always use CSV file input** (`--x`/`--y`) when data comes from `table query`. Never manually copy values from CSV into `--labels`/`--values`.
 - Output is SVG, saved to `/output/` by default.
-- Use `--output /output/custom-name.svg` to override the filename.
 - Use `present` to display the chart inline after generating it.

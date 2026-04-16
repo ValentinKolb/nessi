@@ -1,6 +1,6 @@
 ---
 name: table
-description: "Query, filter, aggregate, and transform CSV/XLSX files. Use for any spreadsheet or tabular data task — inspection, filtering, grouping, statistics, export."
+description: "Query, filter, aggregate (sum/avg/count/min/max/median), group, sort, and transform CSV/XLSX files. Always use this instead of awk, node -e, or python for any tabular data task."
 metadata:
   nessi:
     command: table
@@ -107,8 +107,9 @@ table replace /input/data.csv --column "status" --old "pending" --new "done" --o
 | `starts_with` | `email starts_with admin` | Prefix match |
 | `matches` | `email matches ^.*@gmail\.com$` | Regex (case-insensitive) |
 
-## Notes
+## Important
 
+- **Do not** use `awk`, `node -e`, `python`, or manual CSV parsing for tabular data. This skill handles all of it: filtering, aggregation, grouping, sorting, export.
 - Output goes to `/output/` (required).
 - For XLSX with multiple sheets, use `--sheet "SheetName"`.
-- All cell values are treated as strings internally; numeric comparisons auto-detect numbers.
+- Pipe query output directly into `chart` for visualization — no manual value extraction needed.
