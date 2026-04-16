@@ -38,14 +38,12 @@ export const TerminalView = (props: {
 
   onMount(() => inputRef?.focus());
 
-  const exec = async () => {
-    const cmd = input().trim();
-    if (!cmd || running()) return;
+  const execCommand = async (cmd: string) => {
+    if (!cmd.trim() || running()) return;
 
     const bash = await props.getBash();
     if (!bash) {
-      setHistory((prev) => [...prev, { cwd: cwd(), command: cmd, stdout: "", stderr: "No runtime available. Send a message first to initialize.", exitCode: 1 }]);
-      setInput("");
+      setHistory((prev) => [...prev, { cwd: cwd(), command: cmd, stdout: "", stderr: "No provider configured. Open Settings to add one.", exitCode: 1 }]);
       scrollToBottom();
       return;
     }
@@ -69,10 +67,12 @@ export const TerminalView = (props: {
     scrollToBottom();
   };
 
+  const handleSubmit = () => void execCommand(input().trim());
+
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      void exec();
+      handleSubmit();
       return;
     }
 
@@ -87,13 +87,8 @@ export const TerminalView = (props: {
     if (e.key === "ArrowDown") {
       e.preventDefault();
       const next = histIdx() - 1;
-      if (next < 0) {
-        setHistIdx(-1);
-        setInput("");
-      } else {
-        setHistIdx(next);
-        if (cmds[next]) setInput(cmds[next]);
-      }
+      if (next < 0) { setHistIdx(-1); setInput(""); }
+      else { setHistIdx(next); if (cmds[next]) setInput(cmds[next]); }
       return;
     }
     if (e.key === "Escape") {
@@ -102,11 +97,16 @@ export const TerminalView = (props: {
     }
   };
 
-  const prompt = () => {
+  const promptText = () => {
     const c = cwd();
-    const short = c === "/home/user" ? "~" : c.startsWith("/home/user/") ? `~${c.slice(10)}` : c;
-    return `${short} $`;
+    return c === "/home/user" ? "~" : c.startsWith("/home/user/") ? `~${c.slice(10)}` : c;
   };
+
+  const QUICK_ACTIONS = [
+    { label: "List input files", command: "ls /input/" },
+    { label: "List output files", command: "ls /output/" },
+    { label: "Available skills", command: "cat /skills/README.md" },
+  ];
 
   return (
     <div class="px-3 pb-3 pt-1">
@@ -132,9 +132,24 @@ export const TerminalView = (props: {
             ref={scrollRef}
             class="flex-1 overflow-y-auto hide-scrollbar px-3 pb-2 font-mono text-[13px] leading-[1.6]"
           >
-            <Show when={history().length === 0}>
-              <div class="text-gh-fg-subtle py-4 text-center text-[12px] font-sans">
-                Same bash environment as the agent — all skills and files available.
+            {/* Empty state with quick-action buttons */}
+            <Show when={history().length === 0 && !running()}>
+              <div class="flex flex-col items-center justify-center h-full gap-3 font-sans">
+                <p class="text-[12px] text-gh-fg-subtle">
+                  Same environment as the agent — all skills, files, and mounts available.
+                </p>
+                <div class="flex flex-wrap justify-center gap-2">
+                  <For each={QUICK_ACTIONS}>
+                    {(action) => (
+                      <button
+                        class="px-2.5 py-1 text-[12px] text-gh-fg-muted bg-gh-muted rounded-md hover:bg-gh-overlay hover:text-gh-fg transition-colors"
+                        onClick={() => { haptics.tap(); void execCommand(action.command); }}
+                      >
+                        {action.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
               </div>
             </Show>
 
@@ -142,7 +157,9 @@ export const TerminalView = (props: {
               {(entry) => (
                 <div class="mb-1.5">
                   <div>
-                    <span class="text-gh-fg-subtle select-none">{entry.cwd === "/home/user" ? "~" : entry.cwd.startsWith("/home/user/") ? `~${entry.cwd.slice(10)}` : entry.cwd} $ </span>
+                    <span class="text-gh-fg-subtle select-none">
+                      {entry.cwd === "/home/user" ? "~" : entry.cwd.startsWith("/home/user/") ? `~${entry.cwd.slice(10)}` : entry.cwd}{" $ "}
+                    </span>
                     <span class="text-gh-fg">{entry.command}</span>
                   </div>
                   <Show when={entry.stdout}>
@@ -162,7 +179,7 @@ export const TerminalView = (props: {
 
           {/* Input line */}
           <div class="flex items-center gap-1.5 px-3 py-2 shrink-0 border-t border-gh-border-muted font-mono text-[13px]">
-            <span class="text-gh-fg-subtle shrink-0 select-none">{prompt()} </span>
+            <span class="text-gh-fg-subtle shrink-0 select-none">{promptText()} $ </span>
             <input
               ref={inputRef}
               class="flex-1 bg-transparent text-gh-fg outline-none placeholder:text-gh-fg-subtle placeholder:font-sans"

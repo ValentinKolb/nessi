@@ -529,6 +529,20 @@ export const ChatView = (props: {
     refreshChatFiles();
   };
 
+  /** Load chat files from DB into the VFS that aren't already present. */
+  const syncInputFilesToRuntime = async (bash: Bash) => {
+    for (const meta of await listChatFiles(props.chatId)) {
+      try {
+        if (!(await bash.fs.exists(meta.mountPath))) {
+          const bytes = await readChatFile(meta);
+          const dir = meta.mountPath.slice(0, meta.mountPath.lastIndexOf("/"));
+          if (dir && dir !== "/") await bash.fs.mkdir(dir, { recursive: true });
+          await bash.fs.writeFile(meta.mountPath, bytes);
+        }
+      } catch { /* skip stale files */ }
+    }
+  };
+
   const ensureRuntime = async (): Promise<{ provider: ReturnType<typeof createProvider>; runtime: Runtime } | null> => {
     const providerEntry = getActiveProviderEntry();
     if (!providerEntry) return null;
@@ -1409,6 +1423,7 @@ export const ChatView = (props: {
         <TerminalView
           getBash={async () => {
             const ensured = await ensureRuntime();
+            if (ensured) await syncInputFilesToRuntime(ensured.runtime.bash);
             return ensured?.runtime.bash ?? null;
           }}
           afterExec={async (bash) => {
