@@ -116,7 +116,7 @@ export const TerminalView = (props: {
           style={{ height: "min(420px, 55vh)" }}
         >
           {/* Header */}
-          <div class="flex items-center gap-2 px-3 pt-3 pb-1.5 shrink-0">
+          <div class="flex items-center gap-2 px-2 pt-2 pb-1 shrink-0">
             <span class="i ti ti-terminal-2 text-[13px] text-gh-fg-subtle" />
             <span class="text-[12px] text-gh-fg-muted font-medium flex-1">Terminal</span>
             <button
