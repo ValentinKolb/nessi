@@ -1,8 +1,8 @@
 import { exportPdfText, mergePdfs, splitPdf } from "../../skills/builtins/pdf/pdf-ops.js";
 import { generateQrSvg } from "../qr.js";
 import type { QrOptions } from "../qr.js";
-import { barChart, lineChart, pieChart } from "../../skills/builtins/chart/chart.js";
-import type { BarChartData, LineChartData, PieChartData } from "../../skills/builtins/chart/chart.js";
+import { barChart, lineChart, pieChart, scatterChart } from "../../skills/builtins/chart/chart.js";
+import type { BarChartData, LineChartData, PieChartData, ScatterChartData } from "../../skills/builtins/chart/chart.js";
 import { githubApi } from "../github.js";
 import type { GitHubApi } from "../github.js";
 import { nextcloudApi } from "../nextcloud.js";
@@ -119,6 +119,7 @@ export type CommandHelpers = {
     bar: (data: BarChartData) => string;
     line: (data: LineChartData) => string;
     pie: (data: PieChartData) => string;
+    scatter: (data: ScatterChartData) => string;
   };
   github: GitHubApi;
   nextcloud: NextcloudApi;
@@ -158,6 +159,7 @@ export const createCommandHelpers = (): CommandHelpers => ({
     bar: barChart,
     line: lineChart,
     pie: pieChart,
+    scatter: scatterChart,
   },
   github: githubApi,
   nextcloud: nextcloudApi,

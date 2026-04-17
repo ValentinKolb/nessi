@@ -273,3 +273,79 @@ export const pieChart = (data: PieChartData) => {
   lines.push("</svg>");
   return lines.join("\n");
 };
+
+// ---------------------------------------------------------------------------
+// Scatter chart
+// ---------------------------------------------------------------------------
+
+export type ScatterChartData = {
+  xValues: number[];
+  yValues: number[];
+  pointLabels?: string[];
+  xLabel?: string;
+  yLabel?: string;
+  title?: string;
+};
+
+export const scatterChart = (data: ScatterChartData) => {
+  const W = 600, H = 420;
+  const pad = { top: 44, right: 24, bottom: 52, left: 64 };
+  const chartW = W - pad.left - pad.right;
+  const chartH = H - pad.top - pad.bottom;
+  const n = data.xValues.length;
+  if (n === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${LABEL_COLOR}" font-family="${FONT}" font-size="12">No data</text></svg>`;
+
+  const showLabels = data.pointLabels && data.pointLabels.length === n && n <= 25;
+  const xMax = niceMax(Math.max(...data.xValues.map(Math.abs), 1));
+  const yMax = niceMax(Math.max(...data.yValues.map(Math.abs), 1));
+  const xTicks = tickValues(xMax);
+  const yTicks = tickValues(yMax);
+
+  const toX = (v: number) => pad.left + (v / xMax) * chartW;
+  const toY = (v: number) => pad.top + chartH - (v / yMax) * chartH;
+
+  const lines: string[] = [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="${FONT}">`,
+    `<rect width="${W}" height="${H}" rx="8" fill="${BG_COLOR}"/>`,
+  ];
+
+  if (data.title) {
+    lines.push(`<text x="${W / 2}" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="${TITLE_COLOR}">${esc(data.title)}</text>`);
+  }
+
+  for (const tick of yTicks) {
+    const y = toY(tick);
+    lines.push(`<line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" stroke="${AXIS_COLOR}" stroke-dasharray="${tick === 0 ? "" : "3,3"}"/>`);
+    lines.push(`<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="${LABEL_COLOR}">${formatNum(tick)}</text>`);
+  }
+
+  for (const tick of xTicks) {
+    const x = toX(tick);
+    lines.push(`<line x1="${x}" y1="${pad.top}" x2="${x}" y2="${pad.top + chartH}" stroke="${AXIS_COLOR}" stroke-dasharray="${tick === 0 ? "" : "3,3"}"/>`);
+    lines.push(`<text x="${x}" y="${pad.top + chartH + 16}" text-anchor="middle" font-size="10" fill="${LABEL_COLOR}">${formatNum(tick)}</text>`);
+  }
+
+  if (data.xLabel) {
+    lines.push(`<text x="${pad.left + chartW / 2}" y="${H - 8}" text-anchor="middle" font-size="10" fill="${LABEL_COLOR}">${esc(data.xLabel)}</text>`);
+  }
+  if (data.yLabel) {
+    lines.push(`<text x="14" y="${pad.top + chartH / 2}" text-anchor="middle" font-size="10" fill="${LABEL_COLOR}" transform="rotate(-90 14 ${pad.top + chartH / 2})">${esc(data.yLabel)}</text>`);
+  }
+
+  for (let i = 0; i < n; i++) {
+    const x = toX(data.xValues[i] ?? 0);
+    const y = toY(data.yValues[i] ?? 0);
+    const color = COLORS[i % COLORS.length];
+
+    lines.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="${color}" opacity="0.8"/>`);
+
+    if (showLabels && data.pointLabels?.[i]) {
+      const label = data.pointLabels[i]!;
+      const truncLabel = label.length > 14 ? label.slice(0, 13) + "…" : label;
+      lines.push(`<text x="${(x + 8).toFixed(1)}" y="${(y + 3).toFixed(1)}" font-size="9" fill="${LABEL_COLOR}">${esc(truncLabel)}</text>`);
+    }
+  }
+
+  lines.push("</svg>");
+  return lines.join("\n");
+};

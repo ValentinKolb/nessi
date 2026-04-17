@@ -141,5 +141,51 @@ export default function create(api) {
           return err(e instanceof Error ? e.message : "Failed to generate pie chart.");
         }
       },
+    })
+    .sub({
+      name: "scatter",
+      usage: 'scatter file.csv --x "xCol" --y "yCol" [--label "nameCol"] [--title "T"] [--output /output/chart.svg]',
+      async handler(args, _helpers, ctx) {
+        const opts = parseArgs(args);
+        const filePath = positionalArgs(args)[0];
+        const title = opts.get("title");
+        const outputPath = opts.get("output") ?? "/output/scatter-chart.svg";
+
+        if (!filePath) return err("Usage: chart scatter file.csv --x \"xCol\" --y \"yCol\"");
+
+        try {
+          const data = await readCsvData(ctx, filePath, opts.get("x"), opts.get("y"));
+          const xCol = opts.get("x")?.trim();
+          const yCol = opts.get("y")?.split(",")[0]?.trim();
+          if (!xCol || !yCol) return err("Both --x and --y are required.");
+
+          const xValues = data.series[xCol] ?? data.labels.map(Number);
+          const yValues = data.series[yCol];
+          if (!yValues) return err(`Column "${yCol}" not found in CSV.`);
+
+          const labelCol = opts.get("label");
+          let pointLabels;
+          if (labelCol) {
+            // Re-read CSV to get the label column
+            let bytes;
+            try { bytes = await helpers.files.readBytes(filePath); } catch { bytes = await ctx.fs.readFileBuffer(ctx.fs.resolvePath(ctx.cwd, filePath)); }
+            const labelData = helpers.table.csvForChart(bytes, filePath, labelCol, [yCol]);
+            pointLabels = labelData.labels;
+          }
+
+          const svg = helpers.chart.scatter({
+            xValues: xValues.map(Number),
+            yValues,
+            pointLabels,
+            xLabel: xCol,
+            yLabel: yCol,
+            title,
+          });
+          await writeSvg(ctx, outputPath, svg);
+          return ok(`Chart saved to ${outputPath}\nUse the present tool to display it inline.\n`);
+        } catch (e) {
+          return err(e instanceof Error ? e.message : "Failed to generate scatter chart.");
+        }
+      },
     });
 }
