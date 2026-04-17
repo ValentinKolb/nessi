@@ -49,11 +49,15 @@ export type BarChartData = {
 };
 
 export const barChart = (data: BarChartData) => {
-  const W = 600, H = 380;
-  const pad = { top: 44, right: 20, bottom: 56, left: 56 };
+  const W = 600;
+  const n = data.labels.length;
+  const rotateLabels = n > 6;
+  const maxLabelLen = Math.max(...data.labels.map((l) => l.length), 0);
+  const bottomPad = rotateLabels ? Math.min(40 + maxLabelLen * 4, 120) : 56;
+  const H = 380 + (bottomPad - 56);
+  const pad = { top: 44, right: 20, bottom: bottomPad, left: 56 };
   const chartW = W - pad.left - pad.right;
   const chartH = H - pad.top - pad.bottom;
-  const n = data.labels.length;
   if (n === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${LABEL_COLOR}" font-family="${FONT}" font-size="12">No data</text></svg>`;
 
   const maxVal = niceMax(Math.max(...data.values, 0));
@@ -70,14 +74,12 @@ export const barChart = (data: BarChartData) => {
     lines.push(`<text x="${W / 2}" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="${TITLE_COLOR}">${esc(data.title)}</text>`);
   }
 
-  // grid + y-axis labels
   for (const tick of ticks) {
     const y = pad.top + chartH - (tick / maxVal) * chartH;
     lines.push(`<line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" stroke="${AXIS_COLOR}" stroke-dasharray="${tick === 0 ? "" : "3,3"}"/>`);
     lines.push(`<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="${LABEL_COLOR}">${formatNum(tick)}</text>`);
   }
 
-  // bars + x-axis labels
   for (let i = 0; i < n; i++) {
     const x = pad.left + gap + i * (barW + gap);
     const val = data.values[i] ?? 0;
@@ -89,8 +91,16 @@ export const barChart = (data: BarChartData) => {
     lines.push(`<text x="${x + barW / 2}" y="${y - 6}" text-anchor="middle" font-size="10" font-weight="500" fill="${TITLE_COLOR}">${formatNum(val)}</text>`);
 
     const label = data.labels[i] ?? "";
-    const truncLabel = label.length > 8 ? label.slice(0, 7) + "…" : label;
-    lines.push(`<text x="${x + barW / 2}" y="${pad.top + chartH + 18}" text-anchor="middle" font-size="10" fill="${LABEL_COLOR}">${esc(truncLabel)}</text>`);
+    const truncLabel = rotateLabels
+      ? (label.length > 16 ? label.slice(0, 15) + "…" : label)
+      : (label.length > 8 ? label.slice(0, 7) + "…" : label);
+    const lx = x + barW / 2;
+    const ly = pad.top + chartH + 14;
+    if (rotateLabels) {
+      lines.push(`<text x="${lx}" y="${ly}" text-anchor="end" font-size="10" fill="${LABEL_COLOR}" transform="rotate(-45 ${lx} ${ly})">${esc(truncLabel)}</text>`);
+    } else {
+      lines.push(`<text x="${lx}" y="${ly + 4}" text-anchor="middle" font-size="10" fill="${LABEL_COLOR}">${esc(truncLabel)}</text>`);
+    }
   }
 
   lines.push("</svg>");
@@ -108,12 +118,18 @@ export type LineChartData = {
 };
 
 export const lineChart = (data: LineChartData) => {
-  const W = 600, H = 380;
-  const pad = { top: 44, right: 20, bottom: 72, left: 56 };
-  const chartW = W - pad.left - pad.right;
-  const chartH = H - pad.top - pad.bottom;
+  const W = 600;
   const n = data.labels.length;
   const seriesEntries = Object.entries(data.series);
+  const rotateLabels = n > 8;
+  const maxLabelLen = Math.max(...data.labels.map((l) => l.length), 0);
+  const xLabelPad = rotateLabels ? Math.min(30 + maxLabelLen * 4, 100) : 24;
+  const legendPad = seriesEntries.length * 16 + 12;
+  const bottomPad = xLabelPad + legendPad;
+  const H = 380 + (bottomPad - 72);
+  const pad = { top: 44, right: 20, bottom: bottomPad, left: 56 };
+  const chartW = W - pad.left - pad.right;
+  const chartH = H - pad.top - pad.bottom;
   if (n === 0 || seriesEntries.length === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${LABEL_COLOR}" font-family="${FONT}" font-size="12">No data</text></svg>`;
 
   const allValues = seriesEntries.flatMap(([, vals]) => vals);
@@ -130,23 +146,27 @@ export const lineChart = (data: LineChartData) => {
     lines.push(`<text x="${W / 2}" y="28" text-anchor="middle" font-size="13" font-weight="600" fill="${TITLE_COLOR}">${esc(data.title)}</text>`);
   }
 
-  // grid + y-axis labels
   for (const tick of ticks) {
     const y = pad.top + chartH - (tick / maxVal) * chartH;
     lines.push(`<line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" stroke="${AXIS_COLOR}" stroke-dasharray="${tick === 0 ? "" : "3,3"}"/>`);
     lines.push(`<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="${LABEL_COLOR}">${formatNum(tick)}</text>`);
   }
 
-  // x-axis labels
   const labelStep = Math.max(1, Math.ceil(n / 12));
   for (let i = 0; i < n; i += labelStep) {
     const x = pad.left + i * stepX;
     const label = data.labels[i] ?? "";
-    const truncLabel = label.length > 8 ? label.slice(0, 7) + "…" : label;
-    lines.push(`<text x="${x}" y="${pad.top + chartH + 18}" text-anchor="middle" font-size="10" fill="${LABEL_COLOR}">${esc(truncLabel)}</text>`);
+    const truncLabel = rotateLabels
+      ? (label.length > 16 ? label.slice(0, 15) + "…" : label)
+      : (label.length > 8 ? label.slice(0, 7) + "…" : label);
+    const ly = pad.top + chartH + 14;
+    if (rotateLabels) {
+      lines.push(`<text x="${x}" y="${ly}" text-anchor="end" font-size="10" fill="${LABEL_COLOR}" transform="rotate(-45 ${x} ${ly})">${esc(truncLabel)}</text>`);
+    } else {
+      lines.push(`<text x="${x}" y="${ly + 4}" text-anchor="middle" font-size="10" fill="${LABEL_COLOR}">${esc(truncLabel)}</text>`);
+    }
   }
 
-  // series lines + dots
   for (let s = 0; s < seriesEntries.length; s++) {
     const [name, vals] = seriesEntries[s]!;
     const color = COLORS[s % COLORS.length];
@@ -163,8 +183,7 @@ export const lineChart = (data: LineChartData) => {
       lines.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="${BG_COLOR}" stroke="${color}" stroke-width="2"/>`);
     }
 
-    // legend
-    const ly = pad.top + chartH + 38 + s * 16;
+    const ly = pad.top + chartH + xLabelPad + 8 + s * 16;
     lines.push(`<rect x="${pad.left}" y="${ly - 8}" width="12" height="12" rx="2" fill="${color}" opacity="0.85"/>`);
     lines.push(`<text x="${pad.left + 18}" y="${ly + 2}" font-size="10" fill="${LABEL_COLOR}">${esc(name)}</text>`);
   }
