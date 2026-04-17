@@ -154,29 +154,25 @@ export default function create(api) {
         if (!filePath) return err("Usage: chart scatter file.csv --x \"xCol\" --y \"yCol\"");
 
         try {
-          const data = await readCsvData(ctx, filePath, opts.get("x"), opts.get("y"));
           const xCol = opts.get("x")?.trim();
           const yCol = opts.get("y")?.split(",")[0]?.trim();
           if (!xCol || !yCol) return err("Both --x and --y are required.");
 
-          const xValues = data.series[xCol] ?? data.labels.map(Number);
+          const labelCol = opts.get("label");
+          // For scatter, read x as label column so we get string labels for --label,
+          // and x+y both end up in series as numeric arrays via parseCsvForChart.
+          const labelKey = labelCol || xCol;
+          const data = await readCsvData(ctx, filePath, labelKey, `${xCol},${yCol}`);
+
+          const xValues = data.series[xCol];
           const yValues = data.series[yCol];
+          if (!xValues) return err(`Column "${xCol}" not found in CSV.`);
           if (!yValues) return err(`Column "${yCol}" not found in CSV.`);
 
-          const labelCol = opts.get("label");
-          let pointLabels;
-          if (labelCol) {
-            // Re-read CSV to get the label column
-            let bytes;
-            try { bytes = await helpers.files.readBytes(filePath); } catch { bytes = await ctx.fs.readFileBuffer(ctx.fs.resolvePath(ctx.cwd, filePath)); }
-            const labelData = helpers.table.csvForChart(bytes, filePath, labelCol, [yCol]);
-            pointLabels = labelData.labels;
-          }
-
           const svg = helpers.chart.scatter({
-            xValues: xValues.map(Number),
+            xValues,
             yValues,
-            pointLabels,
+            pointLabels: labelCol ? data.labels : undefined,
             xLabel: xCol,
             yLabel: yCol,
             title,

@@ -32,6 +32,10 @@ const tickValues = (max: number, count = 5) => {
   return Array.from({ length: count + 1 }, (_, i) => Math.round(i * step * 100) / 100);
 };
 
+/** Stack-safe max for large arrays (avoids Math.max(...arr) RangeError). */
+const safeMax = (arr: number[], fallback = 0) =>
+  arr.reduce((a, b) => (b > a ? b : a), fallback);
+
 const formatNum = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
     : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K`
@@ -52,7 +56,7 @@ export const barChart = (data: BarChartData) => {
   const W = 600;
   const n = data.labels.length;
   const rotateLabels = n > 6;
-  const maxLabelLen = Math.max(...data.labels.map((l) => l.length), 0);
+  const maxLabelLen = safeMax(data.labels.map((l) => l.length), 0);
   const bottomPad = rotateLabels ? Math.min(40 + maxLabelLen * 4, 120) : 56;
   const H = 380 + (bottomPad - 56);
   const pad = { top: 44, right: 20, bottom: bottomPad, left: 56 };
@@ -60,7 +64,7 @@ export const barChart = (data: BarChartData) => {
   const chartH = H - pad.top - pad.bottom;
   if (n === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${LABEL_COLOR}" font-family="${FONT}" font-size="12">No data</text></svg>`;
 
-  const maxVal = niceMax(Math.max(...data.values, 0));
+  const maxVal = niceMax(safeMax(data.values, 0));
   const barW = Math.min(48, (chartW / n) * 0.6);
   const gap = (chartW - barW * n) / (n + 1);
   const ticks = tickValues(maxVal);
@@ -122,7 +126,7 @@ export const lineChart = (data: LineChartData) => {
   const n = data.labels.length;
   const seriesEntries = Object.entries(data.series);
   const rotateLabels = n > 8;
-  const maxLabelLen = Math.max(...data.labels.map((l) => l.length), 0);
+  const maxLabelLen = safeMax(data.labels.map((l) => l.length), 0);
   const xLabelPad = rotateLabels ? Math.min(30 + maxLabelLen * 4, 100) : 24;
   const legendPad = seriesEntries.length * 16 + 12;
   const bottomPad = xLabelPad + legendPad;
@@ -133,7 +137,7 @@ export const lineChart = (data: LineChartData) => {
   if (n === 0 || seriesEntries.length === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${LABEL_COLOR}" font-family="${FONT}" font-size="12">No data</text></svg>`;
 
   const allValues = seriesEntries.flatMap(([, vals]) => vals);
-  const maxVal = niceMax(Math.max(...allValues, 0));
+  const maxVal = niceMax(safeMax(allValues, 0));
   const ticks = tickValues(maxVal);
   const stepX = chartW / Math.max(n - 1, 1);
 
@@ -296,8 +300,8 @@ export const scatterChart = (data: ScatterChartData) => {
   if (n === 0) return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${LABEL_COLOR}" font-family="${FONT}" font-size="12">No data</text></svg>`;
 
   const showLabels = data.pointLabels && data.pointLabels.length === n && n <= 25;
-  const xMax = niceMax(Math.max(...data.xValues.map(Math.abs), 1));
-  const yMax = niceMax(Math.max(...data.yValues.map(Math.abs), 1));
+  const xMax = niceMax(safeMax(data.xValues, 1));
+  const yMax = niceMax(safeMax(data.yValues, 1));
   const xTicks = tickValues(xMax);
   const yTicks = tickValues(yMax);
 

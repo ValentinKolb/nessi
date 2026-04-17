@@ -382,8 +382,15 @@ const parseCalcExpr = (tokens: string[]): CalcNode => {
       return node;
     }
 
+    // unary minus
+    if (token === "-") {
+      consume();
+      const operand = parseAtom();
+      return { kind: "binOp", op: "*", left: { kind: "literal", value: -1 }, right: operand };
+    }
+
     // number literal
-    if (/^\d/.test(token)) {
+    if (/^\d/.test(token) || (token.startsWith(".") && token.length > 1)) {
       consume();
       return { kind: "literal", value: Number(token) };
     }
@@ -444,7 +451,7 @@ const evalCalcNode = (
         case "+": return l + r;
         case "-": return l - r;
         case "*": return l * r;
-        case "/": return r === 0 ? 0 : l / r;
+        case "/": return r === 0 ? NaN : l / r;
       }
     }
   }
@@ -720,9 +727,11 @@ export const parseCsvForChart = (
 
   const labels = sheet.rows.map((r) => r[xColumn] ?? "");
   const series: Record<string, number[]> = {};
-  for (const y of yColumns) {
-    series[y] = sheet.rows.map((r) => {
-      const v = r[y] ?? "";
+  // Include x column in series too (needed for scatter where x is numeric)
+  const allCols = [xColumn, ...yColumns.filter((y) => y !== xColumn)];
+  for (const col of allCols) {
+    series[col] = sheet.rows.map((r) => {
+      const v = r[col] ?? "";
       if (v === "") return 0;
       const n = Number(v);
       return isNaN(n) ? 0 : n;
