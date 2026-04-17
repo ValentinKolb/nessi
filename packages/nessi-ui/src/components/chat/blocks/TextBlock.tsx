@@ -155,6 +155,19 @@ export const TextBlock = (props: { block: UITextBlock }) => {
     if (debounce) clearTimeout(debounce);
   });
 
+  if (props.block.isError) {
+    return (
+      <div class="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-gh-danger/20 bg-status-err-bg text-[13px] text-gh-fg-muted">
+        <span class="i ti ti-alert-circle text-gh-danger text-base shrink-0 mt-0.5" />
+        <div
+          ref={ref}
+          class="prose prose-sm max-w-none text-block-markdown"
+          innerHTML={renderMarkdown(props.block.text)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       ref={ref}

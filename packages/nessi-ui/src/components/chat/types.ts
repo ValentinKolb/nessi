@@ -1,7 +1,7 @@
 import type { AssistantStopReason, Usage } from "nessi-ai";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
 
-export type UITextBlock = { type: "text"; text: string };
+export type UITextBlock = { type: "text"; text: string; isError?: boolean };
 export type UIToolCallBlock = {
   type: "tool_call";
   callId: string;

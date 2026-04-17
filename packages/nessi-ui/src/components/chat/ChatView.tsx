@@ -399,13 +399,13 @@ export const ChatView = (props: {
     setState("messages", (messages) => mutator(messages));
   };
 
-  const appendStatusMessage = (text: string) => {
+  const appendStatusMessage = (text: string, isError = true) => {
     mapMessages((messages) => [
       ...messages,
       {
         id: msgId(),
         role: "assistant",
-        blocks: [{ type: "text", text }],
+        blocks: [{ type: "text", text, isError }],
       },
     ]);
   };
