@@ -1,6 +1,6 @@
 ---
 name: table
-description: "Query, filter, aggregate (sum/avg/count/min/max/median), group, sort, and transform CSV/XLSX files. Always use this instead of awk, node -e, or python for any tabular data task."
+description: "Query, filter, aggregate (sum/avg/count/min/max/median), group, sort, calc(), and transform CSV/XLSX files. Always use this instead of awk, node -e, or python for any tabular data task."
 metadata:
   nessi:
     command: table
@@ -9,7 +9,7 @@ metadata:
 
 # Table
 
-Work with CSV and XLSX files: inspect structure, query with filters and aggregations, and export results.
+Work with CSV and XLSX files: inspect structure, query with filters, aggregations, and calculations, and export results.
 
 ## Inspect
 
@@ -19,9 +19,9 @@ table columns /input/data.xlsx --sheet "Sales"
 table peek /input/data.xlsx --rows 10 --columns "name,revenue"
 ```
 
-## Query (filter + aggregate + sort)
+## Query
 
-The `query` command combines filtering, aggregation, projection, aliases, sorting, and limiting in one step.
+The `query` command combines filtering, aggregation, calculated columns, projection, aliases, sorting, and limiting in one step.
 
 ### Filter rows
 
@@ -41,10 +41,34 @@ table query /input/sales.xlsx \
 
 Aggregation functions: `count()`, `sum(col)`, `avg(col)`, `min(col)`, `max(col)`, `median(col)`.
 
-### Global aggregation (no group)
+### Calculated columns with calc()
+
+Use `calc(expression)` in `--select` to compute new columns. Supports `+`, `-`, `*`, `/` and parentheses.
+
+**Row-level calculations** (like Excel formulas — applied to every row):
 
 ```bash
-table query /input/sales.xlsx --select "sum(revenue), count(), avg(price)"
+table query /input/products.xlsx \
+  --select "product, price, calc(price * 1.19) as BruttoPreis" \
+  --output /output/with-tax.csv
+
+table query /input/orders.xlsx \
+  --select "item, quantity, unit_price, calc(quantity * unit_price) as Total" \
+  --output /output/totals.csv
+```
+
+**Aggregation-level calculations** (combine multiple aggregations):
+
+```bash
+table query /input/sales.xlsx \
+  --select "region, sum(revenue) as Rev, sum(cost) as Cost, calc(sum(revenue) - sum(cost)) as Profit" \
+  --group "region" \
+  --output /output/profit.csv
+
+table query /input/data.xlsx \
+  --select "category, calc(sum(revenue) / count()) as AvgRevenue, calc((sum(revenue) - sum(cost)) / sum(revenue) * 100) as MarginPct" \
+  --group "category" \
+  --output /output/margins.csv
 ```
 
 ### Project and rename columns
@@ -64,11 +88,11 @@ table query /input/sales.xlsx \
   --output /output/top5.csv
 ```
 
-### Full example: filter + aggregate + sort
+### Full example
 
 ```bash
 table query /input/sales.xlsx \
-  --select "region, sum(revenue) as Revenue, count() as Orders" \
+  --select "region, sum(revenue) as Revenue, count() as Orders, calc(sum(revenue) / count()) as AvgOrder" \
   --where "year >= 2023" \
   --group "region" \
   --sort "Revenue desc" \
@@ -109,7 +133,7 @@ table replace /input/data.csv --column "status" --old "pending" --new "done" --o
 
 ## Important
 
-- **Do not** use `awk`, `node -e`, `python`, or manual CSV parsing for tabular data. This skill handles all of it: filtering, aggregation, grouping, sorting, export.
+- **Do not** use `awk`, `node -e`, `python`, or manual CSV parsing. This skill handles filtering, aggregation, calculations, grouping, sorting, and export.
 - Output goes to `/output/` (required).
 - For XLSX with multiple sheets, use `--sheet "SheetName"`.
 - Pipe query output directly into `chart` for visualization — no manual value extraction needed.

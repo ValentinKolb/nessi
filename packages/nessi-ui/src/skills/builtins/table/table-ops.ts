@@ -327,9 +327,151 @@ export const tableReplaceValues = async (
 
 export type AggFn = "count" | "sum" | "avg" | "min" | "max" | "median";
 
+// ---------------------------------------------------------------------------
+// Expression tree for calc()
+// ---------------------------------------------------------------------------
+
+type CalcNode =
+  | { kind: "literal"; value: number }
+  | { kind: "colRef"; name: string }
+  | { kind: "aggRef"; fn: AggFn; column?: string }
+  | { kind: "binOp"; op: "+" | "-" | "*" | "/"; left: CalcNode; right: CalcNode };
+
+/** Tokenize a calc expression into numbers, identifiers, operators, and parens. */
+const tokenize = (input: string): string[] => {
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i]!;
+    if (/\s/.test(ch)) { i++; continue; }
+    if ("+-*/()".includes(ch)) { tokens.push(ch); i++; continue; }
+    // number (including decimals)
+    if (/[\d.]/.test(ch)) {
+      let num = "";
+      while (i < input.length && /[\d.]/.test(input[i]!)) num += input[i++];
+      tokens.push(num);
+      continue;
+    }
+    // identifier or agg function name
+    let id = "";
+    while (i < input.length && /[^\s+\-*/(),]/.test(input[i]!)) id += input[i++];
+    tokens.push(id);
+  }
+  return tokens;
+};
+
+const AGG_NAMES = new Set<string>(["count", "sum", "avg", "min", "max", "median"]);
+
+/** Recursive descent parser: expr → term ((+|-) term)* */
+const parseCalcExpr = (tokens: string[]): CalcNode => {
+  let pos = 0;
+
+  const peek = () => tokens[pos];
+  const consume = () => tokens[pos++]!;
+
+  const parseAtom = (): CalcNode => {
+    const token = peek();
+    if (!token) throw new Error("Unexpected end of calc expression");
+
+    // parenthesized sub-expression
+    if (token === "(") {
+      consume(); // (
+      const node = parseAddSub();
+      if (peek() !== ")") throw new Error("Missing closing parenthesis in calc()");
+      consume(); // )
+      return node;
+    }
+
+    // number literal
+    if (/^\d/.test(token)) {
+      consume();
+      return { kind: "literal", value: Number(token) };
+    }
+
+    // aggregation: sum(col), count(), etc.
+    if (AGG_NAMES.has(token.toLowerCase()) && tokens[pos + 1] === "(") {
+      const fn = consume().toLowerCase() as AggFn;
+      consume(); // (
+      let col: string | undefined;
+      if (peek() !== ")") col = consume();
+      if (peek() !== ")") throw new Error(`Missing closing parenthesis for ${fn}()`);
+      consume(); // )
+      return { kind: "aggRef", fn, column: col || undefined };
+    }
+
+    // column reference
+    consume();
+    return { kind: "colRef", name: token };
+  };
+
+  const parseMulDiv = (): CalcNode => {
+    let left = parseAtom();
+    while (peek() === "*" || peek() === "/") {
+      const op = consume() as "*" | "/";
+      left = { kind: "binOp", op, left, right: parseAtom() };
+    }
+    return left;
+  };
+
+  const parseAddSub = (): CalcNode => {
+    let left = parseMulDiv();
+    while (peek() === "+" || peek() === "-") {
+      const op = consume() as "+" | "-";
+      left = { kind: "binOp", op, left, right: parseMulDiv() };
+    }
+    return left;
+  };
+
+  const result = parseAddSub();
+  if (pos < tokens.length) throw new Error(`Unexpected token in calc(): "${tokens[pos]}"`);
+  return result;
+};
+
+/** Evaluate a calc expression tree against a row or aggregation context. */
+const evalCalcNode = (
+  node: CalcNode,
+  resolveCol: (name: string) => number,
+  resolveAgg: (fn: AggFn, column?: string) => number,
+): number => {
+  switch (node.kind) {
+    case "literal": return node.value;
+    case "colRef": return resolveCol(node.name);
+    case "aggRef": return resolveAgg(node.fn, node.column);
+    case "binOp": {
+      const l = evalCalcNode(node.left, resolveCol, resolveAgg);
+      const r = evalCalcNode(node.right, resolveCol, resolveAgg);
+      switch (node.op) {
+        case "+": return l + r;
+        case "-": return l - r;
+        case "*": return l * r;
+        case "/": return r === 0 ? 0 : l / r;
+      }
+    }
+  }
+};
+
+/** Collect all column references from a calc tree (for validation). */
+const collectColRefs = (node: CalcNode): string[] => {
+  if (node.kind === "colRef") return [node.name];
+  if (node.kind === "aggRef") return node.column ? [node.column] : [];
+  if (node.kind === "binOp") return [...collectColRefs(node.left), ...collectColRefs(node.right)];
+  return [];
+};
+
+const hasAggRefs = (node: CalcNode): boolean => {
+  if (node.kind === "aggRef") return true;
+  if (node.kind === "binOp") return hasAggRefs(node.left) || hasAggRefs(node.right);
+  return false;
+};
+
+// ---------------------------------------------------------------------------
+// Select expression types
+// ---------------------------------------------------------------------------
+
 export type SelectExpr =
   | { kind: "column"; column: string; alias?: string }
-  | { kind: "agg"; fn: AggFn; column?: string; alias?: string };
+  | { kind: "agg"; fn: AggFn; column?: string; alias?: string }
+  | { kind: "calc"; tree: CalcNode; raw: string; alias?: string };
 
 export type QueryResult = TableWriteResult & {
   matchedRows: number;
@@ -337,11 +479,22 @@ export type QueryResult = TableWriteResult & {
   columns: string[];
 };
 
+const CALC_RE = /^calc\((.+)\)(?:\s+as\s+(.+))?$/i;
 const AGG_RE = /^(count|sum|avg|min|max|median)\(([^)]*)\)(?:\s+as\s+(.+))?$/i;
 const COL_RE = /^(.+?)(?:\s+as\s+(.+))?$/;
 
 export const parseSelectExpr = (expr: string): SelectExpr => {
   const trimmed = expr.trim();
+
+  // calc(...) as Alias
+  const calcMatch = trimmed.match(CALC_RE);
+  if (calcMatch) {
+    const inner = calcMatch[1]!.trim();
+    const alias = calcMatch[2]?.trim();
+    const tree = parseCalcExpr(tokenize(inner));
+    return { kind: "calc", tree, raw: inner, alias };
+  }
+
   const aggMatch = trimmed.match(AGG_RE);
   if (aggMatch) {
     const fn = aggMatch[1]!.toLowerCase() as AggFn;
@@ -380,25 +533,29 @@ export const parseSelectList = (raw: string): SelectExpr[] => {
 const outputName = (expr: SelectExpr): string => {
   if (expr.alias) return expr.alias;
   if (expr.kind === "column") return expr.column;
+  if (expr.kind === "calc") return expr.raw.replace(/[^a-zA-Z0-9_]/g, "_");
   return expr.column ? `${expr.fn}_${expr.column}` : expr.fn;
 };
 
-const computeAgg = (fn: AggFn, values: string[]): string => {
-  if (fn === "count") return String(values.length);
+const computeAgg = (fn: AggFn, values: string[]): number => {
+  if (fn === "count") return values.length;
   const nums = values.filter((v) => v !== "").map(Number).filter((n) => !isNaN(n));
-  if (nums.length === 0) return "";
+  if (nums.length === 0) return 0;
   switch (fn) {
-    case "sum": return String(nums.reduce((a, b) => a + b, 0));
-    case "avg": return String(nums.reduce((a, b) => a + b, 0) / nums.length);
-    case "min": return String(nums.reduce((a, b) => a < b ? a : b));
-    case "max": return String(nums.reduce((a, b) => a > b ? a : b));
+    case "sum": return nums.reduce((a, b) => a + b, 0);
+    case "avg": return nums.reduce((a, b) => a + b, 0) / nums.length;
+    case "min": return nums.reduce((a, b) => a < b ? a : b);
+    case "max": return nums.reduce((a, b) => a > b ? a : b);
     case "median": {
       const sorted = [...nums].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
-      return String(sorted.length % 2 ? sorted[mid] : (sorted[mid - 1]! + sorted[mid]!) / 2);
+      return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
     }
   }
 };
+
+const formatCalcResult = (n: number): string =>
+  isNaN(n) || !isFinite(n) ? "" : Number.isInteger(n) ? String(n) : n.toFixed(4).replace(/\.?0+$/, "");
 
 export const tableQuery = async (
   bytes: Uint8Array,
@@ -416,7 +573,6 @@ export const tableQuery = async (
   const sheet = selectSheet(workbook, options.sheet);
   const totalRows = sheet.rows.length;
 
-  // Validate where columns
   if (options.where) {
     for (const cond of options.where) {
       if (!sheet.columns.includes(cond.column)) throw new Error(`Unknown column in --where: ${cond.column}`);
@@ -424,8 +580,9 @@ export const tableQuery = async (
     }
   }
 
-  // Validate select columns (non-aggregation ones)
   const selects = options.select ?? sheet.columns.map((c) => ({ kind: "column" as const, column: c }));
+
+  // Validate column references
   for (const expr of selects) {
     if (expr.kind === "column" && !sheet.columns.includes(expr.column)) {
       throw new Error(`Unknown column in --select: ${expr.column}`);
@@ -433,24 +590,27 @@ export const tableQuery = async (
     if (expr.kind === "agg" && expr.column && !sheet.columns.includes(expr.column)) {
       throw new Error(`Unknown column in --select: ${expr.column}`);
     }
+    if (expr.kind === "calc") {
+      for (const ref of collectColRefs(expr.tree)) {
+        if (!sheet.columns.includes(ref)) throw new Error(`Unknown column in calc(): ${ref}`);
+      }
+    }
   }
 
   if (options.groupBy && !sheet.columns.includes(options.groupBy)) {
     throw new Error(`Unknown column in --group: ${options.groupBy}`);
   }
 
-  // Apply WHERE
   let rows = options.where
     ? sheet.rows.filter((row) => options.where!.every((c) => matchRow(row, c)))
     : sheet.rows;
   const matchedRows = rows.length;
 
-  const hasAggs = selects.some((s) => s.kind === "agg");
+  const needsGrouping = selects.some((s) => s.kind === "agg" || (s.kind === "calc" && hasAggRefs(s.tree)));
   const outColumns = selects.map(outputName);
   let resultRows: Array<Record<string, string>>;
 
-  if (hasAggs) {
-    // Group rows
+  if (needsGrouping) {
     const groups = new Map<string, Array<Record<string, string>>>();
     if (options.groupBy) {
       for (const row of rows) {
@@ -466,31 +626,51 @@ export const tableQuery = async (
     resultRows = [];
     for (const [, groupRows] of groups) {
       const resultRow: Record<string, string> = {};
+      const resolveCol = (name: string) => {
+        const v = groupRows[0]?.[name] ?? "";
+        return v !== "" ? Number(v) || 0 : 0;
+      };
+      const resolveAgg = (fn: AggFn, column?: string) => {
+        const values = column
+          ? groupRows.map((r) => r[column] ?? "")
+          : groupRows.map(() => "1");
+        return computeAgg(fn, values);
+      };
+
       for (const expr of selects) {
         const name = outputName(expr);
         if (expr.kind === "column") {
           resultRow[name] = groupRows[0]?.[expr.column] ?? "";
-        } else {
-          const values = expr.column
-            ? groupRows.map((r) => r[expr.column!] ?? "")
-            : groupRows.map(() => "1");
-          resultRow[name] = computeAgg(expr.fn, values);
+        } else if (expr.kind === "agg") {
+          resultRow[name] = formatCalcResult(resolveAgg(expr.fn, expr.column));
+        } else if (expr.kind === "calc") {
+          resultRow[name] = formatCalcResult(evalCalcNode(expr.tree, resolveCol, resolveAgg));
         }
       }
       resultRows.push(resultRow);
     }
   } else {
-    // Pure projection with optional aliases
+    // Row-level: projection + calc on each row
     resultRows = rows.map((row) => {
       const out: Record<string, string> = {};
+      const resolveCol = (name: string) => {
+        const v = row[name] ?? "";
+        return v !== "" ? Number(v) || 0 : 0;
+      };
+      const resolveAgg = (): number => { throw new Error("Aggregation functions require --group"); };
+
       for (const expr of selects) {
-        if (expr.kind === "column") out[outputName(expr)] = row[expr.column] ?? "";
+        const name = outputName(expr);
+        if (expr.kind === "column") {
+          out[name] = row[expr.column] ?? "";
+        } else if (expr.kind === "calc") {
+          out[name] = formatCalcResult(evalCalcNode(expr.tree, resolveCol, resolveAgg));
+        }
       }
       return out;
     });
   }
 
-  // Sort
   if (options.sort) {
     const col = options.sort.column;
     if (!outColumns.includes(col)) throw new Error(`Unknown column in --sort: ${col}`);
@@ -505,7 +685,6 @@ export const tableQuery = async (
     });
   }
 
-  // Limit
   if (options.limit && options.limit > 0) resultRows = resultRows.slice(0, options.limit);
 
   return {
