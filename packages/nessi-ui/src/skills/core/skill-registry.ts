@@ -95,6 +95,10 @@ const loadFromDb = async () => {
         ...override,
         id: seed.id,
         builtin: true,
+        // Builtin skills always use the latest bundled code and references
+        code: seed.code,
+        doc: seed.doc,
+        references: seed.references,
       });
       byId.delete(seed.id);
     } else {
