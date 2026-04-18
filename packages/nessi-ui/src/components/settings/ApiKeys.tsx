@@ -21,8 +21,10 @@ const useApiKey = (storageKey: string) => {
   onCleanup(() => { if (timer) clearTimeout(timer); });
 
   const save = () => {
-    writeJson(storageKey, { apiKey: value() });
-    setInitial(value());
+    const normalized = value().trim();
+    setValue(normalized);
+    writeJson(storageKey, { apiKey: normalized });
+    setInitial(normalized);
     haptics.success();
     setSaved(true);
     if (timer) clearTimeout(timer);
@@ -54,8 +56,14 @@ const useNextcloudConfig = () => {
     setConfig((c) => ({ ...c, [key]: val }));
 
   const save = () => {
-    writeJson(NEXTCLOUD_KEY, config());
-    setInitial(config());
+    const normalized = {
+      url: (config().url ?? "").trim().replace(/\/+$/, ""),
+      user: (config().user ?? "").trim(),
+      appPassword: (config().appPassword ?? "").trim(),
+    };
+    setConfig(normalized);
+    writeJson(NEXTCLOUD_KEY, normalized);
+    setInitial(normalized);
     haptics.success();
     setSaved(true);
     if (timer) clearTimeout(timer);
