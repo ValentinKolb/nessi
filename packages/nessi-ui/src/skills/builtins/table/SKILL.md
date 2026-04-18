@@ -125,15 +125,21 @@ table replace /input/data.csv --column "status" --old "pending" --new "done" --o
 
 | Operator | Example | Notes |
 |----------|---------|-------|
-| `=` / `!=` | `status = active` | Case-insensitive |
+| `=` / `!=` | `status = active` | Case-insensitive. `= ` (empty value) matches empty cells |
+| `is empty` | `Einlieferer is empty` | Matches rows where the column is blank |
+| `is not empty` | `email is not empty` | Matches rows where the column has a value |
 | `>` `<` `>=` `<=` | `amount > 100` | Auto-detects numbers and dates |
 | `contains` | `name contains Smith` | Substring match |
 | `starts_with` | `email starts_with admin` | Prefix match |
 | `matches` | `email matches ^.*@gmail\.com$` | Regex (case-insensitive) |
 
+## Output behavior
+
+- With `--output /output/file.csv` → writes CSV to file
+- **Without `--output`** → prints result directly to stdout (useful for quick counts and inspections)
+
 ## Important
 
-- **Do not** use `awk`, `node -e`, `python`, or manual CSV parsing. This skill handles filtering, aggregation, calculations, grouping, sorting, and export.
-- Output goes to `/output/` (required).
+- **Do not** use `awk`, `node -e`, `python`, `grep`, or manual CSV parsing. This skill handles filtering, aggregation, calculations, counting, grouping, sorting, and export.
 - For XLSX with multiple sheets, use `--sheet "SheetName"`.
 - Pipe query output directly into `chart` for visualization — no manual value extraction needed.

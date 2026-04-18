@@ -209,8 +209,8 @@ export default function create(api) {
         }
 
         const opts = parseArgs(args);
-        const outputPath = opts.get("output") ?? defaultOutput(path, "csv", "-query");
-        if (!outputPath.startsWith("/output/")) return err("Output path must be under /output.");
+        const explicitOutput = opts.get("output");
+        if (explicitOutput && !explicitOutput.startsWith("/output/")) return err("Output path must be under /output.");
 
         try {
           const selectRaw = opts.get("select");
@@ -235,12 +235,18 @@ export default function create(api) {
           const bytes = await readBytes(ctx, path);
           const result = await helpers.table.query(bytes, path, { select, where, groupBy, sort, limit, sheet: opts.get("sheet") });
 
-          await writeText(ctx, outputPath, result.content);
-
           const lines = [`${result.matchedRows} of ${result.totalRows} rows matched`];
           if (groupBy) lines.push(`Grouped by: ${groupBy}`);
           lines.push(`Columns: ${result.columns.join(", ")}`);
-          lines.push(`Wrote CSV to ${outputPath}`);
+
+          if (explicitOutput) {
+            await writeText(ctx, explicitOutput, result.content);
+            lines.push(`Wrote CSV to ${explicitOutput}`);
+          } else {
+            // No --output: print result directly to stdout
+            lines.push("");
+            lines.push(result.content);
+          }
           return ok(lines.join("\n") + "\n");
         } catch (error) {
           return err(error instanceof Error ? error.message : "Failed to query table.");

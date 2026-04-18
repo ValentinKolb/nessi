@@ -744,7 +744,7 @@ export const parseCsvForChart = (
 // Filter API
 // ---------------------------------------------------------------------------
 
-export type FilterOp = "=" | "!=" | ">" | "<" | ">=" | "<=" | "contains" | "starts_with" | "matches";
+export type FilterOp = "=" | "!=" | ">" | "<" | ">=" | "<=" | "contains" | "starts_with" | "matches" | "is_empty" | "is_not_empty";
 
 export type FilterCondition = {
   column: string;
@@ -765,17 +765,25 @@ const OPS: Array<{ token: string; op: FilterOp }> = [
 ];
 
 export const parseFilterExpr = (expr: string): FilterCondition => {
+  const trimmed = expr.trim();
+
+  // "column is empty" / "column is not empty"
+  const emptyMatch = trimmed.match(/^(.+?)\s+is\s+not\s+empty$/i);
+  if (emptyMatch) return { column: emptyMatch[1]!.trim(), op: "is_not_empty", value: "" };
+  const emptyMatch2 = trimmed.match(/^(.+?)\s+is\s+empty$/i);
+  if (emptyMatch2) return { column: emptyMatch2[1]!.trim(), op: "is_empty", value: "" };
+
   for (const { token, op } of OPS) {
-    const idx = expr.indexOf(token);
+    const idx = trimmed.indexOf(token);
     if (idx > 0) {
       return {
-        column: expr.slice(0, idx).trim(),
+        column: trimmed.slice(0, idx).trim(),
         op,
-        value: expr.slice(idx + token.length).trim(),
+        value: trimmed.slice(idx + token.length).trim(),
       };
     }
   }
-  throw new Error(`Invalid filter: "${expr}". Use: column = value, column > 100, column contains text, column matches ^pat.*$`);
+  throw new Error(`Invalid filter: "${expr}". Use: column = value, column > 100, column is empty, column is not empty, column contains text`);
 };
 
 const regexCacheMap = new Map<string, RegExp>();
@@ -797,11 +805,13 @@ const matchRow = (row: Record<string, string>, cond: FilterCondition) => {
   const cell = row[cond.column] ?? "";
   const val = cond.value;
 
+  if (cond.op === "is_empty") return cell === "";
+  if (cond.op === "is_not_empty") return cell !== "";
   if (cond.op === "contains") return cell.toLowerCase().includes(val.toLowerCase());
   if (cond.op === "starts_with") return cell.toLowerCase().startsWith(val.toLowerCase());
   if (cond.op === "matches") return regexCache(val).test(cell);
-  if (cond.op === "=") return cell.toLowerCase() === val.toLowerCase();
-  if (cond.op === "!=") return cell.toLowerCase() !== val.toLowerCase();
+  if (cond.op === "=") return val === "" ? cell === "" : cell.toLowerCase() === val.toLowerCase();
+  if (cond.op === "!=") return val === "" ? cell !== "" : cell.toLowerCase() !== val.toLowerCase();
 
   // numeric / date comparison
   const cellNum = tryNum(cell);
