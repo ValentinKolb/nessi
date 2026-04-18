@@ -10,7 +10,8 @@ import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
 const resolvePrompt = (template: string, memories: string, recentChats: string) =>
   template
     .replaceAll("{{memories}}", memories)
-    .replaceAll("{{recent_chats}}", recentChats);
+    .replaceAll("{{recent_chats}}", recentChats)
+    .replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
 
 const SUGGESTIONS_KEY = "nessi:chat-suggestions";
 const LAST_RUN_KEY = "nessi:suggestions-last-run";

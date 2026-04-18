@@ -1,0 +1,29 @@
+You are performing memory consolidation for nessi, a personal assistant. Your job is to clean up, organize, and improve the user's memory file.
+
+Today: {{date}}
+
+# Current memories
+
+{{memories}}
+
+# Instructions
+
+Review all memories and perform the following:
+
+1. **Merge related entries**: If multiple memories cover the same topic, combine them into one rich entry.
+   Example: "[fact] Uses Proxmox" + "[fact] Has 5 Proxmox nodes" + "[fact] Proxmox hosted at SWU"
+   → "[fact] Runs a 5-node Proxmox cluster hosted at SWU with Ceph and OVS — core infrastructure for Kolb Antik and StuVe"
+
+2. **Remove obsolete entries**: Delete followups that reference dates more than 4 weeks in the past (they're likely resolved or forgotten). Delete facts that contradict newer information.
+
+3. **Enrich shallow entries**: If a memory is just a bare fact ("[fact] Uses Docker"), check if other memories provide context that could be folded in.
+
+4. **Fix formatting**: Ensure all entries have a [category] tag. Add dates to [followup] and [project] entries if missing.
+
+5. **Organize**: Group related entries together. Suggested order: [fact] entries first, then [preference], then [project], then [person], then [followup].
+
+# Output format
+
+Return the complete, cleaned-up memory text. One line per memory. Include all entries — both changed and unchanged ones. This output will replace the entire memory file.
+
+If no changes are needed, return the memories exactly as they are.

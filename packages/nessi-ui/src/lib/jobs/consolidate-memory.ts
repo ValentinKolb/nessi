@@ -67,7 +67,9 @@ export const consolidateMemoryJob = job({
 
       const memories = await formatAll();
       const promptTemplate = await getConsolidationPrompt();
-      const systemPrompt = promptTemplate.replaceAll("{{memories}}", memories);
+      const systemPrompt = promptTemplate
+        .replaceAll("{{memories}}", memories)
+        .replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
 
       const provider = createProvider(providerEntry);
       const result = await provider.complete({
@@ -137,7 +139,9 @@ export const runConsolidation = async (): Promise<{ consolidated: boolean; reaso
 
   const memories = await formatAll();
   const promptTemplate = await getConsolidationPrompt();
-  const systemPrompt = promptTemplate.replaceAll("{{memories}}", memories);
+  const systemPrompt = promptTemplate
+    .replaceAll("{{memories}}", memories)
+    .replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
 
   const provider = createProvider(providerEntry);
   const result = await provider.complete({
