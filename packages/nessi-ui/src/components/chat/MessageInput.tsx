@@ -29,6 +29,7 @@ export const MessageInput = (props: {
   onOpenNextcloudBrowser?: () => void;
   onOpenGitHubBrowser?: () => void;
   onOpenTerminal?: () => void;
+  onNewChat?: () => void;
   images?: UIUserContentPart[];
   files?: PendingChatFile[];
   nextcloudRefs?: NextcloudRef[];
@@ -354,6 +355,7 @@ export const MessageInput = (props: {
               trigger={<span class="i ti ti-plus text-[13px]" />}
               triggerClass="flex h-7 w-7 items-center justify-center rounded-md text-gh-fg-subtle hover:text-gh-fg hover:bg-gh-overlay transition-colors"
               items={[
+                ...(props.onNewChat ? [{ icon: "ti-message-plus", label: "New chat", onClick: () => props.onNewChat?.() }, { divider: true as const }] : []),
                 { icon: "ti-paperclip", label: "Add files", onClick: () => fileInputRef.click() },
                 { icon: "ti-folder", label: "Add folder", onClick: () => folderInputRef.click() },
                 ...(props.isNextcloudConfigured ? [{ icon: "ti-brand-nextcloud", label: "Nextcloud", onClick: () => props.onOpenNextcloudBrowser?.() }] : []),

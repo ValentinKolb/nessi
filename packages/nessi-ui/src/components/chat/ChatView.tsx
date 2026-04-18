@@ -224,7 +224,7 @@ const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
 
     const blocks: UIBlock[] = [];
     for (const block of content) {
-      if (block.type === "text" && block.text) {
+      if (block.type === "text" && block.text?.trim()) {
         blocks.push({ type: "text", text: block.text });
       } else if (block.type === "thinking" && block.thinking) {
         blocks.push({ type: "thinking", text: block.thinking });
@@ -287,20 +287,36 @@ const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
       ? Math.max(0, new Date(entry.createdAt).getTime() - new Date(lastUserTimestamp).getTime())
       : undefined;
 
-    messages.push({
-      id: msgId(),
-      role: "assistant",
-      blocks,
-      meta: {
-        entrySeq: entry.seq,
-        timestamp: entry.createdAt,
-        startedAt: lastUserTimestamp,
-        model: message.model,
-        usage: message.usage,
-        stopReason: message.stopReason,
-        durationMs,
-      },
-    });
+    // Merge consecutive assistant entries into a single UI message (matches live behavior)
+    const prev = messages[messages.length - 1];
+    if (prev && prev.role === "assistant") {
+      (prev as UIAssistantMessage).blocks.push(...blocks);
+      // Update meta with latest entry info
+      const meta = (prev as UIAssistantMessage).meta;
+      if (meta) {
+        meta.entrySeq = entry.seq;
+        meta.timestamp = entry.createdAt;
+        meta.model = message.model ?? meta.model;
+        meta.usage = message.usage ?? meta.usage;
+        meta.stopReason = message.stopReason ?? meta.stopReason;
+        if (durationMs !== undefined) meta.durationMs = durationMs;
+      }
+    } else {
+      messages.push({
+        id: msgId(),
+        role: "assistant",
+        blocks,
+        meta: {
+          entrySeq: entry.seq,
+          timestamp: entry.createdAt,
+          startedAt: lastUserTimestamp,
+          model: message.model,
+          usage: message.usage,
+          stopReason: message.stopReason,
+          durationMs,
+        },
+      });
+    }
   }
 
   return messages;
@@ -328,6 +344,7 @@ export const ChatView = (props: {
   onProviderChange?: (id: string) => void;
   onOpenSettings?: () => void;
   onSessionComplete?: (payload: { chatId: string; finishedAt: string; preview: string }) => void;
+  onNewChat?: () => void;
 }) => {
   const [state, setState] = createStore<ChatState>({ messages: [], streaming: false });
   const [pendingImages, setPendingImages] = createSignal<Array<Extract<UIUserContentPart, { type: "image" }>>>([]);
@@ -1466,6 +1483,7 @@ export const ChatView = (props: {
           onOpenNextcloudBrowser={() => setNextcloudBrowserOpen(true)}
           onOpenGitHubBrowser={() => setGitHubBrowserOpen(true)}
           onOpenTerminal={() => setTerminalOpen(true)}
+          onNewChat={props.onNewChat}
           images={pendingImages()}
           files={pendingFiles()}
           nextcloudRefs={nextcloudRefs()}

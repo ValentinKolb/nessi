@@ -10,7 +10,7 @@ export type PopoverMenuItem = {
   /** Optional secondary label shown right-aligned and muted. */
   detail?: string;
   onClick: () => void;
-};
+} | { divider: true };
 
 const ItemIcon = (props: { icon?: string; iconUrl?: string }) => (
   <Show
@@ -81,16 +81,20 @@ export const PopoverMenu = (props: {
         <div>
           <For each={props.items}>
             {(item) => (
-              <button
-                class="w-full flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-gh-fg-muted hover:bg-gh-overlay hover:text-gh-fg transition-colors text-left"
-                onClick={() => { haptics.tap(); item.onClick(); close(); }}
-              >
-                <ItemIcon icon={item.icon} iconUrl={item.iconUrl} />
-                <span class="flex-1">{item.label}</span>
-                <Show when={item.detail}>
-                  <span class="text-[11px] text-gh-fg-subtle">{item.detail}</span>
-                </Show>
-              </button>
+              <Show when={"divider" in item} fallback={
+                <button
+                  class="w-full flex items-center gap-2.5 px-3 py-1.5 text-[13px] text-gh-fg-muted hover:bg-gh-overlay hover:text-gh-fg transition-colors text-left"
+                  onClick={() => { haptics.tap(); (item as Exclude<PopoverMenuItem, { divider: true }>).onClick(); close(); }}
+                >
+                  <ItemIcon icon={(item as any).icon} iconUrl={(item as any).iconUrl} />
+                  <span class="flex-1">{(item as any).label}</span>
+                  <Show when={(item as any).detail}>
+                    <span class="text-[11px] text-gh-fg-subtle">{(item as any).detail}</span>
+                  </Show>
+                </button>
+              }>
+                <div class="border-t border-gh-border-muted" />
+              </Show>
             )}
           </For>
         </div>

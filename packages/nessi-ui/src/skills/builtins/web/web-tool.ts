@@ -16,6 +16,25 @@ const getApiKey = () => {
   }
 };
 
+/** Accept urls as: array, JSON-encoded string, or single URL string. */
+const coerceUrlArray = z.union([
+  z.array(z.string().url()),
+  z.string().transform((s, ctx) => {
+    // Try JSON parse first: "[\"https://...\"]"
+    const trimmed = s.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed) && parsed.every((v: unknown) => typeof v === "string")) return parsed as string[];
+      } catch { /* fall through */ }
+    }
+    // Single URL
+    if (/^https?:\/\//i.test(trimmed)) return [trimmed];
+    ctx.addIssue({ code: "custom", message: "Expected a URL or array of URLs" });
+    return [];
+  }),
+]).pipe(z.array(z.string().url()).min(1).max(5));
+
 const webInputSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("search"),
@@ -29,7 +48,7 @@ const webInputSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("extract"),
-    urls: z.array(z.string().url()).min(1).max(5).describe(
+    urls: coerceUrlArray.describe(
       "One to five absolute URLs to read. Example: ['https://example.com/article']",
     ),
   }),

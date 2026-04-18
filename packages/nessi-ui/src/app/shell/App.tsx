@@ -270,6 +270,7 @@ export const App = () => {
           onProviderChange={handleProviderChange}
           onOpenSettings={openSettings}
           onSessionComplete={handleSessionComplete}
+          onNewChat={newChat}
         />
       </div>
 
