@@ -4,6 +4,7 @@ import { haptics } from "../../shared/browser/haptics.js";
 
 const TAVILY_KEY = "nessi:tavily";
 const GITHUB_KEY = "nessi:github";
+const TWELVEDATA_KEY = "nessi:twelvedata";
 const NEXTCLOUD_KEY = "nessi:nextcloud";
 
 const useApiKey = (storageKey: string) => {
@@ -82,6 +83,7 @@ export const ApiKeys = (props: {
 }) => {
   const tavily = useApiKey(TAVILY_KEY);
   const github = useApiKey(GITHUB_KEY);
+  const twelvedata = useApiKey(TWELVEDATA_KEY);
   const nc = useNextcloudConfig();
 
   return (
@@ -138,6 +140,28 @@ export const ApiKeys = (props: {
         <Show when={github.dirty() || github.saved()}>
           <button class="btn-primary" onClick={github.save}>
             {github.saved() ? "saved!" : "save"}
+          </button>
+        </Show>
+      </div>
+
+      {/* Twelve Data */}
+      <div class="ui-subpanel p-2 space-y-2">
+        <label class="block">
+          <span class="text-[13px] text-gh-fg-muted flex items-center gap-1.5"><span class="i ti ti-chart-line text-sm" />Twelve Data</span>
+          <p class="settings-desc mt-0.5">
+            Stock market data. Get a free API key at <a href="https://twelvedata.com" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-gh-fg">twelvedata.com</a>.
+          </p>
+          <input
+            type="password"
+            class="mt-1 ui-input"
+            placeholder="API key"
+            value={twelvedata.value()}
+            onInput={(e) => twelvedata.setValue(e.currentTarget.value)}
+          />
+        </label>
+        <Show when={twelvedata.dirty() || twelvedata.saved()}>
+          <button class="btn-primary" onClick={twelvedata.save}>
+            {twelvedata.saved() ? "saved!" : "save"}
           </button>
         </Show>
       </div>
