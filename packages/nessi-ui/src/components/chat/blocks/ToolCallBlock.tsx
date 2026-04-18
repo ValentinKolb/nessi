@@ -49,7 +49,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
           const urlCount = Array.isArray(urls) ? urls.length : 1;
           return `reading ${urlCount} page${urlCount !== 1 ? "s" : ""}`;
         }
-        return `"${stringArg(args, "query", "")}"`;
+        return stringArg(args, "query", "search");
       },
       present: () => {
         const p = stringArg(args, "path", "");

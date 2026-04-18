@@ -230,11 +230,53 @@ const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
         blocks.push({ type: "thinking", text: block.thinking });
       } else if (block.type === "tool_call" && block.id && block.name) {
         const result = toolResults.get(block.id);
+        const args = (block.args ?? {}) as Record<string, unknown>;
+
+        // Reconstruct client-tool UI blocks from persisted tool_call data
+        if (block.name === "card") {
+          blocks.push({
+            type: "card",
+            layout: args.layout as UICardBlock["layout"],
+            data: args.data as Record<string, unknown> | undefined,
+            content: typeof args.content === "string" ? args.content : undefined,
+          });
+          continue;
+        }
+
+        if (block.name === "survey") {
+          const rawQ = args.questions;
+          const questions = typeof rawQ === "string"
+            ? parseSurveyQuestions(rawQ)
+            : Array.isArray(rawQ) ? rawQ as Array<{ question: string; options: string[] }> : [];
+          if (questions.length > 0) {
+            const resultText = typeof result?.result === "object" && result.result !== null
+              ? (result.result as Record<string, string>).result ?? ""
+              : typeof result?.result === "string" ? result.result : "";
+            const answers: Record<string, string> = {};
+            if (resultText) {
+              for (const line of String(resultText).split("\n")) {
+                const sep = line.indexOf(":");
+                if (sep > 0) answers[line.slice(0, sep).trim()] = line.slice(sep + 1).trim();
+              }
+            }
+            blocks.push({
+              type: "survey",
+              callId: block.id,
+              title: typeof args.title === "string" ? args.title : undefined,
+              questions,
+              submitted: result !== undefined,
+              answers: Object.keys(answers).length > 0 ? answers : undefined,
+            });
+            continue;
+          }
+        }
+
+        // Default: generic tool_call block
         blocks.push({
           type: "tool_call",
           callId: block.id,
           name: block.name,
-          args: block.args ?? {},
+          args,
           result: result?.result,
           isError: result?.isError,
         });
