@@ -806,6 +806,11 @@ export const ChatView = (props: {
           attentionFeedbackSentForTurn = true;
           haptics.nudge();
         }
+        // Client tools with custom UI (card, survey) render their own blocks
+        // via action_request — don't create a generic tool_call block for them
+        const isClientUiTool = event.name === "card" || event.name === "survey";
+        if (isClientUiTool) break;
+
         const idx = appendBlock({
           type: "tool_call",
           callId: event.callId,

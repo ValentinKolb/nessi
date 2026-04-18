@@ -154,12 +154,26 @@ const TableLayout = (props: { data: TableData }) => (
 /*  Main component                                                    */
 /* ------------------------------------------------------------------ */
 
+/** Safely extract an array from a field that might be a JSON string or already an array. */
+const toArray = (val: unknown): unknown[] => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") try { const p = JSON.parse(val); if (Array.isArray(p)) return p; } catch { /* ignore */ }
+  return [];
+};
+
+const normalizeData = (d: Record<string, unknown>): Record<string, unknown> => ({
+  ...d,
+  items: d.items ? toArray(d.items) : undefined,
+  rows: d.rows ? toArray(d.rows) : undefined,
+  columns: d.columns ? toArray(d.columns) : undefined,
+});
+
 const layouts: Record<string, (data: Record<string, unknown>) => ReturnType<typeof MetricLayout>> = {
   metric: (d) => <MetricLayout data={d as unknown as MetricData} />,
-  rows: (d) => <RowsLayout data={d as unknown as RowsData} />,
-  compare: (d) => <CompareLayout data={d as unknown as CompareData} />,
-  checklist: (d) => <ChecklistLayout data={d as unknown as ChecklistData} />,
-  table: (d) => <TableLayout data={d as unknown as TableData} />,
+  rows: (d) => <RowsLayout data={normalizeData(d) as unknown as RowsData} />,
+  compare: (d) => <CompareLayout data={normalizeData(d) as unknown as CompareData} />,
+  checklist: (d) => <ChecklistLayout data={normalizeData(d) as unknown as ChecklistData} />,
+  table: (d) => <TableLayout data={normalizeData(d) as unknown as TableData} />,
 };
 
 export const CardBlock = (props: { block: UICardBlock }) => {
