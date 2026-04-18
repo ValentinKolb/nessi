@@ -115,6 +115,89 @@ If you gave advice based on bad info, explain what changed.
 
 ---
 
+### Agentic Persistence
+
+**What:** Keep working through multi-step tasks until the job is truly done. Don't yield back after one step.
+
+**Pattern:**
+```
+Keep going until the user's request is fully resolved.
+Don't stop after one tool call if the task needs more.
+Don't ask the user to do things you could do yourself.
+Only yield when: the task is done, you're genuinely stuck after 3+ attempts,
+or you need information only the user can provide.
+```
+
+**Source:** Cursor v1.0–v2.0, Claude Code, Codex CLI — all have variants.
+**Model size:** Mid+. Small models may loop indefinitely without clear exit conditions. For small models, use bounded retry: "If the first approach fails, try one alternative. If that also fails, explain and ask."
+
+**Anti-pattern to prevent:**
+```
+BAD: "I could try fixing the error. Would you like me to?"
+BAD: "The first approach didn't work. Want me to try another?"
+GOOD: [tries alternative, reports outcome]
+GOOD: [after 3 failed approaches] "I've tried X, Y, and Z — none worked. Here's what I'd need: ..."
+```
+
+**Key difference from Action Bias:** Action Bias is about doing vs. describing (one step). Agentic Persistence is about continuing vs. yielding (the whole task). Both are needed.
+
+See `references/10-agentic-workflows.md` for the full treatment of agent loops and persistence.
+
+---
+
+### Progress Communication
+
+**What:** Give the user natural status updates during multi-step work. Not formal reports — conversational notes.
+
+**Pattern:**
+```
+During multi-step tasks, briefly mention what you're doing between steps.
+Not: "I will now proceed to search for..."
+Not: "[silence for 30 seconds]"
+But: "Found the issue — the config is missing a field. Fixing now."
+```
+
+**Source:** Cursor v2.0 status_update_spec, Codex CLI preamble messages.
+**Model size:** Large models. Mid-size models can handle one rule: "For multi-step tasks, briefly mention what you're doing." Small models: skip — adds complexity without benefit.
+
+**Examples (from Codex CLI):**
+```
+GOOD: "Ok cool, I've wrapped my head around the repo. Now digging into the API routes."
+GOOD: "Interesting — there's a discrepancy between the types and the runtime. Let me check."
+BAD: "I will now proceed to examine the repository structure." (too formal)
+BAD: "Searching..." (too terse, no context)
+```
+
+---
+
+### Procedural Self-Correction
+
+**What:** When the agent violates its own workflow, it catches and fixes the violation immediately. This is about process errors, not factual errors (see Self-Correction for facts).
+
+**Pattern:**
+```
+If you realize you skipped a step in your workflow — go back and do it.
+Don't pretend it didn't happen. A brief "Missed a step — fixing that" is enough.
+Don't apologize at length.
+
+Watch for:
+- Using a skill without reading its docs first
+- Giving an answer without checking tools
+- Claiming a task is done without verifying
+- Making changes without reading the current state
+```
+
+**Source:** Cursor v2.0 non-compliance mandate.
+**Model size:** Large models only. Small and mid-size models struggle to self-assess process compliance.
+
+**Cursor's exact wording:**
+```
+If you fail to call todo_write to check off tasks before
+claiming them done, self-correct in the next turn immediately.
+```
+
+---
+
 ## 2. Reasoning patterns
 
 ### Chain of Thought (Zero-Shot)
@@ -265,6 +348,35 @@ For every user message:
 
 **Source:** Nessi prompt, ChatGPT conversation flow.
 **Model size:** Mid+. Small models do better with simpler "always do X" rules.
+
+---
+
+### Autonomy Gate
+
+**What:** A decision tree for when the agent should act vs. ask the user.
+
+**Pattern:**
+```
+Can I proceed without user input?
+├── I have all the information I need
+│   ├── The action is safe → ACT
+│   └── The action could be destructive → ASK FIRST
+├── I'm missing information
+│   ├── I can find it with my tools → FIND IT, THEN ACT
+│   └── Only the user knows this → ASK
+└── Multiple valid approaches exist
+    ├── One is clearly better → ACT
+    └── Trade-offs are real → ASK WHICH ONE
+```
+
+**Source:** Synthesized from Codex CLI's permission model, Windsurf's safety rules, Claude Code's proactiveness boundary.
+**Model size:** All. For small models, simplify to: "If safe, do it. If risky, ask. If unclear, ask."
+
+**Codex CLI's ambition calibration (related):**
+```
+For new tasks with no prior context: be ambitious and creative.
+For tasks in an existing system: be surgical and precise.
+```
 
 ---
 

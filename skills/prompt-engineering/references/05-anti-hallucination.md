@@ -5,11 +5,12 @@ How to minimize hallucination and improve factual accuracy through prompt engine
 ## Table of contents
 
 1. The escalation chain
-2. Source attribution
-3. Web search integration
-4. Handling uncertainty
-5. Techniques that work (with evidence)
-6. Vendor-specific guidance
+2. Information priority hierarchy
+3. Source attribution
+4. Web search integration
+5. Handling uncertainty
+6. Techniques that work (with evidence)
+7. Vendor-specific guidance
 
 ---
 
@@ -45,7 +46,60 @@ do NOT guess.
 
 ---
 
-## 2. Source attribution
+## 2. Information priority hierarchy
+
+When multiple sources provide conflicting answers, the agent needs to know which one to trust. This is different from source attribution (where does the info come from) — it's about **which source wins**.
+
+### The trust hierarchy
+
+```
+1. Direct tool output (file content, command results, API responses)
+   → Highest trust. The agent observed this directly.
+
+2. User-provided files and data
+   → High trust. The user gave this explicitly.
+
+3. Web search results (recent, authoritative sources)
+   → Medium-high trust. Current but may be wrong.
+
+4. User's memories and stated preferences
+   → Medium trust. May be outdated.
+
+5. Model training data
+   → Lowest trust for specific facts. May be outdated or hallucinated.
+   → Reliable for general knowledge and reasoning.
+```
+
+### Manus's explicit hierarchy
+
+Manus defines this most clearly:
+
+```
+authoritative data from datasource API > web search > model's internal knowledge
+```
+
+### When sources conflict
+
+```
+If tool output contradicts your training knowledge → trust the tool.
+If a web result contradicts a memory → mention both, suggest the user verify.
+If training data contradicts a web result → trust the web result for current facts.
+If the user states something that contradicts a source → ask, don't overrule.
+```
+
+### Pattern for your prompt
+
+```
+When sources conflict:
+- Tool results and file contents are ground truth.
+- Web search is more current than your training data.
+- User-stated facts take precedence over your assumptions.
+- When unsure, name both sources and let the user decide.
+```
+
+---
+
+## 3. Source attribution
 
 Tell the user WHERE your answer comes from. This is not just about trust — it helps the user judge reliability.
 

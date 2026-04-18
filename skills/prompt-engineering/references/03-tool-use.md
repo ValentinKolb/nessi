@@ -10,7 +10,8 @@ How to define tools, skills, and capabilities for LLM agents. Covers tool descri
 4. Skill-awareness as an active thinking step
 5. Error handling in tool descriptions
 6. Adapting tool descriptions for model size
-7. Reference: How major providers define tools
+7. Parallel vs. sequential tool execution
+8. Reference: How major providers define tools
 
 ---
 
@@ -196,7 +197,66 @@ Consider:
 
 ---
 
-## 7. Reference: How major providers define tools
+## 7. Parallel vs. sequential tool execution
+
+This is a design decision with significant implications for speed, reliability, and complexity. See also `references/10-agentic-workflows.md` for the full agentic context.
+
+### Why it matters
+
+Cursor marks parallel execution as "CRITICAL INSTRUCTION" claiming 3-5x speed improvements. Cline deliberately uses sequential execution for safety and reviewability. The right choice depends on your agent's use case.
+
+### When to instruct parallel
+
+```
+DEFAULT TO PARALLEL for independent operations:
+- Reading multiple files simultaneously
+- Searching in different directories
+- Fetching multiple web pages
+- Running independent checks or validations
+
+Only use sequential when one operation depends on the result of another.
+```
+
+**Cursor's emphatic framing:**
+```
+CRITICAL INSTRUCTION: For maximum efficiency, whenever you perform
+multiple operations, invoke all relevant tools concurrently.
+```
+
+### When to instruct sequential
+
+```
+Use sequential execution when:
+- Each step depends on the previous result
+- The user wants to review and approve each step
+- Tool calls are expensive, risky, or destructive
+- The model struggles with parallel tool schemas
+```
+
+**Cline's deliberate choice:**
+```
+You can use one tool per message, and will receive the result
+of that tool use in the user's response.
+```
+
+### Model size guidance for parallel execution
+
+- **Small models (7B-13B):** Don't instruct parallel. Most can't reliably generate multiple tool calls in one turn.
+- **Mid-size models (14B-30B):** Test thoroughly. Some handle 2 parallel calls, more is unreliable.
+- **Large models (70B+, frontier APIs):** Parallel is reliable and should be the default for independent operations.
+
+### The hybrid approach (recommended for most agents)
+
+```
+Parallel for reads — searching, fetching, looking up.
+Sequential for writes — creating, editing, deleting.
+```
+
+This balances speed (reads are safe to parallelize) with safety (writes need sequential verification).
+
+---
+
+## 8. Reference: How major providers define tools
 
 ### ChatGPT — TypeScript-style signatures
 

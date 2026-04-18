@@ -10,7 +10,9 @@ How to write effective system prompts for LLM-based assistants and agents. Based
 4. Rules and behavioral constraints
 5. Formatting and structuring techniques
 6. Adapting for model size
-7. Common mistakes
+7. Beyond turn-based: alternative architectures
+8. Context limits and prompt resilience
+9. Common mistakes
 
 ---
 
@@ -305,7 +307,77 @@ A prompt that works perfectly on GPT-4 often fails completely on a 13B model. Th
 
 ---
 
-## 7. Common mistakes
+## 7. Beyond turn-based: alternative architectures
+
+Most system prompts assume a turn-based conversation: user sends message → agent responds. But production agentic systems increasingly use different models.
+
+### Event-driven architecture (Manus AI)
+
+Manus processes a chronological event stream rather than conversation turns:
+
+```
+Event types:
+- Message — user or agent communication
+- Action — tool call and its result
+- Observation — outcome of an action
+- Plan — current task plan and status
+- Knowledge — retrieved context or documents
+- Datasource — API query results
+```
+
+The agent receives the full stream and decides what to do next based on all accumulated events. This enables:
+- Richer state than just "last user message"
+- Interleaved planning, action, and observation
+- Background processes that inject events (monitoring, scheduled checks)
+
+### Steering files (Kiro)
+
+Kiro uses persistent `.kiro/steering/*.md` files instead of packing everything into the system prompt:
+
+```
+Inclusion modes:
+- Always — loaded with every conversation
+- Conditional — loaded when a file pattern matches (e.g., "*.tsx")
+- Manual — loaded when user references it by name
+```
+
+This is effectively a modular system prompt that adapts to context without consuming tokens for irrelevant sections.
+
+### Implications for prompt design
+
+If you're designing an agent that goes beyond simple Q&A:
+- Consider what "state" the agent should see beyond the conversation
+- Runtime-injected context (memories, files, skills) is a step toward event-driven design
+- Modular prompts that load sections conditionally keep token budgets manageable
+- For details on designing iterative agent loops, see `references/10-agentic-workflows.md`
+
+---
+
+## 8. Context limits and prompt resilience
+
+What happens when conversation + prompt + dynamic context approaches the model's context window?
+
+### The problem
+
+Dynamic context sections (memories, file lists, skill descriptions) grow over time. A prompt that fits in 4K tokens at launch may exceed 8K after months of accumulated memories and skills.
+
+### Strategies
+
+**Token budgeting:** Allocate a fixed budget per dynamic section. If memories exceed the budget, prioritize by category (facts > preferences > projects > followups) and append a note: "(N more memories not shown)".
+
+**Conditional injection:** Only inject sections relevant to the current task. Kiro does this with file-pattern matching. ChatGPT does it with separate "always" vs. "on-demand" context blocks.
+
+**Graceful truncation:** If the prompt must be shortened, cut from the MIDDLE (tool descriptions, formatting rules) not from the START (identity, critical rules) or END (dynamic context). The middle gets least attention anyway.
+
+**Compaction triggers:** When dynamic context grows too large, trigger background agents to consolidate (see `references/06-background-agents.md`).
+
+### The golden rule
+
+Test your prompt at maximum expected size, not just at launch size. A prompt that works with 5 memories may behave differently with 50.
+
+---
+
+## 9. Common mistakes
 
 **Too long.** Every token competes for attention. If a rule doesn't change behavior, remove it.
 

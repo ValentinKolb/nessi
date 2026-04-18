@@ -1,11 +1,11 @@
 ---
 name: prompt-engineering
-description: "Comprehensive guide to writing system prompts, memory systems, tool descriptions, and agent architectures for LLMs. Use this skill whenever someone needs to write, review, or improve a system prompt, design a memory/personalization system, define tools for an agent, write prompts for coding agents, create background/sub-agent prompts, or reduce hallucination in LLM outputs. Also use when someone asks about how ChatGPT, Claude, Gemini, or other AI products structure their prompts — this skill contains analysis of leaked and official system prompts from all major providers. Trigger for any mention of: system prompt, prompt engineering, agent prompt, memory system, tool description, anti-hallucination, prompt injection defense, coding agent, background agent, sub-agent, prompt patterns, personality definition, or self-calibration."
+description: "Comprehensive guide to writing system prompts, memory systems, tool descriptions, agentic workflows, and agent architectures for LLMs. Use this skill whenever someone needs to write, review, or improve a system prompt, design a memory/personalization system, define tools for an agent, design agentic workflows (persistence, planning, progress tracking, autonomy levels), write prompts for coding agents, create background/sub-agent prompts, or reduce hallucination in LLM outputs. Also use when someone asks about how ChatGPT, Claude, Claude Code, Cursor, Gemini, Manus, Devin, or other AI products structure their prompts — this skill contains analysis of leaked and official system prompts from all major providers and 10+ agentic tools. Trigger for any mention of: system prompt, prompt engineering, agent prompt, agentic workflow, agent loop, task persistence, plan tracking, progress updates, autonomy level, permission model, parallel tool calls, memory system, tool description, anti-hallucination, prompt injection defense, coding agent, background agent, sub-agent, prompt patterns, personality definition, self-calibration, or self-correction."
 ---
 
 # Prompt Engineering Skill
 
-A comprehensive reference for writing production-quality prompts for LLM-based agents and assistants. Based on analysis of leaked system prompts from OpenAI (GPT-5), Anthropic (Claude Opus/Sonnet, Claude Code), Google (Gemini), xAI (Grok), Mistral (Le Chat), and open-source coding agents (Aider, pi-coding-agent, OpenCode, Cursor, Windsurf).
+A comprehensive reference for writing production-quality prompts for LLM-based agents and assistants. Based on analysis of system prompts from OpenAI (GPT-5, Codex CLI), Anthropic (Claude Opus/Sonnet, Claude Code v2.0), Google (Gemini, Gemini CLI), xAI (Grok), Mistral (Le Chat), and 10+ agentic tools (Cursor, Windsurf, Devin, Manus, Copilot, Cline, Kiro, Aider, pi-coding-agent, OpenCode).
 
 ## How to use this skill
 
@@ -26,6 +26,7 @@ Then read the module(s) specific to your task:
 | Writing prompts for coding agents | `references/07-coding-agents.md` |
 | Reusable prompt patterns and anti-patterns | `references/08-prompt-patterns.md` |
 | Full reference prompts from production systems | `references/09-reference-prompts.md` |
+| Designing agentic workflows (persistence, loops, planning, progress, autonomy) | `references/10-agentic-workflows.md` |
 
 ## Universal principles
 
@@ -54,8 +55,9 @@ These apply to ALL prompt writing, regardless of module:
 ## Sources and references
 
 This skill synthesizes findings from:
-- Leaked system prompts: ChatGPT/GPT-5 (Aug 2025), Claude Opus 4.6, Claude Code (source leak Mar 2026), Gemini 3 Flash (Jan 2026), Grok 4, Mistral Le Chat
+- Leaked system prompts: ChatGPT/GPT-5 (Aug 2025), Claude Opus 4.6, Claude Code v2.0 (Sep 2025), Gemini 3 Flash (Jan 2026), Grok 4, Mistral Le Chat
+- Agentic tool prompts: Cursor v1.0–v2.0 (GPT-5), Windsurf/Cascade Wave 11, Devin AI, Manus AI (event-driven), GitHub Copilot (VSCode Agent), Kiro (AWS), OpenAI Codex CLI, Google Gemini CLI, Cline
 - Official docs: Anthropic prompt engineering guide, OpenAI GPT-4.1 prompting guide, Google Gemini 3 prompting guide, Mistral prompting docs
-- Open-source agents: Aider, pi-coding-agent (@mariozechner), OpenCode, Cursor, Windsurf/Cascade
+- Open-source agents: Aider, pi-coding-agent (@mariozechner), OpenCode
 - Memory frameworks: Mem0, Letta/MemGPT, Claude Code Auto Dream
 - Research: MemGPT paper (arXiv:2310.08560), Sleep-time Compute (arXiv:2504.13171), LoCoMo benchmark, LongMemEval
