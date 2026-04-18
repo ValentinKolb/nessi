@@ -7,14 +7,16 @@ export const surveyToolDef = defineTool({
     "Show an interactive survey card to collect user choices. Use BEFORE starting complex tasks " +
     "where you need user decisions on approach, format, scope, or style. One survey replaces multiple " +
     "back-and-forth messages. Call this tool directly — do NOT use bash for surveys.\n" +
-    "The questions parameter uses a simple pipe format: \"Question? | Option A | Option B\". " +
-    "Separate multiple questions with newlines.\n" +
-    "Example: {\"title\":\"Project Setup\",\"questions\":\"Language? | TypeScript | Python | Go\\nInclude tests? | Yes | No\"}",
+    "The questions parameter uses pipe format: \"Question? | Option A | Option B\". " +
+    "Separate multiple questions with newlines. Each line needs a question followed by 2+ options separated by |.\n" +
+    "Example: {\"title\":\"Setup\",\"questions\":\"Language? | TypeScript | Python | Go\\nTests? | Yes | No\"}\n" +
+    "For a single choice with many options: {\"title\":\"What to analyze?\",\"questions\":\"Analysis type | Revenue | Trends | Distribution | All\"}",
   inputSchema: z.object({
     title: z.string().optional().describe("Optional heading shown above the survey card."),
     questions: z.string().describe(
-      "One question per line in pipe format: \"Question? | Option A | Option B | Option C\". " +
-      "Example: \"Language? | TypeScript | Python\\nTests? | Yes | No\"",
+      "Pipe format: \"Question? | Option A | Option B\". One line per question, 2+ options each. " +
+      "Example single choice: \"What to do? | Option A | Option B | Option C\". " +
+      "Example multi: \"Language? | TS | Python\\nFormat? | JSON | CSV\"",
     ),
   }),
   outputSchema: z.object({
@@ -27,7 +29,7 @@ export const surveyToolDef = defineTool({
 export const parseSurveyQuestions = (raw: string): Array<{ question: string; options: string[] }> => {
   const questions: Array<{ question: string; options: string[] }> = [];
 
-  // Try JSON first (in case a smarter model sends the structured format)
+  // Try JSON first (in case the model sends structured format)
   if (raw.trimStart().startsWith("[")) {
     try {
       const parsed = JSON.parse(raw);
@@ -43,11 +45,28 @@ export const parseSurveyQuestions = (raw: string): Array<{ question: string; opt
   }
 
   // Pipe format: "Question? | Option A | Option B"
-  for (const line of raw.split("\n")) {
+  // Also handles lines with only 2 parts as options for a single question
+  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  for (const line of lines) {
     const parts = line.split("|").map((p) => p.trim()).filter(Boolean);
     if (parts.length >= 3) {
       const [question, ...options] = parts;
       questions.push({ question: question!, options });
+    }
+  }
+
+  // Fallback: if no valid pipe questions found but multiple lines exist,
+  // treat all lines as options for a single choice (the title becomes the question)
+  if (questions.length === 0 && lines.length >= 2) {
+    const options: string[] = [];
+    for (const line of lines) {
+      const parts = line.split("|").map((p) => p.trim()).filter(Boolean);
+      // Take just the first part as the option label
+      if (parts[0]) options.push(parts[0]);
+    }
+    if (options.length >= 2) {
+      questions.push({ question: "Choose an option", options });
     }
   }
 

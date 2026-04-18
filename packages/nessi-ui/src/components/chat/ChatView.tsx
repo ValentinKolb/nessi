@@ -832,7 +832,9 @@ export const ChatView = (props: {
               callId: event.callId,
               result: {
                 result:
-                  "Error: survey requires questions in pipe format. Example: {\"title\":\"Setup\",\"questions\":\"Language? | TypeScript | Python\\nTests? | Yes | No\"}",
+                  "Error: survey questions could not be parsed. Format: each line needs a question followed by 2+ options separated by |. " +
+                  "Example: {\"title\":\"Setup\",\"questions\":\"Language? | TypeScript | Python | Go\\nTests? | Yes | No\"}. " +
+                  "For a single choice: {\"questions\":\"What to do? | Option A | Option B | Option C\"}",
               },
             });
             break;

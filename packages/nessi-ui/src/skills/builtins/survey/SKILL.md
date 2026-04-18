@@ -9,41 +9,50 @@ metadata:
 
 # Survey
 
-Collect structured input from the user via an interactive survey UI.
+Collect structured input from the user via an interactive survey card. The survey tool is a **direct tool** — call it by name, not via bash.
 
 ## When to use
 
-Use a survey when:
-- You need to decide between approaches before starting (language, format, detail level, audience)
-- The user asks you to create something and there are reasonable design choices to make
-- You need 2+ pieces of input and asking them one by one would be slow
-- The user says "help me decide", "what do you recommend", or asks you to plan something
-- You're about to start a multi-step task and want to confirm parameters upfront
-- You want to present multiple options or proposals — a survey with clear choices is always better than a text list the user has to reply to
-- The user wants to plan something (trip, project, event) — gather constraints and preferences in one go
+- You need to decide between approaches before starting
+- You want to present options — always use a survey instead of a numbered list in text
+- You need 2+ pieces of input and asking one by one would be slow
+- The user asks you to plan, recommend, or compare
 
-Don't use a survey when:
-- You only need one yes/no answer — just ask in text
-- The user already gave you all the details you need — just do the task
-- The answer is obvious from context or memories
+Don't use when: simple yes/no (ask in text), or the user already gave all details.
 
-## Commands
+## Format
 
-### Ask (JSON format — preferred for 2+ questions)
+The `questions` parameter uses **pipe format**: each line is `Question | Option A | Option B | ...`.
 
-```bash
-survey ask --json '{"title":"Project Setup","questions":[{"question":"Language?","options":["TypeScript","Python","Go"]},{"question":"Include tests?","options":["Yes","No"]}]}'
+### Single choice (most common)
+
+```json
+{
+  "title": "What to analyze?",
+  "questions": "Analysis type | Revenue by region | Trends over time | Customer segmentation | All of the above"
+}
 ```
 
-### Ask (shorthand — good for a single quick choice)
+### Multiple questions
+
+```json
+{
+  "title": "Export Setup",
+  "questions": "Format? | PDF | CSV | Markdown\nDetail level? | Summary | Detailed | Full data"
+}
+```
+
+Separate multiple questions with `\n` (newline).
+
+### Via bash (shorthand for single choice)
 
 ```bash
 survey ask "Output format?" --options "PDF|Markdown|HTML" --title "Export"
 ```
 
-## Notes
+## Rules
 
-- Renders as an interactive card in chat — much better UX than text-based Q&A.
-- Returns plain text question/answer pairs you can use directly.
-- Keep options short and clear (3–6 per question is ideal).
-- Use natural titles that tell the user what they're deciding.
+- Each line needs: `Question | Option1 | Option2` (at least 2 options)
+- Keep options short and clear (3-6 per question)
+- Use descriptive titles so the user knows what they're deciding
+- The result is returned as plain text — use it directly in your next step
