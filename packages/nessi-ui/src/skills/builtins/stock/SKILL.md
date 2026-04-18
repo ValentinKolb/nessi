@@ -69,6 +69,15 @@ If the user asks about a stock but doesn't specify a ticker symbol, ask them. Co
 - Bitcoin → BTC/USD
 - Ethereum → ETH/USD
 
+## Presenting results
+
+For current stock quotes, use the `card` tool (metric layout) to display the result visually. The card tool is a direct tool — call it by name, not via bash.
+
+- Single stock: metric card with price as value, change as subtitle. Use `ti-trending-up` or `ti-trending-down` based on direction.
+- Multiple stocks compared: metric card with items array, one per ticker.
+
+For historical data and charts, use the chart pipeline (stock → chart → present) as shown above.
+
 ## Notes
 
 - All data from Twelve Data API (free tier: 800 requests/day, 8 per minute)

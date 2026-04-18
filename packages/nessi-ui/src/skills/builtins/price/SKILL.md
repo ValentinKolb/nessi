@@ -82,10 +82,16 @@ If the user doesn't specify purity, **ask them**. Common purity marks are stampe
 | 916 | 22K | 91.6% | Indian/Middle Eastern jewelry |
 | 999 | 24K | 99.9% | Pure gold bars/coins |
 
+## Presenting results
+
+After running a price command, use the `card` tool (metric layout) to display the result visually instead of writing it as plain text. The card tool is a direct tool — call it by name, not via bash.
+
+For a single price lookup, use a single metric card. For a valuation with weight and purity, use multiple metrics (items array) to show the key values (weight, purity, material value) at a glance. Add subtitles for context (e.g. "per troy ounce", "33.75g pure gold"). Use icons like `ti-coin`, `ti-currency-euro`, or `ti-scale`.
+
 ### Example conversation flow
 
 User: "Ich habe eine Goldkette, 23 Gramm, was ist die wert?"
 → You don't know the purity yet. Ask: "Welche Feinheit hat die Kette? Das steht oft als Stempel drauf — z.B. 333, 585, oder 750."
 User: "750"
 → Run: `price value gold --weight 23 --purity 750 --currency EUR`
-→ Report the result naturally.
+→ Show the result with the `card` tool (metric layout with items for weight, purity, and value), then add a brief interpretation.

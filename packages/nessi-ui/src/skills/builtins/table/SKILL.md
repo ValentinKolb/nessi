@@ -143,3 +143,4 @@ table replace /input/data.csv --column "status" --old "pending" --new "done" --o
 - **Do not** use `awk`, `node -e`, `python`, `grep`, or manual CSV parsing. This skill handles filtering, aggregation, calculations, counting, grouping, sorting, and export.
 - For XLSX with multiple sheets, use `--sheet "SheetName"`.
 - Pipe query output directly into `chart` for visualization — no manual value extraction needed.
+- **Always show table results via CSV + `present`**, not via the `card` table layout. Write to `--output /output/result.csv`, then call `present /output/result.csv`. This avoids manually copying data into tool arguments and handles any number of rows. The `card` tool is only for small, hand-crafted data — table query results should always flow through files.

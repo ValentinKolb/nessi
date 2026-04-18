@@ -35,6 +35,10 @@ calc date "2024-03-01 + 3 months"
 calc date "now + 30 days"
 ```
 
+## Presenting results
+
+For numeric results, consider using the `card` tool (metric layout) to display the answer visually — especially for results the user will want to reference (prices, percentages, dates). The card tool is a direct tool — call it by name, not via bash. For simple inline answers ("2 + 2 = 4"), plain text is fine.
+
 ## Notes
 
 - Math uses JavaScript expressions (sandboxed via `Function`).
