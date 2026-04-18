@@ -16,10 +16,9 @@ const sanitizeCardHtml = (html: string) =>
   });
 
 /* ------------------------------------------------------------------ */
-/*  Data normalization — handle whatever shape the agent sends        */
+/*  Data normalization                                                */
 /* ------------------------------------------------------------------ */
 
-/** Safely get an array, parsing JSON strings if needed. */
 const asArray = (val: unknown): unknown[] => {
   if (Array.isArray(val)) return val;
   if (typeof val === "string") {
@@ -29,10 +28,6 @@ const asArray = (val: unknown): unknown[] => {
 };
 
 const asString = (val: unknown): string => (val == null ? "" : String(val));
-
-/* ------------------------------------------------------------------ */
-/*  Layout types                                                      */
-/* ------------------------------------------------------------------ */
 
 type D = Record<string, unknown>;
 
@@ -62,76 +57,64 @@ const CardFooter = (props: { text?: string }) => (
 );
 
 /* ------------------------------------------------------------------ */
-/*  Layouts                                                           */
+/*  Metric layout — single or multi-grid                              */
 /* ------------------------------------------------------------------ */
 
-const MetricLayout = (props: { d: D }) => (
-  <div class="ai-card">
-    <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
-    <div class="ai-card-metric">{asString(props.d.value)}</div>
-    <Show when={props.d.subtitle}>
-      <div class="ai-card-subtitle">{asString(props.d.subtitle)}</div>
+const MetricItem = (props: { icon?: string; title?: string; value: string; subtitle?: string }) => (
+  <div class="ai-card-metric-item">
+    <div class="ai-card-metric-label">
+      <Icon name={props.icon} />
+      <Show when={props.title}><span>{props.title}</span></Show>
+    </div>
+    <div class="ai-card-metric-value">{props.value}</div>
+    <Show when={props.subtitle}>
+      <div class="ai-card-subtitle">{props.subtitle}</div>
     </Show>
-    <CardFooter text={asString(props.d.footer)} />
   </div>
 );
 
-const RowsLayout = (props: { d: D }) => {
-  const rows = () => asArray(props.d.rows).map((r) => {
-    if (typeof r === "object" && r !== null) {
-      const o = r as Record<string, unknown>;
-      return { label: asString(o.label), value: asString(o.value), class: asString(o.class) };
+const MetricLayout = (props: { d: D }) => {
+  const items = () => {
+    const raw = props.d.items;
+    if (raw) {
+      return asArray(raw).map((item) => {
+        if (typeof item === "object" && item !== null) {
+          const o = item as D;
+          return { icon: asString(o.icon), title: asString(o.title), value: asString(o.value), subtitle: asString(o.subtitle) };
+        }
+        return { icon: "", title: "", value: String(item), subtitle: "" };
+      });
     }
-    return { label: String(r), value: "", class: "" };
-  });
+    return [{ icon: asString(props.d.icon), title: asString(props.d.title), value: asString(props.d.value), subtitle: asString(props.d.subtitle) }];
+  };
+
+  const isSingle = () => items().length === 1;
 
   return (
     <div class="ai-card">
-      <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
-      <div class="ai-card-rows">
-        <For each={rows()}>
-          {(row, i) => (
-            <div class={`ai-card-row ${i() % 2 === 1 ? "ai-card-row-alt" : ""}`}>
-              <span class="ai-card-label">{row.label}</span>
-              <span class={`ai-card-value ${row.class}`}>{row.value}</span>
-            </div>
-          )}
-        </For>
-      </div>
+      <Show when={isSingle()}>
+        <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
+        <div class="ai-card-metric-value ai-card-metric-value-hero">{items()[0]!.value}</div>
+        <Show when={items()[0]!.subtitle}>
+          <div class="ai-card-subtitle">{items()[0]!.subtitle}</div>
+        </Show>
+      </Show>
+      <Show when={!isSingle()}>
+        <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
+        <div class="ai-card-metric-grid">
+          <For each={items()}>
+            {(item) => <MetricItem icon={item.icon} title={item.title} value={item.value} subtitle={item.subtitle} />}
+          </For>
+        </div>
+      </Show>
       <CardFooter text={asString(props.d.footer)} />
     </div>
   );
 };
 
-const CompareLayout = (props: { d: D }) => {
-  const items = () => asArray(props.d.items).map((item) => {
-    if (typeof item === "object" && item !== null) {
-      const o = item as Record<string, unknown>;
-      return { icon: asString(o.icon), label: asString(o.label), value: asString(o.value) };
-    }
-    return { icon: "", label: String(item), value: "" };
-  });
-
-  return (
-    <div class="ai-card">
-      <CardHeader title={asString(props.d.title)} />
-      <For each={items()}>
-        {(item, i) => (
-          <>
-            <Show when={i() > 0}><div class="ai-card-divider" /></Show>
-            <div class="ai-card-compare-item">
-              <div class="ai-card-compare-label">
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
-              </div>
-              <div class="ai-card-compare-value">{item.value}</div>
-            </div>
-          </>
-        )}
-      </For>
-    </div>
-  );
-};
+/* ------------------------------------------------------------------ */
+/*  Checklist layout                                                  */
+/* ------------------------------------------------------------------ */
 
 const ChecklistLayout = (props: { d: D }) => {
   const items = () => asArray(props.d.items).map((item) => {
@@ -144,7 +127,7 @@ const ChecklistLayout = (props: { d: D }) => {
 
   return (
     <div class="ai-card">
-      <CardHeader title={asString(props.d.title)} />
+      <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
       <div class="ai-card-checklist">
         <For each={items()}>
           {(item) => (
@@ -159,13 +142,17 @@ const ChecklistLayout = (props: { d: D }) => {
   );
 };
 
+/* ------------------------------------------------------------------ */
+/*  Table layout                                                      */
+/* ------------------------------------------------------------------ */
+
 const TableLayout = (props: { d: D }) => {
   const columns = () => asArray(props.d.columns).map(String);
   const rows = () => asArray(props.d.rows).map((r) => asArray(r).map(String));
 
   return (
     <div class="ai-card">
-      <CardHeader title={asString(props.d.title)} />
+      <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
       <div class="ai-card-table-wrap">
         <table class="ai-card-table">
           <Show when={columns().length > 0}>
@@ -186,6 +173,7 @@ const TableLayout = (props: { d: D }) => {
           </tbody>
         </table>
       </div>
+      <CardFooter text={asString(props.d.footer)} />
     </div>
   );
 };
@@ -196,8 +184,8 @@ const TableLayout = (props: { d: D }) => {
 
 const layoutMap: Record<string, (d: D) => ReturnType<typeof MetricLayout>> = {
   metric: (d) => <MetricLayout d={d} />,
-  rows: (d) => <RowsLayout d={d} />,
-  compare: (d) => <CompareLayout d={d} />,
+  compare: (d) => <MetricLayout d={d} />,  // backwards compat
+  rows: (d) => <TableLayout d={d} />,      // backwards compat
   checklist: (d) => <ChecklistLayout d={d} />,
   table: (d) => <TableLayout d={d} />,
 };

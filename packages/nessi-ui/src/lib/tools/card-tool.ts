@@ -4,13 +4,17 @@ import { defineTool } from "nessi-core";
 export const cardToolDef = defineTool({
   name: "card",
   description:
-    "Display a formatted info card in the chat. Use for structured results like prices, stats, status overviews, or comparisons.\n" +
-    "Two modes: (1) Prebuilt layout — set layout + data. (2) Custom HTML — set content with semantic elements.\n" +
-    "Layouts: metric (big number), rows (key-value list), compare (side-by-side values), checklist (tasks), table (mini table).\n" +
-    'Example metric: {"layout":"metric","data":{"icon":"ti-coin","title":"Gold","value":"4,831 €/oz","subtitle":"per troy ounce","footer":"Updated 2s ago"}}\n' +
-    'Example rows: {"layout":"rows","data":{"title":"Details","rows":[{"label":"Weight","value":"23g"},{"label":"Purity","value":"750 (18K)"},{"label":"Value","value":"1,650 €","class":"ok"}]}}',
+    "Display a formatted info card in the chat. Use for structured results like prices, stats, status overviews, or checklists.\n" +
+    "Set layout + data for prebuilt layouts, or set content for custom HTML.\n" +
+    "Layouts: metric (one or multiple big numbers in a grid — also use for comparisons), checklist (tasks with done/pending), table (data table up to ~20 rows).\n" +
+    "Icons are Tabler Icons (prefix ti-). Common: ti-coin, ti-chart-line, ti-chart-bar, ti-trending-up, ti-trending-down, ti-currency-euro, ti-currency-dollar, ti-clock, ti-calendar, ti-user, ti-users, ti-server, ti-database, ti-cpu, ti-world, ti-mail, ti-phone, ti-map-pin, ti-star, ti-heart, ti-check, ti-alert-triangle, ti-info-circle, ti-shopping-cart, ti-home, ti-building, ti-bolt, ti-flame, ti-snowflake, ti-sun.\n" +
+    "Examples:\n" +
+    'metric (single): {"layout":"metric","data":{"icon":"ti-trending-up","title":"Revenue","value":"$128,450","subtitle":"this month","footer":"Updated just now"}}\n' +
+    'metric (multi): {"layout":"metric","data":{"icon":"ti-server","title":"System Health","items":[{"icon":"ti-cpu","title":"CPU","value":"23%","subtitle":"4 cores"},{"icon":"ti-database","title":"Memory","value":"4.2 GB","subtitle":"of 8 GB"},{"icon":"ti-bolt","title":"Latency","value":"12ms","subtitle":"avg response"},{"icon":"ti-clock","title":"Uptime","value":"42d","subtitle":"since last restart"}],"footer":"Last checked: 5s ago"}}\n' +
+    'checklist: {"layout":"checklist","data":{"icon":"ti-list-check","title":"Launch Checklist","items":[{"text":"Database migrated","done":true},{"text":"Tests passing","done":true},{"text":"Deploy to production","done":false}]}}\n' +
+    'table: {"layout":"table","data":{"icon":"ti-users","title":"Team Overview","columns":["Name","Role","Status"],"rows":[["Alice","Engineering","active"],["Bob","Design","on leave"],["Carol","Product","active"]]}}',
   inputSchema: z.object({
-    layout: z.enum(["metric", "rows", "compare", "checklist", "table"]).optional()
+    layout: z.enum(["metric", "checklist", "table"]).optional()
       .describe("Prebuilt layout type. Omit when using custom content HTML."),
     data: z.record(z.string(), z.unknown()).optional()
       .describe("Data for the prebuilt layout. Shape depends on layout type."),
