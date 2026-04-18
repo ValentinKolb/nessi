@@ -1,6 +1,6 @@
 ---
 name: calc
-description: Calculations, date arithmetic, and live currency conversion. Use this instead of guessing or doing mental math — for any numeric expression, date offset ("in 90 days"), or currency conversion at live rates.
+description: "Math expressions and date arithmetic. Use for any numeric calculation or date offset (\"in 90 days\"). For currency conversion, use the price skill instead."
 metadata:
   nessi:
     command: calc
@@ -35,16 +35,8 @@ calc date "2024-03-01 + 3 months"
 calc date "now + 30 days"
 ```
 
-### Currency
-
-```bash
-calc currency 100 --from USD --to EUR
-calc currency 50 --from GBP --to JPY
-```
-
 ## Notes
 
 - Math uses JavaScript expressions (sandboxed via `Function`).
 - Date supports `days`, `weeks`, `months`, and `years` offsets.
-- Currency rates are fetched live from frankfurter.app (no API key needed).
-- All results are returned as plain text.
+- For currency conversion, use `price convert 100 --from USD --to EUR` (the price skill).

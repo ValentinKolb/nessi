@@ -91,23 +91,8 @@ export default function create(api) {
     .sub({
       name: "currency",
       usage: 'currency <amount> --from USD --to EUR',
-      async handler(args) {
-        const amount = parseFloat(positionalArgs(args)[0]);
-        if (!amount || isNaN(amount)) return err("Usage: calc currency 100 --from USD --to EUR");
-        const opts = parseArgs(args);
-        const from = opts.get("from");
-        const to = opts.get("to");
-        if (!from || !to) return err("Both --from and --to are required.");
-        try {
-          const data = await fetchRate(from, to, amount);
-          const rates = data.rates || {};
-          const target = to.toUpperCase();
-          const converted = rates[target];
-          if (converted === undefined) return err(`No rate found for ${target}.`);
-          return ok(`${amount} ${from.toUpperCase()} = ${converted} ${target}\n(Date: ${data.date})\n`);
-        } catch (e) {
-          return err(e instanceof Error ? e.message : "Currency conversion failed.");
-        }
+      async handler() {
+        return err("Currency conversion moved to the price skill. Use: price convert 100 --from USD --to EUR");
       },
     });
 }
