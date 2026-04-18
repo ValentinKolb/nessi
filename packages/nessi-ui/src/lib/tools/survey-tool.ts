@@ -45,29 +45,25 @@ export const parseSurveyQuestions = (raw: string): Array<{ question: string; opt
   }
 
   // Pipe format: "Question? | Option A | Option B"
-  // Also handles lines with only 2 parts as options for a single question
   const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+  const twoPartLines: string[] = [];
 
   for (const line of lines) {
     const parts = line.split("|").map((p) => p.trim()).filter(Boolean);
     if (parts.length >= 3) {
       const [question, ...options] = parts;
       questions.push({ question: question!, options });
+    } else if (parts.length === 2) {
+      // Collect 2-part lines: "Label | Description" → use label as option
+      twoPartLines.push(parts[0]!);
+    } else if (parts.length === 1) {
+      twoPartLines.push(parts[0]!);
     }
   }
 
-  // Fallback: if no valid pipe questions found but multiple lines exist,
-  // treat all lines as options for a single choice (the title becomes the question)
-  if (questions.length === 0 && lines.length >= 2) {
-    const options: string[] = [];
-    for (const line of lines) {
-      const parts = line.split("|").map((p) => p.trim()).filter(Boolean);
-      // Take just the first part as the option label
-      if (parts[0]) options.push(parts[0]);
-    }
-    if (options.length >= 2) {
-      questions.push({ question: "Choose an option", options });
-    }
+  // Fallback: if primary parser found nothing, use collected 2-part/1-part lines as options
+  if (questions.length === 0 && twoPartLines.length >= 2) {
+    questions.push({ question: "Choose an option", options: twoPartLines });
   }
 
   return questions;
