@@ -13,7 +13,7 @@ import type {
   Tool,
 } from "nessi-core";
 import type { Bash } from "just-bash";
-import type { ChatState, UIMessage, UIBlock, UIAssistantMessage, UICompactionBlock } from "./types.js";
+import type { ChatState, UIMessage, UIBlock, UIAssistantMessage, UICompactionBlock, UICardBlock } from "./types.js";
 import { MessageList } from "./MessageList.js";
 import { MessageInput } from "./MessageInput.js";
 import { TerminalView } from "./TerminalView.js";
@@ -818,6 +818,18 @@ export const ChatView = (props: {
           if (idx !== null) {
             approvalBlockIndices.set(event.callId, idx);
           }
+          break;
+        }
+
+        if (event.kind === "client_tool" && event.name === "card") {
+          const args = event.args as { layout?: string; data?: Record<string, unknown>; content?: string };
+          appendBlock({
+            type: "card",
+            layout: args.layout as UICardBlock["layout"],
+            data: args.data,
+            content: args.content,
+          });
+          activeLoop?.push({ type: "tool_result", callId: event.callId, result: { displayed: true } });
           break;
         }
 

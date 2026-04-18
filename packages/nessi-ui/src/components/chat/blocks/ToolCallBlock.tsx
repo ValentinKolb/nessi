@@ -44,18 +44,27 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
       memory_recall: () => "recall all memories",
       web: () => {
         const action = stringArg(args, "action", "search");
-        return action === "extract" ? `web extract ${stringArg(args, "url", "")}` : `web search "${stringArg(args, "query", "")}"`;
+        if (action === "extract") {
+          const urls = args?.urls;
+          const urlCount = Array.isArray(urls) ? urls.length : 1;
+          return `reading ${urlCount} page${urlCount !== 1 ? "s" : ""}`;
+        }
+        return `"${stringArg(args, "query", "")}"`;
       },
       present: () => {
         const p = stringArg(args, "path", "");
-        const filename = p.split("/").pop() ?? p;
-        return filename;
+        return p.split("/").pop() ?? p;
       },
-      file_read: () => `read ${stringArg(args, "path", "")}`,
-      file_write: () => `write ${stringArg(args, "path", "")}`,
-      file_edit: () => `edit ${stringArg(args, "path", "")}`,
-      file_list: () => `ls ${stringArg(args, "path", "/")}`,
-      survey: () => "survey",
+      read_file: () => stringArg(args, "path", "").split("/").pop() ?? "file",
+      write_file: () => stringArg(args, "path", "").split("/").pop() ?? "file",
+      edit_file: () => stringArg(args, "path", "").split("/").pop() ?? "file",
+      list_files: () => `${stringArg(args, "scope", "all")} files`,
+      survey: () => stringArg(args, "title", "survey"),
+      card: () => {
+        const layout = stringArg(args, "layout", "");
+        const data = args?.data as Record<string, unknown> | undefined;
+        return data?.title ? String(data.title) : layout || "card";
+      },
     };
 
     return headlineMap[name]?.() ?? name;
@@ -65,10 +74,12 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
     if (props.block.isError) return "ti-exclamation-circle";
     if (props.block.name === "present") return "ti-folder-open";
     if (props.block.name === "bash") return "ti-tool";
-    if (props.block.name === "web") return "ti-search";
+    if (props.block.name === "web") return "ti-world-search";
     if (props.block.name.startsWith("memory_")) return "ti-brain";
     if (props.block.name === "list_files" || props.block.name === "read_file") return "ti-file-search";
     if (props.block.name === "write_file" || props.block.name === "edit_file") return "ti-file-text-spark";
+    if (props.block.name === "survey") return "ti-list-check";
+    if (props.block.name === "card") return "ti-layout-cards";
     return "";
   };
 

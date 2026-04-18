@@ -12,6 +12,7 @@ const hasAssistantText = (message: UIAssistantMessage) =>
 export const Message = (props: {
   chatId: string;
   message: UIMessage;
+  isLastAssistantInSequence?: boolean;
   canRetryLastUserMessage?: boolean;
   onRetryLastUserMessage?: () => void;
   onApproval?: (callId: string, action: "deny" | "allow" | "always") => void;
@@ -46,7 +47,7 @@ export const Message = (props: {
                 />
               )}
             </For>
-            <Show when={!msg().streaming && hasAssistantText(msg())}>
+            <Show when={!msg().streaming && hasAssistantText(msg()) && props.isLastAssistantInSequence !== false}>
               <AssistantActions message={msg()} />
             </Show>
           </div>

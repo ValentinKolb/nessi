@@ -126,16 +126,24 @@ export const MessageList = (props: {
       >
         <div class="max-w-4xl mx-auto">
           <For each={props.messages}>
-            {(msg) => (
-              <Message
-                chatId={props.chatId}
-                message={msg}
-                canRetryLastUserMessage={props.canRetryMessage?.(msg)}
-                onRetryLastUserMessage={() => props.onRetryMessage?.(msg)}
-                onApproval={props.onApproval}
-                onSurveySubmit={props.onSurveySubmit}
-              />
-            )}
+            {(msg, i) => {
+              const isLastAssistant = () => {
+                if (msg.role !== "assistant") return undefined;
+                const next = props.messages[i() + 1];
+                return !next || next.role !== "assistant";
+              };
+              return (
+                <Message
+                  chatId={props.chatId}
+                  message={msg}
+                  isLastAssistantInSequence={isLastAssistant()}
+                  canRetryLastUserMessage={props.canRetryMessage?.(msg)}
+                  onRetryLastUserMessage={() => props.onRetryMessage?.(msg)}
+                  onApproval={props.onApproval}
+                  onSurveySubmit={props.onSurveySubmit}
+                />
+              );
+            }}
           </For>
           <Show when={props.streaming}>
             <WorkingTimer startedAt={streamingStartedAt()} />
