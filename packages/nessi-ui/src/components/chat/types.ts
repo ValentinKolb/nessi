@@ -42,7 +42,14 @@ export type UICompactionBlock = {
   error?: string;
 };
 
-export type UIBlock = UITextBlock | UIToolCallBlock | UIThinkingBlock | UISurveyBlock | UIApprovalBlock | UICompactionBlock;
+export type UICardBlock = {
+  type: "card";
+  layout?: "metric" | "rows" | "compare" | "checklist" | "table";
+  data?: Record<string, unknown>;
+  content?: string;
+};
+
+export type UIBlock = UITextBlock | UIToolCallBlock | UIThinkingBlock | UISurveyBlock | UIApprovalBlock | UICompactionBlock | UICardBlock;
 
 export type UIUserMessage = {
   id: string;

@@ -17,6 +17,7 @@ import type { ChatFileService } from "./file-service.js";
 import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
 import { webTool } from "../skills/builtins/web/web-tool.js";
 import { surveyTool } from "./tools/survey-tool.js";
+import { cardTool } from "./tools/card-tool.js";
 import { skillRuntime } from "../skills/core/index.js";
 import { createGitHubFs } from "./github-fs.js";
 import { truncateText } from "./utils.js";
@@ -438,6 +439,7 @@ export const createMainBashRuntime = (options?: {
       memoryRecallTool,
       webTool,
       surveyTool,
+      cardTool,
       ...(options?.fileService ? [...createFileTools(options.fileService), createPresentTool(options.fileService)] : []),
       createBashToolWithHook(bash, helpers, options?.afterExec),
     ] satisfies Tool[],

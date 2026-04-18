@@ -6,6 +6,7 @@ import { ThinkingBlock } from "./ThinkingBlock.js";
 import { SurveyBlock } from "./SurveyBlock.js";
 import { ApprovalBlock } from "./ApprovalBlock.js";
 import { CompactionBlock } from "./CompactionBlock.js";
+import { CardBlock } from "./CardBlock.js";
 
 export type BlockProps = {
   block: UIBlock | { type: string; [key: string]: unknown };
@@ -21,6 +22,7 @@ const renderers: Record<string, Component<BlockProps>> = {
   survey: SurveyBlock as Component<BlockProps>,
   approval: ApprovalBlock as Component<BlockProps>,
   compaction: CompactionBlock as Component<BlockProps>,
+  card: CardBlock as Component<BlockProps>,
 };
 
 /** Dispatch a UI block to its matching renderer component. */
