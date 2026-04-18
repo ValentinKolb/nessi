@@ -604,34 +604,35 @@ dialog::backdrop {
 .ai-card {
   background: var(--color-gh-overlay);
   border-radius: 0.75rem;
+  border-left: 3px solid var(--color-gh-accent);
   padding: 1.25rem 1.5rem;
   font-size: 0.875rem;
   color: var(--color-gh-fg);
 }
+
+/* Header */
 .ai-card-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-gh-fg-muted);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-gh-fg);
   margin-bottom: 0.75rem;
 }
-.ai-card-header .i {
-  font-size: 1.125rem;
-}
+.ai-card-header .i { font-size: 1.25rem; color: var(--color-gh-accent); }
+
+/* Metric */
 .ai-card-metric {
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: 2.25rem;
+  font-weight: 800;
   letter-spacing: -0.03em;
-  line-height: 1.15;
+  line-height: 1.1;
   color: var(--color-gh-fg);
 }
-.ai-card-subtitle {
-  font-size: 0.8125rem;
-  color: var(--color-gh-fg-subtle);
-  margin-top: 0.25rem;
-}
+.ai-card-subtitle { font-size: 0.8125rem; color: var(--color-gh-fg-subtle); margin-top: 0.25rem; }
+
+/* Footer */
 .ai-card-footer {
   font-size: 0.75rem;
   color: var(--color-gh-fg-subtle);
@@ -639,102 +640,82 @@ dialog::backdrop {
   padding-top: 0.5rem;
   border-top: 1px solid var(--color-gh-border-muted);
 }
-.ai-card-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
+
+/* Rows */
+.ai-card-rows { display: flex; flex-direction: column; }
 .ai-card-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 1rem;
-  padding: 0.25rem 0;
+  padding: 0.5rem 0.5rem;
+  border-radius: 0.25rem;
 }
-.ai-card-label {
-  color: var(--color-gh-fg-muted);
-  font-size: 0.875rem;
-}
-.ai-card-value {
-  font-weight: 600;
-  font-size: 0.875rem;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.ai-card-divider {
-  border-top: 1px solid var(--color-gh-border-muted);
-  margin: 0.375rem 0;
-}
-.ai-card-compare-item {
-  padding: 0.25rem 0;
-}
+.ai-card-row-alt { background: var(--color-gh-muted); }
+.ai-card-label { color: var(--color-gh-fg-muted); font-size: 0.875rem; }
+.ai-card-value { font-weight: 600; font-size: 0.875rem; font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Divider */
+.ai-card-divider { border-top: 1px solid var(--color-gh-border-muted); margin: 0.5rem 0; }
+
+/* Compare */
+.ai-card-compare-item { padding: 0.375rem 0; }
 .ai-card-compare-label {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  font-size: 0.8125rem;
-  color: var(--color-gh-fg-muted);
-}
-.ai-card-compare-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-}
-.ai-card-checklist {
-  display: flex;
-  flex-direction: column;
   gap: 0.5rem;
-}
-.ai-card-check-item {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
   font-size: 0.875rem;
-}
-.ai-card-check-item .i {
-  font-size: 1.125rem;
-}
-.ai-card-done {
-  text-decoration: line-through;
-  color: var(--color-gh-fg-subtle);
-}
-.ai-card-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8125rem;
-}
-.ai-card-table th {
-  text-align: left;
-  font-weight: 600;
   color: var(--color-gh-fg-muted);
-  padding: 0.25rem 0.5rem 0.25rem 0;
-  border-bottom: 1px solid var(--color-gh-border-muted);
+  margin-bottom: 0.125rem;
 }
-.ai-card-table td {
-  padding: 0.25rem 0.5rem 0.25rem 0;
-  border-bottom: 1px solid var(--color-gh-border-muted);
+.ai-card-compare-label .i { font-size: 1.125rem; color: var(--color-gh-accent); }
+.ai-card-compare-value { font-size: 1.625rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; }
+
+/* Checklist */
+.ai-card-checklist { display: flex; flex-direction: column; gap: 0.625rem; }
+.ai-card-check-item { display: flex; align-items: center; gap: 0.625rem; font-size: 0.9375rem; }
+.ai-card-check-item .i { font-size: 1.25rem; }
+.ai-card-check-item .ok { color: var(--color-status-ok); }
+.ai-card-done { text-decoration: line-through; color: var(--color-gh-fg-subtle); }
+
+/* Table */
+.ai-card-table-wrap { overflow: auto; max-height: 400px; }
+.ai-card-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.ai-card-table th {
+  text-align: left; font-weight: 600; color: var(--color-gh-fg-muted);
+  padding: 0.375rem 0.75rem 0.375rem 0; border-bottom: 2px solid var(--color-gh-border-muted);
+  position: sticky; top: 0; background: var(--color-gh-overlay);
 }
-.ai-card-table tr:last-child td {
-  border-bottom: none;
-}
-/* Card custom HTML elements */
-.ai-card header { display: flex; align-items: center; gap: 0.375rem; font-weight: 600; color: var(--color-gh-fg-muted); margin-bottom: 0.5rem; }
-.ai-card metric { display: block; font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
-.ai-card row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; padding: 0.125rem 0; }
-.ai-card row label { color: var(--color-gh-fg-muted); }
-.ai-card row value { font-weight: 500; font-variant-numeric: tabular-nums; }
-.ai-card badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 500; background: var(--color-gh-muted); }
-.ai-card divider { display: block; border-top: 1px solid var(--color-gh-border-muted); margin: 0.375rem 0; }
-.ai-card footer { display: block; font-size: 0.6875rem; color: var(--color-gh-fg-subtle); margin-top: 0.5rem; }
+.ai-card-table td { padding: 0.375rem 0.75rem 0.375rem 0; border-bottom: 1px solid var(--color-gh-border-muted); }
+.ai-card-table tr:last-child td { border-bottom: none; }
+.ai-card-table tbody tr:nth-child(even) td { background: var(--color-gh-muted); }
+
+/* ─── Card HTML mode ─── */
+.ai-card-html { font-size: 0.875rem; line-height: 1.6; }
+.ai-card-html header { display: flex; align-items: center; gap: 0.5rem; font-size: 1rem; font-weight: 700; color: var(--color-gh-fg); margin-bottom: 0.75rem; }
+.ai-card-html header .i { color: var(--color-gh-accent); }
+.ai-card-html metric { display: block; font-size: 2rem; font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: 0.25rem; }
+.ai-card-html row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: 0.375rem 0.5rem; border-radius: 0.25rem; }
+.ai-card-html row:nth-child(even) { background: var(--color-gh-muted); }
+.ai-card-html row label { color: var(--color-gh-fg-muted); }
+.ai-card-html row value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ai-card-html badge { display: inline-block; padding: 0.125rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; background: var(--color-gh-muted); }
+.ai-card-html divider { display: block; border-top: 1px solid var(--color-gh-border-muted); margin: 0.625rem 0; }
+.ai-card-html footer { display: block; font-size: 0.75rem; color: var(--color-gh-fg-subtle); margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--color-gh-border-muted); }
+.ai-card-html table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
+.ai-card-html th { text-align: left; font-weight: 600; padding: 0.375rem 0.75rem 0.375rem 0; border-bottom: 2px solid var(--color-gh-border-muted); color: var(--color-gh-fg-muted); }
+.ai-card-html td { padding: 0.375rem 0.75rem 0.375rem 0; border-bottom: 1px solid var(--color-gh-border-muted); }
+.ai-card-html tr:last-child td { border-bottom: none; }
+.ai-card-html tbody tr:nth-child(even) td { background: var(--color-gh-muted); }
+
 /* Modifier classes */
 .ai-card .ok { color: var(--color-status-ok); }
 .ai-card .err { color: var(--color-status-err); }
 .ai-card .warn { color: var(--color-status-warn); }
 .ai-card .muted { color: var(--color-gh-fg-subtle); }
-.ai-card badge.ok { background: color-mix(in srgb, var(--color-status-ok) 15%, transparent); color: var(--color-status-ok); }
-.ai-card badge.err { background: color-mix(in srgb, var(--color-status-err) 15%, transparent); color: var(--color-status-err); }
-.ai-card badge.warn { background: color-mix(in srgb, var(--color-status-warn) 15%, transparent); color: var(--color-status-warn); }
+.ai-card-html badge.ok { background: color-mix(in srgb, var(--color-status-ok) 15%, transparent); color: var(--color-status-ok); }
+.ai-card-html badge.err { background: color-mix(in srgb, var(--color-status-err) 15%, transparent); color: var(--color-status-err); }
+.ai-card-html badge.warn { background: color-mix(in srgb, var(--color-status-warn) 15%, transparent); color: var(--color-status-warn); }
 
 /* ─── Settings section header (consistent) ─── */
 .settings-heading {

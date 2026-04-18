@@ -6,116 +6,151 @@ import type { UICardBlock } from "../types.js";
 /*  Sanitizer for custom HTML content                                 */
 /* ------------------------------------------------------------------ */
 
+const ALLOWED_TAGS = ["header", "metric", "row", "label", "value", "badge", "divider", "footer", "i", "table", "tr", "td", "th", "thead", "tbody", "span", "em", "strong", "br", "hr", "small", "p", "div", "ul", "li"];
+
 const sanitizeCardHtml = (html: string) =>
   sanitizeHtml(html, {
-    allowedTags: ["header", "metric", "row", "label", "value", "badge", "divider", "footer", "i", "table", "tr", "td", "th", "thead", "tbody", "span", "em", "strong", "br"],
-    allowedAttributes: {
-      i: ["class"],
-      badge: ["class"],
-      value: ["class"],
-      span: ["class"],
-      row: ["class"],
-    },
-    allowedClasses: {
-      "*": ["ok", "err", "warn", "muted", "large", "small", "ti-*"],
-    },
+    allowedTags: ALLOWED_TAGS,
+    allowedAttributes: { "*": ["class", "style"] },
+    allowedStyles: { "*": { "color": [/.*/], "font-weight": [/.*/], "text-align": [/.*/], "margin": [/.*/], "padding": [/.*/] } },
   });
 
 /* ------------------------------------------------------------------ */
-/*  Layout renderers                                                  */
+/*  Data normalization — handle whatever shape the agent sends        */
 /* ------------------------------------------------------------------ */
 
-type MetricData = { icon?: string; title?: string; value?: string; subtitle?: string; footer?: string };
-type RowsData = { icon?: string; title?: string; rows?: Array<{ label: string; value: string; class?: string }>; footer?: string };
-type CompareData = { title?: string; items?: Array<{ icon?: string; label: string; value: string }> };
-type ChecklistData = { title?: string; items?: Array<{ text: string; done?: boolean }> };
-type TableData = { title?: string; columns?: string[]; rows?: string[][] };
+/** Safely get an array, parsing JSON strings if needed. */
+const asArray = (val: unknown): unknown[] => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try { const p = JSON.parse(val); if (Array.isArray(p)) return p; } catch { /* ignore */ }
+  }
+  return [];
+};
+
+const asString = (val: unknown): string => (val == null ? "" : String(val));
+
+/* ------------------------------------------------------------------ */
+/*  Layout types                                                      */
+/* ------------------------------------------------------------------ */
+
+type D = Record<string, unknown>;
+
+/* ------------------------------------------------------------------ */
+/*  Shared                                                            */
+/* ------------------------------------------------------------------ */
 
 const Icon = (props: { name?: string }) => (
   <Show when={props.name}>
-    <span class={`i ti ${props.name} text-base`} />
+    <span class={`i ti ${props.name}`} />
   </Show>
 );
 
-const MetricLayout = (props: { data: MetricData }) => (
+const CardHeader = (props: { icon?: string; title?: string }) => (
+  <Show when={props.title}>
+    <div class="ai-card-header">
+      <Icon name={asString(props.icon)} />
+      <span>{asString(props.title)}</span>
+    </div>
+  </Show>
+);
+
+const CardFooter = (props: { text?: string }) => (
+  <Show when={props.text}>
+    <div class="ai-card-footer">{asString(props.text)}</div>
+  </Show>
+);
+
+/* ------------------------------------------------------------------ */
+/*  Layouts                                                           */
+/* ------------------------------------------------------------------ */
+
+const MetricLayout = (props: { d: D }) => (
   <div class="ai-card">
-    <Show when={props.data.title}>
-      <div class="ai-card-header">
-        <Icon name={props.data.icon} />
-        <span>{props.data.title}</span>
-      </div>
+    <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
+    <div class="ai-card-metric">{asString(props.d.value)}</div>
+    <Show when={props.d.subtitle}>
+      <div class="ai-card-subtitle">{asString(props.d.subtitle)}</div>
     </Show>
-    <div class="ai-card-metric">{props.data.value}</div>
-    <Show when={props.data.subtitle}>
-      <div class="ai-card-subtitle">{props.data.subtitle}</div>
-    </Show>
-    <Show when={props.data.footer}>
-      <div class="ai-card-footer">{props.data.footer}</div>
-    </Show>
+    <CardFooter text={asString(props.d.footer)} />
   </div>
 );
 
-const RowsLayout = (props: { data: RowsData }) => (
-  <div class="ai-card">
-    <Show when={props.data.title}>
-      <div class="ai-card-header">
-        <Icon name={props.data.icon} />
-        <span>{props.data.title}</span>
+const RowsLayout = (props: { d: D }) => {
+  const rows = () => asArray(props.d.rows).map((r) => {
+    if (typeof r === "object" && r !== null) {
+      const o = r as Record<string, unknown>;
+      return { label: asString(o.label), value: asString(o.value), class: asString(o.class) };
+    }
+    return { label: String(r), value: "", class: "" };
+  });
+
+  return (
+    <div class="ai-card">
+      <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
+      <div class="ai-card-rows">
+        <For each={rows()}>
+          {(row, i) => (
+            <div class={`ai-card-row ${i() % 2 === 1 ? "ai-card-row-alt" : ""}`}>
+              <span class="ai-card-label">{row.label}</span>
+              <span class={`ai-card-value ${row.class}`}>{row.value}</span>
+            </div>
+          )}
+        </For>
       </div>
-    </Show>
-    <div class="ai-card-rows">
-      <For each={props.data.rows ?? []}>
-        {(row) => (
-          <div class="ai-card-row">
-            <span class="ai-card-label">{row.label}</span>
-            <span class={`ai-card-value ${row.class ?? ""}`}>{row.value}</span>
-          </div>
+      <CardFooter text={asString(props.d.footer)} />
+    </div>
+  );
+};
+
+const CompareLayout = (props: { d: D }) => {
+  const items = () => asArray(props.d.items).map((item) => {
+    if (typeof item === "object" && item !== null) {
+      const o = item as Record<string, unknown>;
+      return { icon: asString(o.icon), label: asString(o.label), value: asString(o.value) };
+    }
+    return { icon: "", label: String(item), value: "" };
+  });
+
+  return (
+    <div class="ai-card">
+      <CardHeader title={asString(props.d.title)} />
+      <For each={items()}>
+        {(item, i) => (
+          <>
+            <Show when={i() > 0}><div class="ai-card-divider" /></Show>
+            <div class="ai-card-compare-item">
+              <div class="ai-card-compare-label">
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
+              </div>
+              <div class="ai-card-compare-value">{item.value}</div>
+            </div>
+          </>
         )}
       </For>
     </div>
-    <Show when={props.data.footer}>
-      <div class="ai-card-footer">{props.data.footer}</div>
-    </Show>
-  </div>
-);
-
-const CompareLayout = (props: { data: CompareData }) => (
-  <div class="ai-card">
-    <Show when={props.data.title}>
-      <div class="ai-card-header"><span>{props.data.title}</span></div>
-    </Show>
-    <For each={props.data.items ?? []}>
-      {(item, i) => (
-        <>
-          <Show when={i() > 0}><div class="ai-card-divider" /></Show>
-          <div class="ai-card-compare-item">
-            <div class="ai-card-compare-label">
-              <Icon name={item.icon} />
-              <span>{item.label}</span>
-            </div>
-            <div class="ai-card-compare-value">{item.value}</div>
-          </div>
-        </>
-      )}
-    </For>
-  </div>
-);
-
-const ChecklistLayout = (props: { data: ChecklistData }) => {
-  const items = () => (props.data.items ?? []).map((item) =>
-    typeof item === "string" ? { text: item, done: false } : item,
   );
+};
+
+const ChecklistLayout = (props: { d: D }) => {
+  const items = () => asArray(props.d.items).map((item) => {
+    if (typeof item === "object" && item !== null) {
+      const o = item as Record<string, unknown>;
+      return { text: asString(o.text || o.label || o.name), done: Boolean(o.done || o.checked || o.completed) };
+    }
+    return { text: String(item), done: false };
+  });
+
   return (
     <div class="ai-card">
-      <Show when={props.data.title}>
-        <div class="ai-card-header"><span>{props.data.title}</span></div>
-      </Show>
+      <CardHeader title={asString(props.d.title)} />
       <div class="ai-card-checklist">
         <For each={items()}>
           {(item) => (
             <div class="ai-card-check-item">
               <span class={`i ti ${item.done ? "ti-circle-check" : "ti-circle"} ${item.done ? "ok" : "muted"}`} />
-              <span class={item.done ? "ai-card-done" : ""}>{String(item.text ?? "")}</span>
+              <span class={item.done ? "ai-card-done" : ""}>{item.text}</span>
             </div>
           )}
         </For>
@@ -124,67 +159,56 @@ const ChecklistLayout = (props: { data: ChecklistData }) => {
   );
 };
 
-const TableLayout = (props: { data: TableData }) => (
-  <div class="ai-card">
-    <Show when={props.data.title}>
-      <div class="ai-card-header"><span>{props.data.title}</span></div>
-    </Show>
-    <table class="ai-card-table">
-      <Show when={(props.data.columns ?? []).length > 0}>
-        <thead>
-          <tr>
-            <For each={props.data.columns ?? []}>{(col) => <th>{col}</th>}</For>
-          </tr>
-        </thead>
-      </Show>
-      <tbody>
-        <For each={props.data.rows ?? []}>
-          {(row) => (
-            <tr>
-              <For each={row}>{(cell) => <td>{cell}</td>}</For>
-            </tr>
-          )}
-        </For>
-      </tbody>
-    </table>
-  </div>
-);
+const TableLayout = (props: { d: D }) => {
+  const columns = () => asArray(props.d.columns).map(String);
+  const rows = () => asArray(props.d.rows).map((r) => asArray(r).map(String));
+
+  return (
+    <div class="ai-card">
+      <CardHeader title={asString(props.d.title)} />
+      <div class="ai-card-table-wrap">
+        <table class="ai-card-table">
+          <Show when={columns().length > 0}>
+            <thead>
+              <tr>
+                <For each={columns()}>{(col) => <th>{col}</th>}</For>
+              </tr>
+            </thead>
+          </Show>
+          <tbody>
+            <For each={rows()}>
+              {(row) => (
+                <tr>
+                  <For each={row}>{(cell) => <td>{cell}</td>}</For>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
 
 /* ------------------------------------------------------------------ */
 /*  Main component                                                    */
 /* ------------------------------------------------------------------ */
 
-/** Safely extract an array from a field that might be a JSON string or already an array. */
-const toArray = (val: unknown): unknown[] => {
-  if (Array.isArray(val)) return val;
-  if (typeof val === "string") try { const p = JSON.parse(val); if (Array.isArray(p)) return p; } catch { /* ignore */ }
-  return [];
-};
-
-const normalizeData = (d: Record<string, unknown>): Record<string, unknown> => ({
-  ...d,
-  items: d.items ? toArray(d.items) : undefined,
-  rows: d.rows ? toArray(d.rows) : undefined,
-  columns: d.columns ? toArray(d.columns) : undefined,
-});
-
-const layouts: Record<string, (data: Record<string, unknown>) => ReturnType<typeof MetricLayout>> = {
-  metric: (d) => <MetricLayout data={d as unknown as MetricData} />,
-  rows: (d) => <RowsLayout data={normalizeData(d) as unknown as RowsData} />,
-  compare: (d) => <CompareLayout data={normalizeData(d) as unknown as CompareData} />,
-  checklist: (d) => <ChecklistLayout data={normalizeData(d) as unknown as ChecklistData} />,
-  table: (d) => <TableLayout data={normalizeData(d) as unknown as TableData} />,
+const layoutMap: Record<string, (d: D) => ReturnType<typeof MetricLayout>> = {
+  metric: (d) => <MetricLayout d={d} />,
+  rows: (d) => <RowsLayout d={d} />,
+  compare: (d) => <CompareLayout d={d} />,
+  checklist: (d) => <ChecklistLayout d={d} />,
+  table: (d) => <TableLayout d={d} />,
 };
 
 export const CardBlock = (props: { block: UICardBlock }) => {
-  // Prebuilt layout mode
-  if (props.block.layout && props.block.data && layouts[props.block.layout]) {
-    return layouts[props.block.layout]!(props.block.data);
+  if (props.block.layout && props.block.data && layoutMap[props.block.layout]) {
+    return layoutMap[props.block.layout]!(props.block.data);
   }
 
-  // Custom HTML mode
   if (props.block.content) {
-    return <div class="ai-card" innerHTML={sanitizeCardHtml(props.block.content)} />;
+    return <div class="ai-card ai-card-html" innerHTML={sanitizeCardHtml(props.block.content)} />;
   }
 
   return null;
