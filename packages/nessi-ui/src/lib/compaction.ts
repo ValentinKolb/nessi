@@ -1,21 +1,17 @@
 import type { AssistantMessage, CompactFn, Message, Provider, StoreEntry, Usage } from "nessi-core";
 import { contentPartsToText } from "./utils.js";
 
-const MIN_MESSAGES = 30;
-const KEEP_RECENT_LOOPS = 8;
 const MAX_TOOL_CHARS = 300;
 const MAX_SOURCE_CHARS = 24_000;
-const USAGE_THRESHOLD = 0.75;
+const FILL_RATIO_THRESHOLD = 0.75;
+const MIN_KEEP_LOOPS = 2;
 
 const DEFAULT_SYSTEM_PROMPT = "You write concise checkpoint summaries for agent memory compaction.";
 
 export type DefaultCompactionOptions = {
-  minMessages?: number;
-  keepRecentLoops?: number;
   maxToolChars?: number;
   maxSourceChars?: number;
-  usageThreshold?: number;
-  compactEveryMessages?: number;
+  fillRatioThreshold?: number;
   compactionPrompt?: string;
 };
 
@@ -43,7 +39,7 @@ const truncateMiddle = (text: string, maxChars: number): string => {
 };
 
 // ---------------------------------------------------------------------------
-// Entry → text for summarization
+// Entry -> text for summarization
 // ---------------------------------------------------------------------------
 
 const messageToLine = (entry: StoreEntry, maxToolChars: number) => {
@@ -106,15 +102,26 @@ const summarize = async (provider: Provider, conversationText: string, promptTem
 };
 
 // ---------------------------------------------------------------------------
-// Counting & trigger logic
+// Split logic — always splits at user-message boundaries (whole loops)
 // ---------------------------------------------------------------------------
 
-const countConversationMessages = (entries: StoreEntry[]) =>
-  entries.reduce((total, entry) => total + (
-    entry.kind === "message" && (entry.message.role === "user" || entry.message.role === "assistant")
-      ? 1
-      : 0
-  ), 0);
+/**
+ * Find the split index so that the recent portion contains approximately
+ * `keepLoops` conversation loops (user messages).
+ * Splitting at user-message boundaries guarantees no orphaned tool_results.
+ */
+const findLoopSplitIndex = (entries: StoreEntry[], keepLoops: number) => {
+  let loopsSeen = 0;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i]!.kind === "message" && entries[i]!.message.role === "user") {
+      loopsSeen++;
+      if (loopsSeen === keepLoops) {
+        return i > 0 ? i : -1;
+      }
+    }
+  }
+  return -1;
+};
 
 /** Count conversation loops. Each loop starts with a user message. */
 const countLoops = (entries: StoreEntry[]) =>
@@ -122,51 +129,14 @@ const countLoops = (entries: StoreEntry[]) =>
     entry.kind === "message" && entry.message.role === "user" ? 1 : 0
   ), 0);
 
-const shouldCompact = (
-  entries: StoreEntry[],
-  usage: Usage,
-  provider: Provider,
-  force: boolean,
-  options: Required<Omit<DefaultCompactionOptions, "compactionPrompt">>,
-) => {
-  if (countLoops(entries) <= options.keepRecentLoops) return false;
-  if (force) return true;
-
-  if (options.compactEveryMessages > 0) {
-    const messageCount = countConversationMessages(entries);
-    if (messageCount >= options.compactEveryMessages && messageCount % options.compactEveryMessages === 0) {
-      return true;
-    }
-  }
-
-  const usageHigh = typeof provider.contextWindow === "number"
-    ? usage.total >= provider.contextWindow * options.usageThreshold
-    : false;
-  const historyLong = countConversationMessages(entries) >= options.minMessages;
-  return usageHigh || historyLong;
-};
-
-// ---------------------------------------------------------------------------
-// Split logic — loop-based (always splits at user-message boundaries)
-// ---------------------------------------------------------------------------
-
 /**
- * Find the split index so that the recent portion contains exactly
- * `keepRecentLoops` conversation loops (user messages).
- * Splitting at user-message boundaries guarantees no orphaned tool_results.
+ * Derive how many recent loops to keep based on fill ratio.
+ * Higher fill ratio -> keep fewer loops -> more aggressive compaction.
  */
-const findLoopSplitIndex = (entries: StoreEntry[], keepRecentLoops: number) => {
-  // Walk backwards, count user messages (loop boundaries)
-  let loopsSeen = 0;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i]!.kind === "message" && entries[i]!.message.role === "user") {
-      loopsSeen++;
-      if (loopsSeen === keepRecentLoops) {
-        return i > 0 ? i : -1;
-      }
-    }
-  }
-  return -1;
+const keepLoopsForFillRatio = (fillRatio: number, totalLoops: number): number => {
+  // Keep at most half the loops, scaled down by fill ratio
+  const target = Math.round(totalLoops * Math.max(0.2, 1 - fillRatio));
+  return Math.max(MIN_KEEP_LOOPS, target);
 };
 
 // ---------------------------------------------------------------------------
@@ -175,21 +145,29 @@ const findLoopSplitIndex = (entries: StoreEntry[], keepRecentLoops: number) => {
 
 /** Build the default compaction strategy used by UI sessions. */
 export const createDefaultCompactFn = (rawOptions: DefaultCompactionOptions = {}): CompactFn => {
-  const options = {
-    minMessages: rawOptions.minMessages ?? MIN_MESSAGES,
-    keepRecentLoops: rawOptions.keepRecentLoops ?? KEEP_RECENT_LOOPS,
-    maxToolChars: rawOptions.maxToolChars ?? MAX_TOOL_CHARS,
-    maxSourceChars: rawOptions.maxSourceChars ?? MAX_SOURCE_CHARS,
-    usageThreshold: rawOptions.usageThreshold ?? USAGE_THRESHOLD,
-    compactEveryMessages: rawOptions.compactEveryMessages ?? (rawOptions.minMessages ?? MIN_MESSAGES),
-  };
+  const maxToolChars = rawOptions.maxToolChars ?? MAX_TOOL_CHARS;
+  const maxSourceChars = rawOptions.maxSourceChars ?? MAX_SOURCE_CHARS;
+  const threshold = rawOptions.fillRatioThreshold ?? FILL_RATIO_THRESHOLD;
   const systemPrompt = rawOptions.compactionPrompt || DEFAULT_SYSTEM_PROMPT;
 
   return (ctx) => {
-    const entries = ctx.entries;
-    if (!shouldCompact(entries, ctx.usage, ctx.provider, ctx.force, options)) return null;
+    const { entries, force, fillRatio } = ctx;
 
-    const splitIndex = findLoopSplitIndex(entries, options.keepRecentLoops);
+    // Manual /compact (force=true) always runs — never skip
+    if (!force) {
+      // Auto-compaction: only trigger based on fill ratio
+      if (typeof fillRatio !== "number" || fillRatio < threshold) return null;
+    }
+
+    const totalLoops = countLoops(entries);
+    if (totalLoops <= MIN_KEEP_LOOPS) return null;
+
+    // Determine how many loops to keep
+    const keepLoops = typeof fillRatio === "number"
+      ? keepLoopsForFillRatio(fillRatio, totalLoops)
+      : MIN_KEEP_LOOPS;
+
+    const splitIndex = findLoopSplitIndex(entries, keepLoops);
     if (splitIndex < 1) return null;
     const olderEntries = entries.slice(0, splitIndex);
     if (olderEntries.length === 0) return null;
@@ -198,8 +176,8 @@ export const createDefaultCompactFn = (rawOptions: DefaultCompactionOptions = {}
     if (typeof checkpointSeq !== "number") return null;
 
     const source = trimSource(
-      olderEntries.map((e) => messageToLine(e, options.maxToolChars)).join("\n"),
-      options.maxSourceChars,
+      olderEntries.map((e) => messageToLine(e, maxToolChars)).join("\n"),
+      maxSourceChars,
     );
     if (!source.trim()) return null;
 

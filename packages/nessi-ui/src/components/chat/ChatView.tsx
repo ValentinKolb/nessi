@@ -31,7 +31,7 @@ import { ensureChatMeta } from "../../lib/chat-storage.js";
 import { registerCommand } from "../../lib/slash-commands.js";
 import { createDefaultCompactFn } from "../../lib/compaction.js";
 import { loadCompactionSettings, getCompactionPrompt } from "../../lib/compaction-settings.js";
-import { prepareImageUpload } from "../../lib/image-resize.js";
+import { prepareImageUpload, prepareImageForStorage } from "../../lib/image-resize.js";
 import { createChatFileService } from "../../lib/file-service.js";
 import {
   attachFilesToMessage,
@@ -356,6 +356,7 @@ export const ChatView = (props: {
   const [nextcloudRefs, setNextcloudRefs] = createSignal<NextcloudRef[]>([]);
   const [githubBrowserOpen, setGitHubBrowserOpen] = createSignal(false);
   const [terminalOpen, setTerminalOpen] = createSignal(false);
+  const [lastUsage, setLastUsage] = createSignal<import("nessi-ai").Usage | undefined>(undefined);
   const [githubRefs, setGitHubRefs] = createSignal<GitHubRef[]>([]);
   const { isDragging: dropActive, handlers: dropHandlers } = dropzone.create({
     onDrop: (files) => void addPendingFiles(files),
@@ -363,6 +364,7 @@ export const ChatView = (props: {
 
   let runtime: Runtime | null = null;
   let activeLoop: NessiLoop | null = null;
+  let ensuredProvider: ReturnType<typeof createProvider> | null = null;
   let currentAssistantStartedAt: string | undefined;
   let pendingAutoCompactionEntriesBefore: number | null = null;
   let resetVersion = 0;
@@ -429,6 +431,12 @@ export const ChatView = (props: {
       listOutputFiles(chatId),
     ]);
     if (version !== resetVersion) return;
+
+    // Restore last known usage from loaded messages
+    const lastAssistantWithUsage = [...messages]
+      .reverse()
+      .find((m): m is import("./types.js").UIAssistantMessage => m.role === "assistant" && !!m.meta?.usage);
+    setLastUsage(lastAssistantWithUsage?.meta?.usage);
 
     setState({ messages, streaming: false });
     setPendingImages([]);
@@ -609,9 +617,11 @@ export const ChatView = (props: {
     if (!runtime) {
       const initialFiles = await buildRuntimeInitialFiles(props.chatId);
       const settings = await loadCompactionSettings();
+      const chatProvider = createProvider(providerEntry);
       const bashRuntime = createMainBashRuntime({
         initialFiles,
         fileService,
+        chatProvider,
         afterExec: async (bash) => {
           await syncRuntimeOutputs(props.chatId, bash);
         },
@@ -620,8 +630,6 @@ export const ChatView = (props: {
         store: persistentSessionStore(props.chatId),
         tools: bashRuntime.tools,
         compactFn: createDefaultCompactFn({
-          minMessages: settings.autoCompactAfterMessages,
-          keepRecentLoops: settings.keepRecentLoops,
           maxToolChars: settings.maxToolChars,
           maxSourceChars: settings.maxSourceChars,
           compactionPrompt: await getCompactionPrompt(),
@@ -651,48 +659,38 @@ export const ChatView = (props: {
 
   const addPendingFiles = async (files: FileList | File[]) => {
     const incoming = Array.from(files);
-    const images = incoming.filter((file) => file.type.startsWith("image/"));
-    const documents = incoming
+
+    // Resize images before treating them as files
+    const imageFiles = incoming.filter((file) => file.type.startsWith("image/"));
+    const nonImageFiles = incoming.filter((file) => !file.type.startsWith("image/"));
+
+    let resizedImages: File[] = [];
+    if (imageFiles.length > 0) {
+      try {
+        resizedImages = await Promise.all(imageFiles.map(prepareImageForStorage));
+      } catch (error) {
+        appendStatusMessage(error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    const allFiles = [...nonImageFiles, ...resizedImages];
+    const documents = allFiles
       .map((file) => {
         const pending = classifyPendingChatFile(file);
-        if (pending && file.webkitRelativePath) {
-          pending.relativePath = file.webkitRelativePath;
+        if (pending && (file as any).webkitRelativePath) {
+          pending.relativePath = (file as any).webkitRelativePath;
         }
         return pending;
       })
       .filter((file): file is PendingChatFile => Boolean(file));
 
-    const unsupportedCount = incoming.length - images.length - documents.length;
+    const unsupportedCount = allFiles.length - documents.length;
     if (unsupportedCount > 0) {
       appendStatusMessage("Some files were ignored. Only images, text/code files, CSV/XLSX spreadsheets, and PDFs are supported.");
     }
 
     if (documents.length > 0) {
       setPendingFiles((current) => [...current, ...documents]);
-    }
-
-    if (images.length === 0) return;
-    if (!providerSupportsImages()) {
-      appendStatusMessage("The active provider does not support image inputs.");
-      return;
-    }
-
-    const remainingSlots = Math.max(0, MAX_IMAGES_PER_MESSAGE - pendingImages().length);
-    if (remainingSlots === 0) {
-      appendStatusMessage(`You can attach up to ${MAX_IMAGES_PER_MESSAGE} images per message.`);
-      return;
-    }
-
-    const nextImages = images.slice(0, remainingSlots);
-    if (nextImages.length < images.length) {
-      appendStatusMessage(`Only the first ${MAX_IMAGES_PER_MESSAGE} images are attached.`);
-    }
-
-    try {
-      const prepared = await Promise.all(nextImages.map(prepareImageUpload));
-      setPendingImages((current) => [...current, ...prepared]);
-    } catch (error) {
-      appendStatusMessage(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -952,6 +950,7 @@ export const ChatView = (props: {
           .reverse()
           .find((entry) => entry.kind === "message" && entry.message.role === "assistant");
         const completedAt = persistedAssistant?.createdAt ?? new Date().toISOString();
+        if (event.message.usage) setLastUsage(event.message.usage);
         updateAssistantMeta((meta) => ({
           ...meta,
           entrySeq: persistedAssistant?.seq ?? meta.entrySeq,
@@ -984,8 +983,24 @@ export const ChatView = (props: {
       }
 
       case "error": {
-        haptics.error();
-        appendStatusMessage(`Error: ${event.error}`);
+        if (event.contextOverflow) {
+          haptics.tap();
+          mapMessages((messages) => [
+            ...messages,
+            {
+              id: msgId(),
+              role: "assistant",
+              blocks: [{
+                type: "context_overflow",
+                contextWindow: ensuredProvider?.contextWindow,
+                overflowRatio: event.overflowRatio,
+              }],
+            },
+          ]);
+        } else {
+          haptics.error();
+          appendStatusMessage(`Error: ${event.error}`);
+        }
         break;
       }
 
@@ -1153,6 +1168,22 @@ export const ChatView = (props: {
     }
   };
 
+  /** Compact & retry: used as CTA from ContextOverflowBlock. */
+  const handleCompactAndRetry = async () => {
+    await handleCompactCommand();
+    // Find the last user message and re-send it
+    const lastUserMsg = [...state.messages].reverse().find((m) => m.role === "user");
+    if (lastUserMsg && lastUserMsg.role === "user") {
+      const textParts = lastUserMsg.content
+        .filter((c): c is Extract<typeof c, { type: "text" }> => typeof c === "object" && "type" in c && c.type === "text")
+        .map((c) => c.text)
+        .join("\n");
+      if (textParts) {
+        await runTurn(textParts, []);
+      }
+    }
+  };
+
   const runTurn = async (
     text: string,
     images: Array<Extract<UIUserContentPart, { type: "image" }>>,
@@ -1167,6 +1198,7 @@ export const ChatView = (props: {
       appendStatusMessage("Error: No provider configured. Open Settings to add one.");
       return;
     }
+    ensuredProvider = ensured.provider;
 
     const content: UIUserContentPart[] = [];
     if (text) content.push({ type: "text", text });
@@ -1373,6 +1405,7 @@ export const ChatView = (props: {
         // Build GitHub context: auto-clone repos + fetch issue/PR details
         const githubContext = await prepareGitHubContext(ghRefs);
 
+        // Legacy inline images (pendingImages) still supported for backward compat
         await runTurn(trimmed, images, persistedFiles, persistedFiles, ncRefs, githubContext);
       } catch (error) {
         haptics.error();
@@ -1454,6 +1487,7 @@ export const ChatView = (props: {
         onRetryMessage={retryLastUserTurn}
         onApproval={handleApproval}
         onSurveySubmit={handleSurveySubmit}
+        onCompact={() => void handleCompactAndRetry()}
       />
       <Show when={!getActiveProviderEntry()}>
         <div class="px-3 pb-1">
@@ -1496,6 +1530,8 @@ export const ChatView = (props: {
           isGitHubConfigured={hasGitHubToken()}
           dropActive={dropActive()}
           disabled={state.streaming}
+          lastUsage={lastUsage()}
+          contextWindow={getActiveProviderEntry()?.contextWindow}
         />
       </Show>
       <Show when={terminalOpen()}>

@@ -17,6 +17,7 @@ export const Message = (props: {
   onRetryLastUserMessage?: () => void;
   onApproval?: (callId: string, action: "deny" | "allow" | "always") => void;
   onSurveySubmit?: (callId: string, answers: Record<string, string>) => void;
+  onCompact?: () => void;
 }) => {
   const userMessage = () => (isUserMessage(props.message) ? props.message : null);
   const assistantMessage = () => (isAssistantMessage(props.message) ? props.message : null);
@@ -44,6 +45,7 @@ export const Message = (props: {
                   chatId={props.chatId}
                   onApproval={props.onApproval}
                   onSurveySubmit={props.onSurveySubmit}
+                  onCompact={props.onCompact}
                 />
               )}
             </For>

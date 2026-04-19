@@ -1,24 +1,10 @@
 import { db } from "../../shared/db/db.js";
 import { dbEvents } from "../../shared/db/db-events.js";
-import type { CompactionSettings, ToolApprovalMap } from "./settings.types.js";
+import type { CompactionSettings, ImageAnalysisSettings, ToolApprovalMap } from "./settings.types.js";
 
 const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
-  autoCompactAfterMessages: 30,
-  keepRecentLoops: 8,
   maxToolChars: 300,
   maxSourceChars: 24_000,
-};
-
-const normalizeAutoCompactAfterMessages = (value: unknown) => {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return DEFAULT_COMPACTION_SETTINGS.autoCompactAfterMessages;
-  return Math.min(80, Math.max(10, Math.round(parsed)));
-};
-
-const normalizeKeepRecentLoops = (value: unknown) => {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return DEFAULT_COMPACTION_SETTINGS.keepRecentLoops;
-  return Math.min(20, Math.max(2, Math.round(parsed)));
 };
 
 const normalizeMaxToolChars = (value: unknown) => {
@@ -70,11 +56,9 @@ const setCompactionPrompt = async (prompt: string) => {
   await putDoc("compaction-prompt", prompt);
 };
 
-const loadCompactionSettings = async () => {
+const loadCompactionSettings = async (): Promise<CompactionSettings> => {
   const raw = await getDoc<Partial<CompactionSettings>>("compaction-settings", DEFAULT_COMPACTION_SETTINGS);
   return {
-    autoCompactAfterMessages: normalizeAutoCompactAfterMessages(raw.autoCompactAfterMessages),
-    keepRecentLoops: normalizeKeepRecentLoops(raw.keepRecentLoops),
     maxToolChars: normalizeMaxToolChars(raw.maxToolChars),
     maxSourceChars: normalizeMaxSourceChars(raw.maxSourceChars),
   };
@@ -82,8 +66,6 @@ const loadCompactionSettings = async () => {
 
 const saveCompactionSettings = async (settings: CompactionSettings) => {
   await putDoc("compaction-settings", {
-    autoCompactAfterMessages: normalizeAutoCompactAfterMessages(settings.autoCompactAfterMessages),
-    keepRecentLoops: normalizeKeepRecentLoops(settings.keepRecentLoops),
     maxToolChars: normalizeMaxToolChars(settings.maxToolChars),
     maxSourceChars: normalizeMaxSourceChars(settings.maxSourceChars),
   });
@@ -110,8 +92,25 @@ const setAlwaysAllowed = async (toolName: string) => {
   await putDoc("tool-approvals", { ...current, [toolName]: true });
 };
 
+const DEFAULT_IMAGE_ANALYSIS_SETTINGS: ImageAnalysisSettings = { providerId: null };
+
+const getImageAnalysisSettings = async () =>
+  getDoc<ImageAnalysisSettings>("image-analysis-settings", DEFAULT_IMAGE_ANALYSIS_SETTINGS);
+
+const setImageAnalysisSettings = async (settings: ImageAnalysisSettings) => {
+  await putDoc("image-analysis-settings", settings);
+};
+
+const getImageAnalysisPrompt = async () =>
+  getDoc("image-analysis-prompt", null as string | null);
+
+const setImageAnalysisPrompt = async (prompt: string) => {
+  await putDoc("image-analysis-prompt", prompt);
+};
+
 export const settingsRepo = {
   DEFAULT_COMPACTION_SETTINGS,
+  DEFAULT_IMAGE_ANALYSIS_SETTINGS,
   getBackgroundPrompt,
   setBackgroundPrompt,
   getConsolidationPrompt,
@@ -126,4 +125,8 @@ export const settingsRepo = {
   saveCompactionSettings,
   loadToolApprovals,
   setAlwaysAllowed,
+  getImageAnalysisSettings,
+  setImageAnalysisSettings,
+  getImageAnalysisPrompt,
+  setImageAnalysisPrompt,
 } as const;

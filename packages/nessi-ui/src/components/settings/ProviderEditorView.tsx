@@ -204,6 +204,26 @@ export const ProviderEditorView = (props: {
         />
       </div>
 
+      {/* Context Window */}
+      <div class="space-y-1">
+        <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Context Window</label>
+        <input
+          type="number"
+          class="ui-input"
+          placeholder="auto (provider default)"
+          value={draft().contextWindow ?? ""}
+          onInput={(e) => {
+            const raw = e.currentTarget.value.trim();
+            const num = raw ? parseInt(raw, 10) : undefined;
+            setDraft((prev) => ({ ...prev, contextWindow: num && num > 0 ? num : undefined }));
+            if (error()) setError("");
+          }}
+        />
+        <p class="settings-desc mt-0.5">
+          Max tokens the model supports. Used for automatic compaction. Leave empty to use the provider's default.
+        </p>
+      </div>
+
       {/* Tool Call ID Policy */}
       <div class="space-y-1">
         <label class="text-[11px] font-medium uppercase tracking-wide text-gh-fg-muted">Tool Call ID Policy</label>

@@ -62,6 +62,7 @@ export const MessageList = (props: {
   onRetryMessage?: (message: UIMessage) => void;
   onApproval?: (callId: string, action: "deny" | "allow" | "always") => void;
   onSurveySubmit?: (callId: string, answers: Record<string, string>) => void;
+  onCompact?: () => void;
 }) => {
   let containerRef!: HTMLDivElement;
   let observer: MutationObserver | null = null;
@@ -141,6 +142,7 @@ export const MessageList = (props: {
                   onRetryLastUserMessage={() => props.onRetryMessage?.(msg)}
                   onApproval={props.onApproval}
                   onSurveySubmit={props.onSurveySubmit}
+                  onCompact={props.onCompact}
                 />
               );
             }}

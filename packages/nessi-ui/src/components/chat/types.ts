@@ -42,6 +42,12 @@ export type UICompactionBlock = {
   error?: string;
 };
 
+export type UIContextOverflowBlock = {
+  type: "context_overflow";
+  contextWindow?: number;
+  overflowRatio?: number;
+};
+
 export type UICardBlock = {
   type: "card";
   layout?: "metric" | "rows" | "compare" | "checklist" | "table";
@@ -49,7 +55,7 @@ export type UICardBlock = {
   content?: string;
 };
 
-export type UIBlock = UITextBlock | UIToolCallBlock | UIThinkingBlock | UISurveyBlock | UIApprovalBlock | UICompactionBlock | UICardBlock;
+export type UIBlock = UITextBlock | UIToolCallBlock | UIThinkingBlock | UISurveyBlock | UIApprovalBlock | UICompactionBlock | UIContextOverflowBlock | UICardBlock;
 
 export type UIUserMessage = {
   id: string;

@@ -33,6 +33,7 @@ const fromImport = (raw: string): ProviderEntry | null => {
       model: o.model,
       apiKey: (o.apiKey as string) ?? undefined,
       toolCallIdPolicy: o.toolCallIdPolicy === "strict9" ? "strict9" : "passthrough",
+      contextWindow: typeof o.contextWindow === "number" && o.contextWindow > 0 ? o.contextWindow : undefined,
     };
   } catch { return null; }
 };

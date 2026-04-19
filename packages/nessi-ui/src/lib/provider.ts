@@ -43,6 +43,8 @@ export type ProviderEntry = {
   model: string;
   apiKey?: string;
   toolCallIdPolicy: ToolCallIdPolicy;
+  /** Model context window in tokens. Used for compaction decisions. */
+  contextWindow?: number;
 };
 
 export type ProviderPreset = {
@@ -188,7 +190,9 @@ const normalizeProvider = (raw: unknown): ProviderEntry | null => {
   const model = typeof obj.model === "string" && obj.model ? obj.model : DEFAULT_MODEL;
   const apiKey = typeof obj.apiKey === "string" && obj.apiKey ? obj.apiKey : undefined;
   const toolCallIdPolicy = parseToolCallIdPolicy(obj.toolCallIdPolicy);
-  return { id, type, name, baseURL, model, apiKey, toolCallIdPolicy };
+  const rawCW = typeof obj.contextWindow === "number" ? obj.contextWindow : Number(obj.contextWindow);
+  const contextWindow = Number.isFinite(rawCW) && rawCW > 0 ? rawCW : undefined;
+  return { id, type, name, baseURL, model, apiKey, toolCallIdPolicy, contextWindow };
 };
 
 // Migration: old single-provider format -> new multi-provider
@@ -261,37 +265,44 @@ const factories: Record<ProviderType, (providerEntry: ProviderEntry) => Provider
     openai(providerEntry.model, {
       baseURL: providerEntry.baseURL,
       apiKey: providerEntry.apiKey,
+      contextWindow: providerEntry.contextWindow,
       normalizeToolCallIds: providerEntry.toolCallIdPolicy === "strict9" ? "strict9" : "never",
     }),
   openrouter: (providerEntry) =>
     openrouter(providerEntry.model, {
       baseURL: providerEntry.baseURL,
       apiKey: providerEntry.apiKey,
+      contextWindow: providerEntry.contextWindow,
     }),
   vllm: (providerEntry) =>
     vllm(providerEntry.model, {
       baseURL: providerEntry.baseURL,
       apiKey: providerEntry.apiKey,
+      contextWindow: providerEntry.contextWindow,
     }),
   ollama: (providerEntry) =>
     ollama(providerEntry.model, {
       baseURL: providerEntry.baseURL,
+      contextWindow: providerEntry.contextWindow,
     }),
   anthropic: (providerEntry) =>
     anthropic(providerEntry.model, {
       baseURL: providerEntry.baseURL,
       apiKey: providerEntry.apiKey,
+      contextWindow: providerEntry.contextWindow,
     }),
   mistral: (providerEntry) =>
     mistral(providerEntry.model, {
       baseURL: providerEntry.baseURL,
       apiKey: providerEntry.apiKey,
+      contextWindow: providerEntry.contextWindow,
       normalizeToolCallIds: providerEntry.toolCallIdPolicy === "strict9" ? "strict9" : "never",
     }),
   gemini: (providerEntry) =>
     gemini(providerEntry.model, {
       baseURL: providerEntry.baseURL,
       apiKey: providerEntry.apiKey,
+      contextWindow: providerEntry.contextWindow,
     }),
   "openai-compatible": (providerEntry) =>
     openAICompatible({
@@ -299,6 +310,7 @@ const factories: Record<ProviderType, (providerEntry: ProviderEntry) => Provider
       model: providerEntry.model,
       baseURL: providerEntry.baseURL,
       apiKey: providerEntry.apiKey,
+      contextWindow: providerEntry.contextWindow,
       compat: {
         toolCallIdPolicy: providerEntry.toolCallIdPolicy,
         supportsUsageInStreaming: true,

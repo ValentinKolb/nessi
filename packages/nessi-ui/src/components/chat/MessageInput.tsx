@@ -8,12 +8,131 @@ import { getProviderIconUrl, type ProviderEntry } from "../../lib/provider.js";
 import { pprintBytes } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
 import { PopoverMenu } from "../PopoverMenu.js";
+import type { Usage } from "nessi-ai";
 
 /** Keep the textarea compact while allowing multiline input. */
 const autoResize = (el: HTMLTextAreaElement) => {
   el.style.height = "auto";
   const lineHeight = 22;
   el.style.height = Math.min(el.scrollHeight, lineHeight * 6) + "px";
+};
+
+const formatTokenCount = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
+    : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k`
+    : String(n);
+
+const TokenBadge = (props: { usage?: Usage; contextWindow?: number }) => {
+  const total = () => props.usage?.total ?? 0;
+  const cw = () => props.contextWindow;
+  const hasUsage = () => total() > 0;
+  const visible = () => hasUsage() || (cw() !== undefined && cw()! > 0);
+  const pct = () => {
+    const w = cw();
+    const t = total();
+    return w && w > 0 && t > 0 ? Math.round((t / w) * 100) : undefined;
+  };
+  const color = () => {
+    const p = pct();
+    if (!p) return "text-gh-fg-subtle";
+    if (p >= 85) return "text-amber-500";
+    if (p >= 70) return "text-gh-fg-muted";
+    return "text-gh-fg-subtle";
+  };
+
+  let triggerRef!: HTMLButtonElement;
+  let popoverRef!: HTMLDivElement;
+
+  const position = () => {
+    const rect = triggerRef.getBoundingClientRect();
+    popoverRef.style.position = "fixed";
+    popoverRef.style.right = `${window.innerWidth - rect.right}px`;
+    popoverRef.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+    popoverRef.style.left = "auto";
+    popoverRef.style.top = "auto";
+  };
+
+  const badgeLabel = () => {
+    if (hasUsage()) return formatTokenCount(total());
+    if (cw()) return formatTokenCount(cw()!);
+    return "";
+  };
+
+  return (
+    <Show when={visible()}>
+      <button
+        ref={triggerRef}
+        popovertarget="token-badge-popover"
+        class={`flex items-center gap-1 px-1.5 py-1 rounded-md text-[11px] tabular-nums hover:bg-gh-overlay transition-colors cursor-pointer ${color()}`}
+        onClick={() => { haptics.tap(); position(); }}
+      >
+        <span class="i ti ti-brain text-[12px]" />
+        <span>{badgeLabel()}</span>
+        <Show when={pct()}>
+          <span class="text-[10px] opacity-70">({pct()}%)</span>
+        </Show>
+      </button>
+
+      <div
+        ref={popoverRef}
+        id="token-badge-popover"
+        popover="auto"
+        class="m-0 p-0 bg-gh-surface border border-gh-border rounded-lg shadow-lg min-w-[200px] max-w-[280px]"
+        style={{ inset: "unset" }}
+      >
+        <div class="px-3 py-2.5 space-y-2 text-[12px]">
+          <div class="font-medium text-gh-fg text-[13px]">Context usage</div>
+          <Show when={hasUsage()} fallback={
+            <p class="text-gh-fg-muted leading-snug">
+              No usage data yet. Token counts appear after the first response.
+            </p>
+          }>
+            <div class="space-y-1 text-gh-fg-muted">
+              <div class="flex justify-between">
+                <span>Input tokens</span>
+                <span class="text-gh-fg-secondary tabular-nums">{(props.usage?.input ?? 0).toLocaleString()}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Output tokens</span>
+                <span class="text-gh-fg-secondary tabular-nums">{(props.usage?.output ?? 0).toLocaleString()}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="font-medium text-gh-fg">Total</span>
+                <span class="text-gh-fg font-medium tabular-nums">{total().toLocaleString()}</span>
+              </div>
+            </div>
+          </Show>
+          <Show when={cw()} fallback={
+            <p class="text-[11px] text-gh-fg-subtle leading-snug">
+              No context window configured. Set it in provider settings for fill tracking.
+            </p>
+          }>
+            {(w) => (
+              <div class="space-y-1.5 border-t border-gh-border-muted pt-2">
+                <div class="flex justify-between text-gh-fg-muted">
+                  <span>Context window</span>
+                  <span class="text-gh-fg-secondary tabular-nums">{w().toLocaleString()}</span>
+                </div>
+                <Show when={hasUsage()}>
+                  <div class="w-full h-1.5 rounded-full bg-gh-muted overflow-hidden">
+                    <div
+                      class={`h-full rounded-full transition-all ${
+                        (pct() ?? 0) >= 85 ? "bg-amber-500" : (pct() ?? 0) >= 70 ? "bg-gh-accent" : "bg-gh-fg-subtle"
+                      }`}
+                      style={{ width: `${Math.min(100, pct() ?? 0)}%` }}
+                    />
+                  </div>
+                  <p class="text-[11px] text-gh-fg-subtle leading-snug">
+                    {pct()}% used. Auto-compaction triggers at ~75%.
+                  </p>
+                </Show>
+              </div>
+            )}
+          </Show>
+        </div>
+      </div>
+    </Show>
+  );
 };
 
 /** Chat composer with bordered container, model selector, and file controls. */
@@ -43,6 +162,8 @@ export const MessageInput = (props: {
   dropActive?: boolean;
   disabled: boolean;
   placeholder?: string;
+  lastUsage?: Usage;
+  contextWindow?: number;
 }) => {
   const [text, setText] = createSignal("");
   const [matches, setMatches] = createSignal<SlashCommand[]>([]);
@@ -399,6 +520,9 @@ export const MessageInput = (props: {
             </button>
 
             <div class="flex-1" />
+
+            {/* Token usage badge */}
+            <TokenBadge usage={props.lastUsage} contextWindow={props.contextWindow} />
 
             {/* Send button — just the arrow, no bg */}
             <button
