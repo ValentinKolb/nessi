@@ -52,19 +52,21 @@ The `--xrechnung` flag generates an additional XML file that can be imported int
 
 ## How to handle invoice requests
 
-When the user asks to create an invoice, gather the required information step by step. Check the user's memories first — business details like address, tax ID, and bank info are often stored there.
+Follow this order strictly:
 
-**Before creating the invoice, use the `survey` tool to ask:**
-
-1. Whether they want an XRechnung XML alongside the HTML (important for B2B and public sector invoices in Germany)
-2. Any missing required fields
-
-Don't ask about XRechnung if the user already specified `--xrechnung` or said they don't need it. For B2B invoices or when the recipient is a public institution, suggest including XRechnung.
+1. **Check memories** for the user's business details (address, tax ID, bank, logo).
+2. **Gather missing info** — ask for what you don't have (recipient, items, etc.).
+3. **BEFORE generating**, use the `survey` tool to confirm:
+   - Whether to include XRechnung XML (`--xrechnung`). Suggest it for B2B or public sector recipients.
+   - Any open questions about format, tax rate, etc.
+4. **Generate once** with all options — don't create the invoice, then ask, then regenerate.
+5. **Present BOTH files** after generating:
+   - `present /output/invoice-{number}.html` — the printable invoice
+   - `present /output/xrechnung-{number}.xml` — the XRechnung XML (if generated)
 
 ## Notes
 
-- HTML output renders in an iframe with a print button (Print → Save as PDF)
+- HTML renders in an iframe with a print button (Print → Save as PDF)
 - XRechnung XML follows EN 16931 / UBL 2.1 standard
 - All calculations (subtotal, tax, total) are automatic
-- Use `present` to display the invoice inline
-- The address format for XRechnung expects: `Name\nStreet\nPostcode City` (each on a new line)
+- Address format for XRechnung: `Name\nStreet\nPostcode City` (one per line)
