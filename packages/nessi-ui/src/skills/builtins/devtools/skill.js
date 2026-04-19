@@ -1,23 +1,35 @@
 export default function create(api) {
   const { defineCommand, ok, err, parseArgs, positionalArgs } = api;
 
+  // Lazy-load stdlib for encoding/crypto
+  let stdlib = null;
+  const getStdlib = async () => {
+    if (stdlib) return stdlib;
+    stdlib = await import("@valentinkolb/stdlib");
+    return stdlib;
+  };
+
   const hashText = async (text, algo) => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(text);
-    const algoMap = { sha256: "SHA-256", sha1: "SHA-1", sha512: "SHA-512" };
+    const { crypto: stdCrypto } = await getStdlib();
+    if (algo === "sha256") return stdCrypto.hash(text);
+    if (algo === "fnv1a") return stdCrypto.fnv1aHash(text);
+    // Fallback to Web Crypto for sha1/sha512
+    const algoMap = { sha1: "SHA-1", sha512: "SHA-512" };
     const cryptoAlgo = algoMap[algo];
-    if (!cryptoAlgo) {
-      // MD5 fallback (simple implementation for non-security use)
-      return `MD5 not available via Web Crypto. Use sha256 instead.`;
-    }
-    const hashBuffer = await crypto.subtle.digest(cryptoAlgo, data);
+    if (!cryptoAlgo) return err(`Unknown algorithm: "${algo}". Use: sha256, sha1, sha512, fnv1a.`);
+    const hashBuffer = await crypto.subtle.digest(cryptoAlgo, new TextEncoder().encode(text));
     return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
   };
 
-  const decodeJwt = (token) => {
+  const decodeJwt = async (token) => {
+    const { fromBase64 } = await getStdlib();
     const parts = token.split(".");
     if (parts.length < 2) throw new Error("Invalid JWT format.");
-    const decode = (s) => JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/")));
+    const decode = (s) => {
+      const padded = s.replace(/-/g, "+").replace(/_/g, "/");
+      const bytes = fromBase64(padded);
+      return JSON.parse(new TextDecoder().decode(bytes));
+    };
     return { header: decode(parts[0]), payload: decode(parts[1]) };
   };
 
@@ -48,9 +60,10 @@ export default function create(api) {
       const action = (pos[0] || "").toLowerCase();
       const input = pos.slice(1).join(" ") || opts.get("text") || "";
       if (!input) return err('Usage: dev base64 encode "text"');
-      if (action === "encode") return ok(btoa(unescape(encodeURIComponent(input))) + "\n");
+      const { toBase64, fromBase64 } = await getStdlib();
+      if (action === "encode") return ok(toBase64(new TextEncoder().encode(input)) + "\n");
       if (action === "decode") {
-        try { return ok(decodeURIComponent(escape(atob(input))) + "\n"); }
+        try { return ok(new TextDecoder().decode(fromBase64(input)) + "\n"); }
         catch { return err("Invalid Base64 input."); }
       }
       return err("Use: dev base64 encode|decode");
@@ -71,7 +84,7 @@ export default function create(api) {
       const token = pos[0] || "";
       if (!token) return err('Usage: dev jwt "eyJ..."');
       try {
-        const { header, payload } = decodeJwt(token);
+        const { header, payload } = await decodeJwt(token);
         const lines = [
           "Header:", JSON.stringify(header, null, 2), "",
           "Payload:", JSON.stringify(payload, null, 2),
@@ -99,17 +112,16 @@ export default function create(api) {
 
     // ── uuid
     if (sub === "uuid") {
-      return ok(crypto.randomUUID() + "\n");
+      const { crypto: stdCrypto } = await getStdlib();
+      return ok(stdCrypto.common.uuid() + "\n");
     }
 
     // ── password
     if (sub === "password") {
+      const { crypto: stdCrypto } = await getStdlib();
       const length = parseInt(opts.get("length") || "20", 10);
       const noSymbols = rest.includes("--no-symbols");
-      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" + (noSymbols ? "" : "!@#$%^&*_-+=");
-      const array = new Uint8Array(length);
-      crypto.getRandomValues(array);
-      const pw = Array.from(array, (b) => chars[b % chars.length]).join("");
+      const pw = stdCrypto.password.random({ length, symbols: !noSymbols });
       return ok(pw + "\n");
     }
 
