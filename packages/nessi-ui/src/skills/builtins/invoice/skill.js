@@ -67,11 +67,17 @@ export default function create(api) {
     const contactParts = [inv.phone, inv.email, inv.web].filter(Boolean).map(escHtml);
     const contactLine = contactParts.join(" · ");
 
+    // Build footer text for repeating print footer
+    const footerHtml = [
+      footerLine || "",
+      contactLine || "",
+    ].filter(Boolean).join("<br>");
+
     return `<!DOCTYPE html>
 <html lang="de">
 <head><meta charset="UTF-8">
 <style>
-  @page { size: A4; margin: 20mm; }
+  @page { size: A4; margin: 20mm 20mm 28mm 20mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; color: #1a1a1a; padding: 48px; width: 170mm; margin: 0 auto; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 48px; }
@@ -83,18 +89,26 @@ export default function create(api) {
   .meta { display: flex; gap: 36px; margin-bottom: 24px; font-size: 13px; color: #555; }
   .meta-item { display: flex; flex-direction: column; }
   .meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #999; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-variant-numeric: tabular-nums; }
-  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; padding: 8px 0; border-bottom: 2px solid #e5e5e5; }
-  td { padding: 10px 0; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
-  td:first-child { white-space: normal; }
-  .totals { margin-left: auto; width: 260px; }
+  table.items { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-variant-numeric: tabular-nums; }
+  table.items th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; padding: 8px 0; border-bottom: 2px solid #e5e5e5; }
+  table.items td { padding: 10px 0; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+  table.items td:first-child { white-space: normal; }
+  table.items tfoot td { font-size: 10px; color: #999; border: none; padding: 6px 0; }
+  .totals { margin-left: auto; width: 260px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   .totals tr td { border: none; padding: 4px 0; }
   .totals .total-row td { font-weight: 700; font-size: 18px; padding-top: 10px; border-top: 2px solid #1a1a1a; }
   .footer { margin-top: 48px; font-size: 11px; color: #888; border-top: 1px solid #e5e5e5; padding-top: 12px; line-height: 1.6; }
-  @media print { body { padding: 0; width: auto; } }
+  /* Print: repeat thead on every page, show running footer */
+  .print-footer { display: none; }
+  @media print {
+    body { padding: 0; width: auto; }
+    .print-footer { display: block; position: fixed; bottom: 0; left: 0; right: 0; font-size: 9px; color: #999; text-align: center; line-height: 1.5; border-top: 1px solid #e5e5e5; padding-top: 4px; }
+    .footer { margin-bottom: 40px; }
+  }
 </style>
 </head>
 <body>
+  ${footerHtml ? `<div class="print-footer">${footerHtml}</div>` : ""}
   <div class="header">
     <div>${logoDataUrl ? `<img src="${logoDataUrl}" class="logo" alt="Logo" style="margin-bottom:12px"><br>` : ""}<h1>Rechnung</h1></div>
     <div style="text-align:right;font-size:13px;color:#888">${inv.number ? `Nr. ${escHtml(inv.number)}<br>` : ""}${inv.date ? escHtml(inv.date) : ""}</div>
@@ -108,7 +122,10 @@ export default function create(api) {
     ${inv.period ? `<div class="meta-item"><span class="meta-label">Leistungszeitraum</span>${escHtml(inv.period)}</div>` : ""}
     ${inv.reference ? `<div class="meta-item"><span class="meta-label">Referenz</span>${escHtml(inv.reference)}</div>` : ""}
   </div>
-  <table><thead><tr><th>Beschreibung</th><th style="text-align:right">Menge</th><th style="text-align:right">Preis</th><th style="text-align:right">Gesamt</th></tr></thead><tbody>${itemRows}</tbody></table>
+  <table class="items">
+    <thead><tr><th>Beschreibung</th><th style="text-align:right">Menge</th><th style="text-align:right">Preis</th><th style="text-align:right">Gesamt</th></tr></thead>
+    <tbody>${itemRows}</tbody>
+  </table>
   <table class="totals">
     <tr><td>Netto</td><td style="text-align:right">${fmt(subtotal, currency)}</td></tr>
     ${taxRate > 0 ? `<tr><td>MwSt (${inv.tax}%)</td><td style="text-align:right">${fmt(taxAmount, currency)}</td></tr>` : ""}
