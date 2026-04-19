@@ -4,7 +4,8 @@ export default function create(api) {
   const fmt = (n, currency) => {
     const c = currency || "EUR";
     const sym = { EUR: "€", USD: "$", GBP: "£", CHF: "CHF" }[c] || c;
-    return `${n.toFixed(2)} ${sym}`;
+    const formatted = n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `${formatted}\u00A0${sym}`;
   };
 
   const escHtml = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -86,9 +87,10 @@ export default function create(api) {
   .meta { display: flex; gap: 36px; margin-bottom: 24px; font-size: 13px; color: #555; }
   .meta-item { display: flex; flex-direction: column; }
   .meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #999; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-variant-numeric: tabular-nums; }
   th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; padding: 8px 0; border-bottom: 2px solid #e5e5e5; }
-  td { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+  td { padding: 10px 0; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+  td:first-child { white-space: normal; }
   .totals { margin-left: auto; width: 260px; }
   .totals tr td { border: none; padding: 4px 0; }
   .totals .total-row td { font-weight: 700; font-size: 18px; padding-top: 10px; border-top: 2px solid #1a1a1a; }
