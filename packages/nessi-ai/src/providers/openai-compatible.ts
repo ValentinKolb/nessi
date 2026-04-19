@@ -288,6 +288,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         body,
         config.name,
         request.signal,
+        contextWindow,
       );
 
       if (!result.ok) {

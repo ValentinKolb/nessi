@@ -22,7 +22,7 @@ export const vllm = (model: string, options?: VLLMOptions): Provider => {
     creditsPerOutputToken: options?.creditsPerOutputToken,
     compat: {
       toolCallIdPolicy: "passthrough",
-      supportsUsageInStreaming: false,
+      supportsUsageInStreaming: true,
       thinkingFormat: "none",
       maxTokensField: "max_tokens",
     },

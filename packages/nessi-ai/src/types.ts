@@ -100,7 +100,7 @@ export type StreamEvent =
   | { type: "tool_delta"; callId: string; argsDelta: string }
   | { type: "tool_call"; callId: string; name: string; args: Record<string, unknown> }
   | { type: "usage"; usage: Usage; finishReason?: AssistantStopReason }
-  | { type: "error"; error: string; retryable: boolean; contextOverflow?: boolean };
+  | { type: "error"; error: string; retryable: boolean; contextOverflow?: boolean; overflowRatio?: number };
 
 export type Provider = {
   name: string;

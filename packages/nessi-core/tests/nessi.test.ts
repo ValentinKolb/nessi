@@ -1090,4 +1090,145 @@ describe("nessi core loop", () => {
     const steerEvents = events.filter((e) => e.type === "steer_applied");
     expect(steerEvents).toHaveLength(0);
   });
+
+  it("pre-emptive compaction when fillRatio >= 0.85", async () => {
+    let compactCtx: { force: boolean; fillRatio?: number } | null = null;
+    // contextWindow=50 with ~200 char input → fillRatio ≈ 1.3 (well above 0.85)
+    const provider = mockProvider(
+      [
+        { type: "text", delta: "OK" },
+        { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+      ],
+      { contextWindow: 50 },
+    );
+
+    const store = memoryStore();
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store,
+        compact(ctx) {
+          compactCtx = { force: ctx.force, fillRatio: ctx.fillRatio };
+          return null;
+        },
+        input: "A ".repeat(100),
+      }),
+    );
+
+    // Should have attempted compaction with force=true due to high fillRatio
+    expect(compactCtx).not.toBeNull();
+    expect(compactCtx!.force).toBe(true);
+    expect(compactCtx!.fillRatio).toBeDefined();
+    expect(compactCtx!.fillRatio!).toBeGreaterThanOrEqual(0.85);
+
+    // Should still complete the turn
+    const done = events.find((e) => e.type === "done") as any;
+    expect(done.reason).toBe("stop");
+  });
+
+  it("compact called with force=false and low fillRatio when context is small", async () => {
+    let compactCtx: { force: boolean; fillRatio?: number } | null = null;
+    const provider = mockProvider(
+      [
+        { type: "text", delta: "OK" },
+        { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+      ],
+      { contextWindow: 1_000_000 },
+    );
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store: memoryStore(),
+        compact(ctx) {
+          compactCtx = { force: ctx.force, fillRatio: ctx.fillRatio };
+          return null; // no compaction needed
+        },
+        input: "Hi",
+      }),
+    );
+
+    // compact IS called, but with force=false and very low fillRatio
+    expect(compactCtx).not.toBeNull();
+    expect(compactCtx!.force).toBe(false);
+    expect(compactCtx!.fillRatio).toBeDefined();
+    expect(compactCtx!.fillRatio!).toBeLessThan(0.01);
+    // No compaction events should have been emitted (compact returned null)
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain("compaction_start");
+    const done = events.find((e) => e.type === "done") as any;
+    expect(done.reason).toBe("stop");
+  });
+
+  it("context overflow error includes overflowRatio from provider", async () => {
+    const events = await collectEvents(
+      nessi({
+        provider: mockProvider([
+          { type: "error", error: "context too long", retryable: false, contextOverflow: true, overflowRatio: 1.5 },
+        ]),
+        systemPrompt: "test",
+        store: memoryStore(),
+        input: "Hi",
+      }),
+    );
+
+    const error = events.find((e) => e.type === "error") as any;
+    expect(error).toBeDefined();
+    expect(error.contextOverflow).toBe(true);
+    expect(error.overflowRatio).toBeDefined();
+
+    const done = events.find((e) => e.type === "done") as any;
+    expect(done.reason).toBe("context_overflow");
+  });
+
+  it("context overflow compaction retry passes fillRatio to compact", async () => {
+    let callCount = 0;
+    let retryFillRatio: number | undefined;
+    const provider: import("../src/types.js").Provider = {
+      name: "mock",
+      family: "openai-compatible",
+      model: "mock",
+      capabilities: { streaming: true, tools: true, images: true, thinking: true, usage: true },
+      contextWindow: 100_000,
+      async *stream() {
+        callCount++;
+        if (callCount === 1) {
+          yield { type: "error" as const, error: "context too long", retryable: false, contextOverflow: true, overflowRatio: 1.3 };
+          return;
+        }
+        yield { type: "text" as const, delta: "After compaction" };
+        yield { type: "usage" as const, usage: { input: 10, output: 5, total: 15 } };
+      },
+      complete(request) {
+        return completeFromStream(provider, request);
+      },
+    };
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store: memoryStore(),
+        compact(ctx) {
+          if (!ctx.force) return null;
+          retryFillRatio = ctx.fillRatio;
+          return (async () => {
+            await ctx.store.append(
+              { role: "user", content: [{ type: "text", text: "Compacted" }] },
+              { seq: 0, kind: "summary" },
+            );
+          })();
+        },
+        input: "Hi",
+      }),
+    );
+
+    expect(callCount).toBe(2);
+    expect(retryFillRatio).toBeDefined();
+    const done = events.find((e) => e.type === "done") as any;
+    expect(done.reason).toBe("stop");
+  });
 });

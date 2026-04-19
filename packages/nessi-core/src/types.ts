@@ -60,7 +60,7 @@ export type OutboundEvent =
       args: unknown;
       message?: string;
     }
-  | { type: "error"; agentId: string; error: string; retryable: boolean; contextOverflow?: boolean }
+  | { type: "error"; agentId: string; error: string; retryable: boolean; contextOverflow?: boolean; overflowRatio?: number }
   | { type: "steer_applied"; agentId: string; message: string }
   | { type: "compaction_start"; agentId: string }
   | { type: "compaction_end"; agentId: string }
@@ -164,6 +164,8 @@ export type CompactContext = {
   provider: Provider;
   usage: Usage;
   force: boolean;
+  /** Estimated fill ratio (estimatedTokens / contextWindow). Only set when contextWindow is known. */
+  fillRatio?: number;
 }
 
 export type CompactOptions = {

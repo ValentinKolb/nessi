@@ -6,6 +6,7 @@ export { nessi } from "./nessi.js";
 export { compact } from "./compact.js";
 export { defineTool, toolToJsonSchema, toolToSpec } from "./tools.js";
 export { memoryStore } from "./stores.js";
+export { estimateTokens } from "./utils.js";
 
 export type {
   // Core

@@ -13,16 +13,38 @@ export const openSSEStream = async (
   body: unknown,
   label: string,
   signal?: AbortSignal,
+  contextWindow?: number,
 ): Promise<SSEStreamResult> => {
+  const serializedBody = JSON.stringify(body);
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify(body),
+      body: serializedBody,
       signal,
     });
   } catch (error) {
+    // Heuristic: if the request body is large relative to the context window,
+    // a network error likely means the server rejected it for context overflow
+    // (browsers hide the actual HTTP 400 body behind CORS on error responses).
+    const estimatedTokens = serializedBody.length / 4;
+    const isLikelyOverflow = typeof contextWindow === "number"
+      && contextWindow > 0
+      && estimatedTokens > contextWindow * 0.85;
+    if (isLikelyOverflow) {
+      const ratio = estimatedTokens / contextWindow;
+      return {
+        ok: false,
+        error: {
+          type: "error",
+          error: `${label}: context window likely exceeded (~${Math.round(estimatedTokens)} tokens estimated, limit ${contextWindow})`,
+          retryable: false,
+          contextOverflow: true,
+          overflowRatio: ratio,
+        },
+      };
+    }
     return {
       ok: false,
       error: { type: "error", error: formatConnectionError(label, error), retryable: true },

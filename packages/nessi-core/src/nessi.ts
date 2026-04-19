@@ -20,7 +20,7 @@ import type {
   StoreEntry,
 } from "./types.js";
 import { toolToSpec } from "./tools.js";
-import { zeroUsage, toErrorMessage } from "./utils.js";
+import { zeroUsage, toErrorMessage, estimateTokens } from "./utils.js";
 
 // ----------------------------------------------------------------------------
 // Inbound event channel — lets the consumer push() events that the loop awaits
@@ -220,14 +220,26 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         // Load entries from store
         let entries = await store.load();
 
+      // Compute fill ratio for compaction decisions.
+      // Prefer real provider usage from last turn; fall back to char-based estimate (first turn only).
+      const contextWindow = provider.contextWindow;
+      const computeFillRatio = (msgs: Message[]) => {
+        if (typeof contextWindow !== "number" || contextWindow <= 0) return undefined;
+        const tokens = lastUsage.total > 0 ? lastUsage.total : estimateTokens(msgs);
+        return tokens / contextWindow;
+      };
+
       // Compaction (before provider call) — skip if we just did a force-retry
       if (compact && !compactionRetried) {
+        const fillRatio = computeFillRatio(entries.map((e) => e.message));
+        const shouldForce = typeof fillRatio === "number" && fillRatio >= 0.85;
         const compaction = compact({
           entries,
           store,
           provider,
           usage: lastUsage,
-          force: false,
+          force: shouldForce,
+          fillRatio,
         });
         if (compaction) {
           yield { type: "compaction_start", agentId };
@@ -250,6 +262,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       const toolCalls: ToolCallBlock[] = [];
       const toolArgBuffers = new Map<string, string>();
       let hadContextOverflow = false;
+      let overflowRatio: number | undefined;
       let providerFailure: Extract<ProviderEvent, { type: "error" }> | null = null;
 
       try {
@@ -302,6 +315,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
             case "error":
               if (event.contextOverflow) {
                 hadContextOverflow = true;
+                overflowRatio = event.overflowRatio;
                 break;
               }
               providerFailure = event;
@@ -317,12 +331,14 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       // Handle context overflow — max 1 compaction retry per turn
       if (hadContextOverflow) {
         if (compact && !compactionRetried) {
+          const fillRatio = computeFillRatio(messages) ?? overflowRatio;
           const compaction = compact({
             entries,
             store,
             provider,
             usage: lastUsage,
             force: true,
+            fillRatio,
           });
           if (compaction) {
             yield { type: "compaction_start", agentId };
@@ -340,6 +356,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           error: "Context window exceeded",
           retryable: false,
           contextOverflow: true,
+          overflowRatio: overflowRatio ?? computeFillRatio(messages),
         };
         yield { type: "done", agentId, reason: "context_overflow" };
         return;
