@@ -37,8 +37,9 @@ export default function create(api) {
 <head>
 <meta charset="UTF-8">
 <style>
+  @page { size: A4; margin: 20mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; color: #1a1a1a; padding: 48px; max-width: 800px; margin: 0 auto; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; color: #1a1a1a; padding: 48px; width: 170mm; margin: 0 auto; }
   .header { display: flex; justify-content: space-between; margin-bottom: 48px; }
   .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
   .addresses { display: flex; justify-content: space-between; margin-bottom: 36px; gap: 48px; }
@@ -52,7 +53,7 @@ export default function create(api) {
   .totals tr td { border: none; padding: 4px 0; }
   .totals .total-row td { font-weight: 700; font-size: 18px; padding-top: 10px; border-top: 2px solid #1a1a1a; }
   .footer { margin-top: 48px; font-size: 12px; color: #888; border-top: 1px solid #e5e5e5; padding-top: 16px; }
-  @media print { body { padding: 0; } }
+  @media print { body { padding: 0; width: auto; } }
 </style>
 </head>
 <body>

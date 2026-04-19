@@ -13,7 +13,7 @@ type PresentResult = {
   status: string;
   path: string;
   name: string;
-  contentType: "svg" | "image" | "table" | "text" | "download";
+  contentType: "svg" | "image" | "table" | "html" | "text" | "download";
   content?: string;
   tableData?: TableData;
 };
@@ -218,6 +218,34 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
 
       <Show when={ct() === "table" && props.result.tableData}>
         <DataTable data={props.result.tableData!} />
+      </Show>
+
+      <Show when={ct() === "html"}>
+        <div class="rounded border border-gh-border-muted overflow-hidden bg-white">
+          <iframe
+            srcdoc={content()}
+            sandbox="allow-same-origin"
+            class="w-full border-0"
+            style={{ height: "500px" }}
+            title={name()}
+          />
+          <div class="flex items-center gap-2 px-3 py-1.5 bg-gh-overlay border-t border-gh-border-muted">
+            <button
+              class="icon-action text-xs flex items-center gap-1"
+              title="Open in new tab for printing"
+              onClick={() => {
+                haptics.tap();
+                const blob = new Blob([content()], { type: "text/html" });
+                const url = URL.createObjectURL(blob);
+                window.open(url, "_blank");
+                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              }}
+            >
+              <span class="i ti ti-printer text-sm" />
+              <span class="font-semibold">Print / Save as PDF</span>
+            </button>
+          </div>
+        </div>
       </Show>
 
       <Show when={ct() === "text"}>

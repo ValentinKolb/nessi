@@ -23,13 +23,14 @@ const presentToolDef = defineTool({
   }),
 });
 
-type ContentType = "svg" | "image" | "table" | "text" | "download";
+type ContentType = "svg" | "image" | "table" | "html" | "text" | "download";
 
 const inferContentType = (mimeType: string, name: string): ContentType => {
   if (mimeType === "image/svg+xml" || name.endsWith(".svg")) return "svg";
   if (mimeType.startsWith("image/")) return "image";
   if (/\.(csv|tsv|xlsx|xls)$/i.test(name)) return "table";
-  if (mimeType.startsWith("text/") || /\.(json|md|yaml|yml|toml|xml|html|css|js|jsx|ts|tsx|py|rs|go|sql|sh|txt)$/i.test(name)) return "text";
+  if (/\.html?$/i.test(name)) return "html";
+  if (mimeType.startsWith("text/") || /\.(json|md|yaml|yml|toml|xml|css|js|jsx|ts|tsx|py|rs|go|sql|sh|txt)$/i.test(name)) return "text";
   return "download";
 };
 
@@ -72,6 +73,10 @@ export const createPresentTool = (fileService: ChatFileService): Tool =>
           rows: preview.rows.map((row) => preview.columns.map((col) => row[col] ?? "")),
           totalRows: preview.rows.length,
         };
+        break;
+      }
+      case "html": {
+        base.content = new TextDecoder().decode(bytes);
         break;
       }
       case "text": {
