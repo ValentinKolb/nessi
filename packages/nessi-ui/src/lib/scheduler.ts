@@ -46,7 +46,7 @@ export const startScheduler = async () => {
       cron: "0 */2 * * *",
       job: consolidateMemoryJob,
       input: {},
-      misfire: "skip",
+      misfire: "catch_up_one",
     });
     log("registered consolidate-memory (every 2h)");
 
@@ -55,7 +55,7 @@ export const startScheduler = async () => {
       cron: "*/30 * * * *",
       job: suggestTopicsJob,
       input: {},
-      misfire: "skip",
+      misfire: "catch_up_one",
     });
     log("registered suggest-topics (every 30min)");
 

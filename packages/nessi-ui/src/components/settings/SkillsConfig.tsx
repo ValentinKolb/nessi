@@ -7,7 +7,7 @@ import {
   type SkillEntry,
 } from "../../lib/skill-registry.js";
 import { haptics } from "../../shared/browser/haptics.js";
-const NATIVE_TOOLS = ["memory", "web", "survey", "list_files", "read_file", "write_file", "edit_file", "bash"] as const;
+const NATIVE_TOOLS = ["memory", "web", "survey", "card", "analyze_image", "present", "list_files", "read_file", "write_file", "edit_file", "bash"] as const;
 
 export const SkillsConfig = (props: {
   onCreateSkill: () => void;

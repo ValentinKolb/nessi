@@ -1,5 +1,5 @@
 export type ChatFileKind = "input" | "output";
-export type ChatFileSourceType = "text" | "pdf" | "table" | "generated";
+export type ChatFileSourceType = "text" | "pdf" | "table" | "image" | "generated";
 
 export type ChatFileMeta = {
   id: string;
@@ -21,5 +21,5 @@ export type PendingChatFile = {
   relativePath?: string;
   mimeType: string;
   size: number;
-  sourceType: Extract<ChatFileSourceType, "text" | "pdf" | "table">;
+  sourceType: Extract<ChatFileSourceType, "text" | "pdf" | "table" | "image">;
 };

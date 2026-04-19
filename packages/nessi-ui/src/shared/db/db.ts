@@ -58,7 +58,7 @@ export type DbChatFileMeta = {
   mimeType: string;
   size: number;
   kind: "input" | "output";
-  sourceType: "text" | "pdf" | "table" | "generated";
+  sourceType: "text" | "pdf" | "table" | "image" | "generated";
   mountPath: string;
   createdAt: string;
   updatedAt?: string;

@@ -89,6 +89,17 @@ export const classifyPendingChatFile = (file: File): PendingChatFile | null => {
     };
   }
 
+  if (mimeType.startsWith("image/")) {
+    return {
+      id: newId(),
+      file,
+      name: file.name,
+      mimeType,
+      size: file.size,
+      sourceType: "image",
+    };
+  }
+
   if (
     mimeType.startsWith("text/")
     || mimeType === "application/json"

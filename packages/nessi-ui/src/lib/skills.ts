@@ -18,6 +18,7 @@ import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
 import { webTool } from "../skills/builtins/web/web-tool.js";
 import { surveyTool } from "./tools/survey-tool.js";
 import { cardTool } from "./tools/card-tool.js";
+import { createImageAnalysisTool } from "./tools/image-analysis-tool.js";
 import { skillRuntime } from "../skills/core/index.js";
 import { createGitHubFs } from "./github-fs.js";
 import { truncateText } from "./utils.js";
@@ -417,6 +418,7 @@ export const createMainBashRuntime = (options?: {
   initialFiles?: InitialFiles;
   afterExec?: (bash: Bash) => Promise<void> | void;
   fileService?: ChatFileService;
+  chatProvider?: import("nessi-core").Provider | null;
 }) => {
   const helpers = createCommandHelpers();
   if (options?.fileService) {
@@ -440,7 +442,11 @@ export const createMainBashRuntime = (options?: {
       webTool,
       surveyTool,
       cardTool,
-      ...(options?.fileService ? [...createFileTools(options.fileService), createPresentTool(options.fileService)] : []),
+      ...(options?.fileService ? [
+        ...createFileTools(options.fileService),
+        createPresentTool(options.fileService),
+        createImageAnalysisTool(options.fileService, options.chatProvider ?? null),
+      ] : []),
       createBashToolWithHook(bash, helpers, options?.afterExec),
     ] satisfies Tool[],
   };

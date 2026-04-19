@@ -22,6 +22,7 @@ import {
 import { SkillEditorView } from "./SkillEditorModal.js";
 import { PromptEditorView } from "./PromptEditorModal.js";
 import { CompactionPromptEditor } from "./CompactionPromptEditor.js";
+import { ImageAnalysisSettings } from "./ImageAnalysisSettings.js";
 import { GitHubHelpView } from "./GitHubHelpView.js";
 import { NextcloudHelpView } from "./NextcloudHelpView.js";
 import { haptics } from "../../shared/browser/haptics.js";
@@ -191,6 +192,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
                 onCreatePrompt={() => setRoute({ kind: "prompt-editor", prompt: null })}
                 onEditPrompt={(prompt) => setRoute({ kind: "prompt-editor", prompt })}
               />
+              <ImageAnalysisSettings />
               <CompactionSettings onEditPrompt={() => setRoute({ kind: "compaction-prompt-editor" })} />
               <BackgroundTasks
                 onEditPrompts={() => setRoute({ kind: "bg-prompt-editor" })}
