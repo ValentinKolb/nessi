@@ -1,6 +1,6 @@
 ---
 name: invoice
-description: "Generate professional invoices as HTML files. Use when the user needs to create a bill, receipt, or invoice for clients or customers."
+description: "Generate professional invoices as printable HTML. Use when the user needs to create a bill, receipt, or invoice. Supports logo, tax ID, and all required German invoice fields."
 metadata:
   nessi:
     command: invoice
@@ -9,52 +9,67 @@ metadata:
 
 # Invoice
 
-Generate clean, professional invoices as HTML files that can be printed or saved as PDF via the browser.
+Generate clean, professional invoices as HTML files with DIN A4 layout. The user can print to PDF directly from the browser.
 
 ## Command
 
 ```bash
-invoice create --json '{"from":"My Company\\nStreet 1\\n12345 Berlin","to":"Client GmbH\\nOther Street 2\\n54321 Munich","number":"2026-042","date":"2026-04-19","due":"2026-05-19","items":[{"description":"Web Development","quantity":40,"unit":"hours","price":95},{"description":"Hosting Setup","quantity":1,"unit":"piece","price":250}],"tax":19,"currency":"EUR","notes":"Payment via bank transfer.","bank":"IBAN: DE89 3704 0044 0532 0130 00"}'
+invoice create --json '{ ... }'
 ```
 
 ## JSON Fields
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `from` | yes | Sender name + address (use `\n` for line breaks) |
-| `to` | yes | Recipient name + address |
-| `number` | yes | Invoice number |
-| `date` | yes | Invoice date |
-| `due` | no | Due date |
-| `items` | yes | Array of line items (see below) |
-| `tax` | no | Tax rate in percent (e.g., 19 for 19% MwSt) |
-| `currency` | no | Currency symbol or code (default: EUR) |
-| `notes` | no | Footer notes (payment terms, etc.) |
-| `bank` | no | Bank details |
+### Required
 
-### Line Item Fields
+| Field | Description | Example |
+|-------|-------------|---------|
+| `from` | Sender name + address (`\n` for line breaks) | `"Kolb Antik\nIm Schotter 1\n95488 Bayreuth"` |
+| `to` | Recipient name + address | `"Musterkunde GmbH\nBeispielweg 5\n10115 Berlin"` |
+| `number` | Invoice number | `"2026-042"` |
+| `date` | Invoice date | `"2026-04-19"` |
+| `items` | Array of line items | see below |
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `description` | yes | What was delivered |
-| `quantity` | yes | Number of units |
-| `unit` | no | Unit label (hours, pieces, etc.) |
-| `price` | yes | Price per unit |
+### Line Items
+
+Each item: `{ "description": "...", "quantity": N, "price": N, "unit": "hours" }`
+
+### Optional
+
+| Field | Description |
+|-------|-------------|
+| `due` | Due date |
+| `tax` | Tax rate in percent (e.g., `19` for 19% MwSt) |
+| `currency` | Currency code (default: EUR) |
+| `period` | Service period (e.g., "01.03. – 31.03.2026") |
+| `reference` | Client reference or order number |
+| `taxId` | USt-IdNr (e.g., "DE123456789") |
+| `taxNumber` | Steuernummer (e.g., "123/456/78901") |
+| `court` | Amtsgericht + Handelsregister (e.g., "AG Bayreuth, HRB 1234") |
+| `ceo` | Geschäftsführer name |
+| `bank` | IBAN and bank name |
+| `phone` | Phone number |
+| `email` | Email address |
+| `web` | Website |
+| `notes` | Footer notes (payment terms, etc.) |
+| `logo` | Path to a logo image (e.g., `/input/logo.png` or `/input/logo.svg`) |
 
 ## How to gather information
 
-When the user wants to create an invoice, you need:
-1. **Who is it from?** (company name, address)
-2. **Who is it to?** (client name, address)
-3. **What was delivered?** (line items with quantity and price)
+When the user wants to create an invoice, you need at minimum:
+1. **Who is it from?** — name, address (check user memories first!)
+2. **Who is it to?** — client name, address
+3. **What was delivered?** — line items with quantity and price
 4. **Invoice number and date?**
-5. **Tax rate?** (19% is standard in Germany)
+5. **Tax rate?** — 19% is standard in Germany
 
-If the user has memories with their business details, use those. Otherwise ask.
+For business metadata (tax ID, court, CEO), check the user's memories. If not available, ask if they want to include it.
+
+If the user has uploaded a logo image, use its path in the `logo` field.
 
 ## Notes
 
 - Output is an HTML file at `/output/invoice-{number}.html`
-- The user can print it to PDF from the browser (Ctrl+P → Save as PDF)
-- Use `present` to show the invoice inline after generating it
-- All calculations (subtotal, tax, total) are done by the skill — the agent should not calculate them manually
+- Use `present` to show the invoice inline — it renders in an iframe with a print button
+- The print button opens the invoice in a new tab for Ctrl+P → Save as PDF
+- All calculations (subtotal, tax, total) are done by the skill automatically
+- The layout is DIN A4 optimized for printing
