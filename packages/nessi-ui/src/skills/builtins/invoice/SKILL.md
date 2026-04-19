@@ -1,6 +1,6 @@
 ---
 name: invoice
-description: "Generate professional invoices as printable HTML. Use when the user needs to create a bill, receipt, or invoice. Supports logo, tax ID, and all required German invoice fields."
+description: "Generate professional invoices as printable HTML, optionally with XRechnung XML. Use when the user needs a bill, receipt, or invoice. Supports logo, tax ID, and all German invoice fields."
 metadata:
   nessi:
     command: invoice
@@ -9,13 +9,16 @@ metadata:
 
 # Invoice
 
-Generate clean, professional invoices as HTML files with DIN A4 layout. The user can print to PDF directly from the browser.
+Generate clean, professional invoices as HTML with DIN A4 layout. Optionally generate a machine-readable XRechnung XML (EN 16931 / UBL 2.1) alongside.
 
 ## Command
 
 ```bash
 invoice create --json '{ ... }'
+invoice create --json '{ ... }' --xrechnung
 ```
+
+The `--xrechnung` flag generates an additional XML file that can be imported into accounting software or submitted to public sector clients.
 
 ## JSON Fields
 
@@ -23,53 +26,45 @@ invoice create --json '{ ... }'
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| `from` | Sender name + address (`\n` for line breaks) | `"Kolb Antik\nIm Schotter 1\n95488 Bayreuth"` |
-| `to` | Recipient name + address | `"Musterkunde GmbH\nBeispielweg 5\n10115 Berlin"` |
+| `from` | Sender address (`\n` for line breaks) | `"Kolb Antik\nIm Schotter 1\n95488 Bayreuth"` |
+| `to` | Recipient address | `"Musterkunde GmbH\nBeispielweg 5\n10115 Berlin"` |
 | `number` | Invoice number | `"2026-042"` |
 | `date` | Invoice date | `"2026-04-19"` |
-| `items` | Array of line items | see below |
-
-### Line Items
-
-Each item: `{ "description": "...", "quantity": N, "price": N, "unit": "hours" }`
+| `items` | Line items array | `[{"description":"...","quantity":1,"price":100,"unit":"Stk"}]` |
 
 ### Optional
 
 | Field | Description |
 |-------|-------------|
 | `due` | Due date |
-| `tax` | Tax rate in percent (e.g., `19` for 19% MwSt) |
+| `tax` | Tax rate (e.g., `19` for 19% MwSt) |
 | `currency` | Currency code (default: EUR) |
-| `period` | Service period (e.g., "01.03. – 31.03.2026") |
-| `reference` | Client reference or order number |
+| `period` | Service period |
+| `reference` | Client reference / order number |
 | `taxId` | USt-IdNr (e.g., "DE123456789") |
-| `taxNumber` | Steuernummer (e.g., "123/456/78901") |
-| `court` | Amtsgericht + Handelsregister (e.g., "AG Bayreuth, HRB 1234") |
-| `ceo` | Geschäftsführer name |
-| `bank` | IBAN and bank name |
-| `phone` | Phone number |
-| `email` | Email address |
-| `web` | Website |
-| `notes` | Footer notes (payment terms, etc.) |
-| `logo` | Path to a logo image (e.g., `/input/logo.png` or `/input/logo.svg`) |
+| `taxNumber` | Steuernummer |
+| `court` | Amtsgericht + HRB |
+| `ceo` | Geschäftsführer |
+| `bank` | IBAN + bank name |
+| `phone`, `email`, `web` | Contact info |
+| `notes` | Footer notes (payment terms) |
+| `logo` | Path to logo image (`/input/logo.png`) |
 
-## How to gather information
+## How to handle invoice requests
 
-When the user wants to create an invoice, you need at minimum:
-1. **Who is it from?** — name, address (check user memories first!)
-2. **Who is it to?** — client name, address
-3. **What was delivered?** — line items with quantity and price
-4. **Invoice number and date?**
-5. **Tax rate?** — 19% is standard in Germany
+When the user asks to create an invoice, gather the required information step by step. Check the user's memories first — business details like address, tax ID, and bank info are often stored there.
 
-For business metadata (tax ID, court, CEO), check the user's memories. If not available, ask if they want to include it.
+**Before creating the invoice, use the `survey` tool to ask:**
 
-If the user has uploaded a logo image, use its path in the `logo` field.
+1. Whether they want an XRechnung XML alongside the HTML (important for B2B and public sector invoices in Germany)
+2. Any missing required fields
+
+Don't ask about XRechnung if the user already specified `--xrechnung` or said they don't need it. For B2B invoices or when the recipient is a public institution, suggest including XRechnung.
 
 ## Notes
 
-- Output is an HTML file at `/output/invoice-{number}.html`
-- Use `present` to show the invoice inline — it renders in an iframe with a print button
-- The print button opens the invoice in a new tab for Ctrl+P → Save as PDF
-- All calculations (subtotal, tax, total) are done by the skill automatically
-- The layout is DIN A4 optimized for printing
+- HTML output renders in an iframe with a print button (Print → Save as PDF)
+- XRechnung XML follows EN 16931 / UBL 2.1 standard
+- All calculations (subtotal, tax, total) are automatic
+- Use `present` to display the invoice inline
+- The address format for XRechnung expects: `Name\nStreet\nPostcode City` (each on a new line)
