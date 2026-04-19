@@ -140,18 +140,31 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
   const isRunning = () => !hasResult() && props.block.approval !== "pending";
   const isPending = () => props.block.approval === "pending";
 
+  const presentPath = () => stringArg(props.block.args as Record<string, unknown> | undefined, "path", "");
+
   const canDownloadPresent = () => {
     if (!isPresent() || !props.chatId) return false;
-    const path = stringArg(props.block.args as Record<string, unknown> | undefined, "path", "");
-    return /^(\/input|\/output)\//.test(path);
+    return /^(\/input|\/output)\//.test(presentPath());
   };
+
+  const isHtmlPresent = () => isPresent() && /\.html?$/i.test(presentPath());
 
   const handlePresentDownload = (e: MouseEvent) => {
     e.stopPropagation();
     if (!props.chatId) return;
     haptics.tap();
-    const path = stringArg(props.block.args as Record<string, unknown> | undefined, "path", "");
-    void downloadChatFileByPath(props.chatId, path);
+    void downloadChatFileByPath(props.chatId, presentPath());
+  };
+
+  const handlePrintHtml = (e: MouseEvent) => {
+    e.stopPropagation();
+    const pr = presentResult();
+    if (!pr?.content) return;
+    haptics.tap();
+    const blob = new Blob([pr.content], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   let headRef!: HTMLButtonElement;
@@ -167,7 +180,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
     <div class="ui-panel text-[13px] overflow-hidden tool-call-block rounded-md">
       <button
         ref={headRef}
-        class="w-full flex items-center gap-1.5 px-2 py-1 bg-gh-muted hover:bg-gh-subtle text-left tool-call-head"
+        class="w-full flex items-center gap-1.5 md:gap-2 px-2 py-1 bg-gh-muted hover:bg-gh-subtle text-left tool-call-head"
         onClick={toggle}
       >
         <Show
@@ -182,13 +195,24 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
         <Show when={isRunning()}>
           <RunningMeta />
         </Show>
+        <Show when={isHtmlPresent()}>
+          <span
+            class="icon-action text-sm shrink-0 group/print gap-0.5 inline-flex items-center"
+            title="Open in new tab for printing"
+            onClick={handlePrintHtml}
+          >
+            <span class="text-xs font-semibold hidden sm:inline">Print</span>
+            <span class="i ti ti-printer group-hover/print:hidden" />
+            <span class="i ti ti-external-link hidden group-hover/print:inline-block" />
+          </span>
+        </Show>
         <Show when={canDownloadPresent()}>
           <span
-            class="icon-action text-sm shrink-0 group/dl"
+            class="icon-action text-sm shrink-0 group/dl gap-0.5 inline-flex items-center"
             title="Download"
             onClick={handlePresentDownload}
           >
-            <span class="text-xs font-semibold mr-1">
+            <span class="text-xs font-semibold hidden sm:inline">
             Download
             </span>
             <span class="i ti ti-download group-hover/dl:hidden" />

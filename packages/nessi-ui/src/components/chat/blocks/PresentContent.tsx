@@ -229,22 +229,6 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
             style={{ height: "500px" }}
             title={name()}
           />
-          <div class="flex items-center gap-2 px-3 py-1.5 bg-gh-overlay border-t border-gh-border-muted">
-            <button
-              class="icon-action text-xs flex items-center gap-1"
-              title="Open in new tab for printing"
-              onClick={() => {
-                haptics.tap();
-                const blob = new Blob([content()], { type: "text/html" });
-                const url = URL.createObjectURL(blob);
-                window.open(url, "_blank");
-                setTimeout(() => URL.revokeObjectURL(url), 60_000);
-              }}
-            >
-              <span class="i ti ti-printer text-sm" />
-              <span class="font-semibold">Print / Save as PDF</span>
-            </button>
-          </div>
         </div>
       </Show>
 
