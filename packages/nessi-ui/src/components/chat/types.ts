@@ -45,7 +45,8 @@ export type UICompactionBlock = {
 export type UIContextOverflowBlock = {
   type: "context_overflow";
   contextWindow?: number;
-  overflowRatio?: number;
+  /** Last known real token count from provider (from previous successful turn). */
+  lastTotal?: number;
 };
 
 export type UICardBlock = {

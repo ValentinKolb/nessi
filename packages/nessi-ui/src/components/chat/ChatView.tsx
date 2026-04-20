@@ -993,7 +993,7 @@ export const ChatView = (props: {
               blocks: [{
                 type: "context_overflow",
                 contextWindow: ensuredProvider?.contextWindow,
-                overflowRatio: event.overflowRatio,
+                lastTotal: lastUsage()?.total,
               }],
             },
           ]);
