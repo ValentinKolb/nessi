@@ -16,43 +16,14 @@ const getApiKey = () => {
   }
 };
 
-/** Accept urls as: array, JSON-encoded string, or single URL string. */
-const coerceUrlArray = z.union([
-  z.array(z.string().url()),
-  z.string().transform((s, ctx) => {
-    // Try JSON parse first: "[\"https://...\"]"
-    const trimmed = s.trim();
-    if (trimmed.startsWith("[")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed) && parsed.every((v: unknown) => typeof v === "string")) return parsed as string[];
-      } catch { /* fall through */ }
-    }
-    // Single URL
-    if (/^https?:\/\//i.test(trimmed)) return [trimmed];
-    ctx.addIssue({ code: "custom", message: "Expected a URL or array of URLs" });
-    return [];
-  }),
-]).pipe(z.array(z.string().url()).min(1).max(5));
 
-const webInputSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("search"),
-    query: z.string().describe("Search query. Example: 'latest Bun release notes'"),
-    maxResults: z.coerce.number().int().positive().max(10).optional().describe(
-      "Optional number of results, 1 to 10. Example: 5",
-    ),
-    topic: z.enum(VALID_TOPICS).optional().describe(
-      "Optional search topic. Use 'news' for current events. Example: 'general'",
-    ),
-  }),
-  z.object({
-    action: z.literal("extract"),
-    urls: coerceUrlArray.describe(
-      "One to five absolute URLs to read. Example: ['https://example.com/article']",
-    ),
-  }),
-]);
+const webInputSchema = z.object({
+  action: z.enum(["search", "extract"]).describe("Action: 'search' for web search, 'extract' to read URLs."),
+  query: z.string().optional().describe("Search query. Required for search. Example: 'latest Bun release notes'"),
+  maxResults: z.coerce.number().int().positive().max(10).optional().describe("Number of results, 1-10. Only for search."),
+  topic: z.enum(VALID_TOPICS).optional().describe("Search topic: general, news, or finance. Only for search."),
+  urls: z.union([z.array(z.string()), z.string()]).optional().describe("URLs to read. Required for extract. String or array of up to 5 URLs."),
+});
 
 const webOutputSchema = z.object({
   result: z.string(),
@@ -71,6 +42,7 @@ export const webTool = defineTool({
   }
 
   if (input.action === "search") {
+    if (!input.query) return { result: "Error: query is required for search." };
     try {
       const res = await fetch("https://api.tavily.com/search", {
         method: "POST",
@@ -114,13 +86,26 @@ export const webTool = defineTool({
     }
   }
 
+  // Coerce urls: string → [string], JSON string → parsed array
+  let urls: string[] = [];
+  if (Array.isArray(input.urls)) {
+    urls = input.urls;
+  } else if (typeof input.urls === "string") {
+    const trimmed = input.urls.trim();
+    if (trimmed.startsWith("[")) {
+      try { const p = JSON.parse(trimmed); if (Array.isArray(p)) urls = p.map(String); } catch { /* ignore */ }
+    }
+    if (urls.length === 0 && /^https?:\/\//i.test(trimmed)) urls = [trimmed];
+  }
+  if (urls.length === 0) return { result: "Error: urls is required for extract. Provide a URL string or array of URLs." };
+
   try {
     const res = await fetch("https://api.tavily.com/extract", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: apiKey,
-        urls: input.urls,
+        urls,
       }),
     });
 
