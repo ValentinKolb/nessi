@@ -32,14 +32,12 @@ export const getDefaultImageAnalysisPrompt = () => imageAnalysisPromptContent;
 const analyzeImageToolDef = defineTool({
   name: "analyze_image",
   description:
-    "Analyze image files using vision AI. Call this when you need to understand, describe, or extract information from an image. " +
-    "Do NOT call this for image manipulation (resize, crop, convert) — use bash commands for those.\n" +
-    "Accepts a single path or an array of up to 5 paths for comparison.\n" +
-    'Single: {"path":"/input/photo.jpg","question":"What text is visible in this image?"}\n' +
-    'Multiple: {"path":["/input/a.jpg","/input/b.jpg"],"question":"Compare these two images."}',
+    "Analyze images using vision AI. For image manipulation (resize, crop, convert) use bash instead.\n" +
+    '{"path":"/input/photo.jpg","question":"What text is visible?"}\n' +
+    'Multiple: {"path":["/input/a.jpg","/input/b.jpg"],"question":"Compare these."}',
   inputSchema: z.object({
-    path: z.union([z.string(), z.array(z.string())]).describe("Image file path(s). Single string or array of up to 5 paths."),
-    question: z.string().describe("What you want to know about the image(s). Be specific."),
+    path: z.union([z.string(), z.array(z.string())]).describe("Image path(s). String or array (max 5)."),
+    question: z.string().describe("What to analyze. Be specific."),
   }),
   outputSchema: z.object({
     analysis: z.string(),

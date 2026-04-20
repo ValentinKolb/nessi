@@ -1,64 +1,38 @@
 import { z } from "zod";
 import { defineTool } from "nessi-core";
-import { addMemory, removeMemory, replaceMemory, formatAll } from "../memory.js";
+import { addMemory, removeMemory, formatAll } from "../memory.js";
 
-export const memoryAddTool = defineTool({
-  name: "memory_add",
+export const memoryTool = defineTool({
+  name: "memory",
   description:
-    "Save a new memory. Write the full line including [category] tag and optional date. " +
-    "Categories: [fact], [preference], [project], [person], [followup]. " +
-    'Example: {"text":"[fact] Name is Valentin"}',
+    'Manage persistent user memories. Actions: "add" (save new), "remove" (delete by line number), "recall" (show all).\n' +
+    'Add: {"action":"add","text":"[fact] Name is Valentin"}\n' +
+    'Remove: {"action":"remove","id":3}\n' +
+    'Recall: {"action":"recall"}',
   inputSchema: z.object({
-    text: z.string().describe('The memory line to save. Example: "[preference] Speaks German"'),
+    action: z.enum(["add", "remove", "recall"]).describe("Action to perform."),
+    text: z.string().optional().describe("Memory line with [category] tag. Required for add."),
+    id: z.coerce.number().int().positive().optional().describe("Line number. Required for remove."),
   }),
-  outputSchema: z.object({ status: z.string(), total: z.number() }),
+  outputSchema: z.object({ result: z.string() }),
 }).server(async (input) => {
-  const { total } = await addMemory(input.text);
-  return { status: `Saved: ${input.text}`, total };
-});
-
-export const memoryRemoveTool = defineTool({
-  name: "memory_remove",
-  description:
-    "Remove a memory by its line number from the memories list in the system prompt. " +
-    'Example: {"id":3}',
-  inputSchema: z.object({
-    id: z.coerce.number().int().positive().describe("Line number of the memory to remove."),
-  }),
-  outputSchema: z.object({ status: z.string() }),
-}).server(async (input) => {
-  try {
-    const { removed, remaining } = await removeMemory(input.id);
-    return { status: `Removed line ${input.id}: ${removed} (${remaining} remaining)` };
-  } catch (e) {
-    return { status: `Error: ${e instanceof Error ? e.message : "unknown"}` };
+  switch (input.action) {
+    case "add": {
+      if (!input.text) return { result: "Error: text is required for add." };
+      const { total } = await addMemory(input.text);
+      return { result: `Saved: ${input.text} (${total} total)` };
+    }
+    case "remove": {
+      if (!input.id) return { result: "Error: id is required for remove." };
+      try {
+        const { removed, remaining } = await removeMemory(input.id);
+        return { result: `Removed line ${input.id}: ${removed} (${remaining} remaining)` };
+      } catch (e) {
+        return { result: `Error: ${e instanceof Error ? e.message : "unknown"}` };
+      }
+    }
+    case "recall": {
+      return { result: await formatAll() };
+    }
   }
 });
-
-export const memoryReplaceTool = defineTool({
-  name: "memory_replace",
-  description:
-    "Update a memory by its line number. Give the line number and the new full text. " +
-    'Example: {"id":3,"text":"[fact] Now CTO at Kolb Antik"}',
-  inputSchema: z.object({
-    id: z.coerce.number().int().positive().describe("Line number of the memory to update."),
-    text: z.string().describe("New text for this memory line."),
-  }),
-  outputSchema: z.object({ status: z.string() }),
-}).server(async (input) => {
-  try {
-    const { updated, total } = await replaceMemory(input.id, input.text);
-    return { status: `Updated line ${input.id}: ${updated} (${total} total)` };
-  } catch (e) {
-    return { status: `Error: ${e instanceof Error ? e.message : "unknown"}` };
-  }
-});
-
-export const memoryRecallTool = defineTool({
-  name: "memory_recall",
-  description:
-    "Retrieve all memories including those not shown in the system prompt due to token budget. " +
-    "Only use this when the memories list says some entries were not shown.",
-  inputSchema: z.object({}),
-  outputSchema: z.object({ memories: z.string() }),
-}).server(async () => ({ memories: await formatAll() }));

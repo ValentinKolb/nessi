@@ -8,7 +8,7 @@ import { cli, ok, err, parseArgs, positionalArgs } from "./commands/cli.js";
 import type { CliBuilder } from "./commands/cli.js";
 import type { CommandHelpers } from "./commands/helpers.js";
 import { createCommandHelpers } from "./commands/helpers.js";
-import { memoryAddTool, memoryRemoveTool, memoryReplaceTool, memoryRecallTool } from "./tools/memory-tool.js";
+import { memoryTool } from "./tools/memory-tool.js";
 import { createPresentTool } from "./tools/present-tool.js";
 import { nextcloudApi } from "./nextcloud.js";
 import { createNextcloudFs } from "./nextcloud-fs.js";
@@ -290,6 +290,8 @@ const wrapWithNextcloud = (base: IFileSystem): IFileSystem => {
   const isNc = (p: string) => p === NC || p.startsWith(NC + "/");
   const ncPath = (p: string) => p.slice(NC.length) || "/";
 
+  const WRITE_OPS = new Set(["writeFile", "unlink", "rm", "rmdir", "rename", "copyFile"]);
+
   return new Proxy(base, {
     get(target, prop, receiver) {
       const val = Reflect.get(target, prop, receiver);
@@ -298,6 +300,22 @@ const wrapWithNextcloud = (base: IFileSystem): IFileSystem => {
       return (...args: unknown[]) => {
         const path = typeof args[0] === "string" ? args[0] : null;
         if (path && isNc(path)) {
+          // Block overwrites of existing files — only new files allowed
+          if (prop === "writeFile") {
+            const stripped = ncPath(path);
+            return (async () => {
+              const existsMethod = Reflect.get(ncFs!, "exists") as (p: string) => Promise<boolean>;
+              if (await existsMethod.call(ncFs, stripped)) {
+                throw new Error(`Cannot overwrite existing Nextcloud file: ${path}. Only new files can be created.`);
+              }
+              const ncMethod = Reflect.get(ncFs!, prop) as (...a: unknown[]) => unknown;
+              return ncMethod.call(ncFs, stripped, ...args.slice(1));
+            })();
+          }
+          // Block delete/rename operations
+          if (WRITE_OPS.has(prop as string) && prop !== "writeFile") {
+            throw new Error(`Cannot modify existing Nextcloud files: ${prop as string} is not allowed on ${path}.`);
+          }
           const ncArgs = [ncPath(path), ...args.slice(1)] as Parameters<typeof val>;
           const ncMethod = Reflect.get(ncFs, prop);
           if (typeof ncMethod === "function") {
@@ -435,10 +453,7 @@ export const createMainBashRuntime = (options?: {
   return {
     bash,
     tools: [
-      memoryAddTool,
-      memoryRemoveTool,
-      memoryReplaceTool,
-      memoryRecallTool,
+      memoryTool,
       webTool,
       surveyTool,
       cardTool,

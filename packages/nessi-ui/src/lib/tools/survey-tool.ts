@@ -4,13 +4,9 @@ import { defineTool } from "nessi-core";
 export const surveyToolDef = defineTool({
   name: "survey",
   description:
-    "Show an interactive survey card to collect user choices. Use BEFORE starting complex tasks " +
-    "where you need user decisions on approach, format, scope, or style. One survey replaces multiple " +
-    "back-and-forth messages. Call this tool directly — do NOT use bash for surveys.\n" +
-    "The questions parameter uses pipe format: \"Question? | Option A | Option B\". " +
-    "Separate multiple questions with newlines. Each line needs a question followed by 2+ options separated by |.\n" +
-    "Example: {\"title\":\"Setup\",\"questions\":\"Language? | TypeScript | Python | Go\\nTests? | Yes | No\"}\n" +
-    "For a single choice with many options: {\"title\":\"What to analyze?\",\"questions\":\"Analysis type | Revenue | Trends | Distribution | All\"}",
+    "Interactive choice card. Use whenever you want to offer options — call directly, not via bash.\n" +
+    'Pipe format: "Question? | Option A | Option B". Multiple questions separated by newlines.\n' +
+    'Example: {"title":"Setup","questions":"Format? | PDF | CSV\\nScope? | Summary | Full"}',
   inputSchema: z.object({
     title: z.string().optional().describe("Optional heading shown above the survey card."),
     questions: z.string().describe(
