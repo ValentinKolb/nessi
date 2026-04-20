@@ -348,6 +348,17 @@ export const ChatView = (props: {
   onNewChat?: () => void;
 }) => {
   const [state, setState] = createStore<ChatState>({ messages: [], streaming: false });
+  const [toasts, setToasts] = createSignal<Array<{ id: number; text: string }>>([]);
+  let toastCounter = 0;
+
+  const showToast = (text: string, durationMs = 6000) => {
+    const id = ++toastCounter;
+    setToasts((t) => [...t, { id, text }]);
+    setTimeout(() => setToasts((t) => t.filter((item) => item.id !== id)), durationMs);
+  };
+
+  const dismissToast = (id: number) => setToasts((t) => t.filter((item) => item.id !== id));
+
   const [pendingImages, setPendingImages] = createSignal<Array<Extract<UIUserContentPart, { type: "image" }>>>([]);
   const [pendingFiles, setPendingFiles] = createSignal<PendingChatFile[]>([]);
   const [inputFiles, setInputFiles] = createSignal<ChatFileMeta[]>([]);
@@ -668,10 +679,22 @@ export const ChatView = (props: {
 
     let resizedImages: File[] = [];
     if (imageFiles.length > 0) {
-      try {
-        resizedImages = await Promise.all(imageFiles.map(prepareImageForStorage));
-      } catch (error) {
-        appendStatusMessage(error instanceof Error ? error.message : String(error));
+      const SUPPORTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"]);
+      const supported = imageFiles.filter((f) => SUPPORTED_IMAGE_TYPES.has(f.type));
+      const unsupported = imageFiles.filter((f) => !SUPPORTED_IMAGE_TYPES.has(f.type));
+
+      if (unsupported.length > 0) {
+        const names = unsupported.map((f) => f.name).join(", ");
+        const types = [...new Set(unsupported.map((f) => f.name.split(".").pop()?.toUpperCase()))].join(", ");
+        showToast(`Unsupported image format (${types}): ${names}. Use JPEG, PNG, or WebP.`);
+      }
+
+      if (supported.length > 0) {
+        try {
+          resizedImages = await Promise.all(supported.map(prepareImageForStorage));
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : String(error));
+        }
       }
     }
 
@@ -688,7 +711,7 @@ export const ChatView = (props: {
 
     const unsupportedCount = allFiles.length - documents.length;
     if (unsupportedCount > 0) {
-      appendStatusMessage("Some files were ignored. Only images, text/code files, CSV/XLSX spreadsheets, and PDFs are supported.");
+      showToast("Some files were ignored. Only images, text/code files, CSV/XLSX spreadsheets, and PDFs are supported.");
     }
 
     if (documents.length > 0) {
@@ -1015,10 +1038,41 @@ export const ChatView = (props: {
         } catch {
           pendingAutoCompactionEntriesBefore = null;
         }
+        // Show pending compaction block immediately
+        appendCompactionBlock({
+          type: "compaction",
+          title: "Compacting",
+          message: "Condensing older history into a checkpoint summary...",
+          sessionName: "main",
+          applied: false,
+          reason: "pending",
+          entriesBefore: pendingAutoCompactionEntriesBefore ?? undefined,
+        });
         break;
       }
 
       case "compaction_end": {
+        // Update the pending compaction block with final result
+        const updateLastCompactionBlock = (block: UICompactionBlock) => {
+          mapMessages((messages) => {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const msg = messages[i];
+              if (msg?.role !== "assistant") continue;
+              const blocks = (msg as UIAssistantMessage).blocks;
+              const idx = blocks.findLastIndex((b) => b.type === "compaction" && (b as UICompactionBlock).reason === "pending");
+              if (idx >= 0) {
+                const next = [...messages];
+                const nextBlocks = [...blocks];
+                nextBlocks[idx] = block;
+                next[i] = { ...msg, blocks: nextBlocks } as UIAssistantMessage;
+                return next;
+              }
+            }
+            // Fallback: append if no pending block found
+            return [...messages, { id: msgId(), role: "assistant" as const, blocks: [block] }];
+          });
+        };
+
         try {
           const entriesAfter = await runtime?.store.load();
           const afterCount = entriesAfter?.length;
@@ -1027,7 +1081,7 @@ export const ChatView = (props: {
             ? Math.max(0, pendingAutoCompactionEntriesBefore - afterCount)
             : undefined;
 
-          appendCompactionBlock({
+          updateLastCompactionBlock({
             type: "compaction",
             title: "Checkpoint summary",
             message: typeof reduced === "number" && reduced > 0
@@ -1041,7 +1095,7 @@ export const ChatView = (props: {
             summaryPreview,
           });
         } catch {
-          appendCompactionBlock({
+          updateLastCompactionBlock({
             type: "compaction",
             title: "Checkpoint summary",
             message: "Older history was condensed into a checkpoint summary.",
@@ -1069,6 +1123,35 @@ export const ChatView = (props: {
       return;
     }
 
+    // Show pending block immediately
+    const pendingIdx = appendCompactionBlock({
+      type: "compaction",
+      title: "Compacting",
+      message: "Condensing older history into a checkpoint summary...",
+      sessionName: "main",
+      applied: false,
+      reason: "pending",
+    });
+
+    const updatePendingBlock = (block: UICompactionBlock) => {
+      mapMessages((messages) => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i];
+          if (msg?.role !== "assistant") continue;
+          const blocks = (msg as UIAssistantMessage).blocks;
+          const idx = blocks.findLastIndex((b) => b.type === "compaction" && (b as UICompactionBlock).reason === "pending");
+          if (idx >= 0) {
+            const next = [...messages];
+            const nextBlocks = [...blocks];
+            nextBlocks[idx] = block;
+            next[i] = { ...msg, blocks: nextBlocks } as UIAssistantMessage;
+            return next;
+          }
+        }
+        return [...messages, { id: msgId(), role: "assistant" as const, blocks: [block] }];
+      });
+    };
+
     try {
       const store = createProviderContextStore(ensured.runtime.store, await latestPersistedSeq());
       const loop = compact({
@@ -1085,7 +1168,7 @@ export const ChatView = (props: {
       }
 
       if (!doneEvent) {
-        appendCompactionBlock({
+        updatePendingBlock({
           type: "compaction",
           title: "Compaction did not finish",
           message: "The operation ended without a completion event.",
@@ -1098,7 +1181,7 @@ export const ChatView = (props: {
       }
 
       if (doneEvent.reason === "aborted") {
-        appendCompactionBlock({
+        updatePendingBlock({
           type: "compaction",
           title: "Compaction canceled",
           message: "Stopped before finishing for main session.",
@@ -1112,7 +1195,7 @@ export const ChatView = (props: {
       }
 
       if (doneEvent.reason === "error") {
-        appendCompactionBlock({
+        updatePendingBlock({
           type: "compaction",
           title: "Compaction failed",
           message: "Could not compact history for main session.",
@@ -1126,7 +1209,7 @@ export const ChatView = (props: {
       }
 
       if (!doneEvent.result.applied) {
-        appendCompactionBlock({
+        updatePendingBlock({
           type: "compaction",
           title: "No compaction needed",
           message: "There was not enough older history to compact in main session.",
@@ -1142,7 +1225,7 @@ export const ChatView = (props: {
       const entriesAfter = await ensured.runtime.store.load();
       const summaryPreview = summaryPreviewFromEntries(entriesAfter);
       const reduced = Math.max(0, doneEvent.result.entriesBefore - doneEvent.result.entriesAfter);
-      appendCompactionBlock({
+      updatePendingBlock({
         type: "compaction",
         title: "History compacted",
         message: `Older messages were condensed into a checkpoint summary (${reduced} entries reduced).`,
@@ -1156,7 +1239,7 @@ export const ChatView = (props: {
     } catch (error) {
       haptics.error();
       const message = error instanceof Error ? error.message : String(error);
-      appendCompactionBlock({
+      updatePendingBlock({
         type: "compaction",
         title: "Compaction failed",
         message: "Could not compact history for main session.",
@@ -1535,6 +1618,8 @@ export const ChatView = (props: {
           disabled={state.streaming}
           lastUsage={lastUsage()}
           contextWindow={getActiveProviderEntry()?.contextWindow}
+          toasts={toasts()}
+          onDismissToast={dismissToast}
         />
       </Show>
       <Show when={terminalOpen()}>

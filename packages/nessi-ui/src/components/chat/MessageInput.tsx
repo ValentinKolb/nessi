@@ -69,7 +69,7 @@ const TokenBadge = (props: { usage?: Usage; contextWindow?: number }) => {
         <span class="i ti ti-brain text-[12px]" />
         <span>{badgeLabel()}</span>
         <Show when={pct()}>
-          <span class="text-[10px] opacity-70">({pct()}%)</span>
+          <span class="opacity-70">({pct()}%)</span>
         </Show>
       </button>
 
@@ -164,6 +164,8 @@ export const MessageInput = (props: {
   placeholder?: string;
   lastUsage?: Usage;
   contextWindow?: number;
+  toasts?: Array<{ id: number; text: string }>;
+  onDismissToast?: (id: number) => void;
 }) => {
   const [text, setText] = createSignal("");
   const [matches, setMatches] = createSignal<SlashCommand[]>([]);
@@ -277,6 +279,24 @@ export const MessageInput = (props: {
   return (
     <div class="px-3 pb-3 pt-1">
       <div class="max-w-4xl mx-auto relative">
+        {/* Toast messages */}
+        <Show when={(props.toasts?.length ?? 0) > 0}>
+          <div class="absolute bottom-full left-0 right-0 mb-2 z-10 flex flex-col gap-1.5">
+            <For each={props.toasts}>
+              {(toast) => (
+                <div class="flex items-start gap-2 px-3 py-2 rounded-lg border border-gh-danger/20 bg-status-err-bg text-[13px] text-gh-fg-muted shadow-sm animate-in fade-in slide-in-from-bottom-2">
+                  <span class="i ti ti-alert-circle text-gh-danger text-sm shrink-0 mt-0.5" />
+                  <span class="flex-1 leading-snug">{toast.text}</span>
+                  <button
+                    class="i ti ti-x text-gh-fg-subtle hover:text-gh-fg text-sm shrink-0 mt-0.5"
+                    onClick={() => props.onDismissToast?.(toast.id)}
+                  />
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+
         {/* Slash command autocomplete */}
         <Show when={matches().length > 0}>
           <div class="absolute bottom-full left-0 right-0 mb-2 z-10">
@@ -466,10 +486,6 @@ export const MessageInput = (props: {
               })()}
             </Show>
 
-            <Show when={providers().length > 0}>
-              <span class="text-gh-border text-[10px] select-none">|</span>
-            </Show>
-
             {/* Add files / folder */}
             <PopoverMenu
               id="composer-add-menu"
@@ -486,7 +502,6 @@ export const MessageInput = (props: {
 
             {/* Active files indicator: upload icon for input, download icon for output */}
             <Show when={hasFiles()}>
-              <span class="text-gh-border text-[10px] select-none">|</span>
               <button
                 class="flex items-center gap-1.5 text-[12px] text-gh-fg-subtle hover:text-gh-fg px-1.5 py-1 rounded-md hover:bg-gh-overlay transition-colors"
                 onClick={() => { haptics.tap(); props.onOpenFiles?.(); }}
@@ -498,7 +513,7 @@ export const MessageInput = (props: {
                   </span>
                 </Show>
                 <Show when={inputCount() > 0 && outputCount() > 0}>
-                  <span class="text-gh-border text-[9px]">|</span>
+                  <span class="text-gh-fg-subtle text-[9px]">/</span>
                 </Show>
                 <Show when={outputCount() > 0}>
                   <span class="flex items-center gap-0.5">
@@ -510,7 +525,6 @@ export const MessageInput = (props: {
             </Show>
 
             {/* Terminal toggle */}
-            <span class="text-gh-border text-[10px] select-none">|</span>
             <button
               class="flex h-7 w-7 items-center justify-center rounded-md text-gh-fg-subtle hover:text-gh-fg hover:bg-gh-overlay transition-colors"
               onClick={() => { haptics.tap(); props.onOpenTerminal?.(); }}
