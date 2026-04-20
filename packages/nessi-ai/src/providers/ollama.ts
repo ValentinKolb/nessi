@@ -57,7 +57,6 @@ const convertMessages = (messages: Message[], systemPrompt: string | undefined) 
       const toolCalls: OllamaMessage["tool_calls"] = [];
       for (const block of message.content) {
         if (block.type === "text") text += block.text;
-        else if (block.type === "thinking") text += block.thinking;
         else if (block.type === "tool_call") {
           toolCalls.push({ function: { name: block.name, arguments: block.args } });
         }

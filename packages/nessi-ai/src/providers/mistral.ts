@@ -79,7 +79,6 @@ const convertMessages = (messages: Message[], systemPrompt: string | undefined, 
       const toolCalls: NonNullable<MistralMessage["tool_calls"]> = [];
       for (const block of message.content) {
         if (block.type === "text") text += block.text;
-        else if (block.type === "thinking") text += block.thinking;
         else if (block.type === "tool_call") {
           const mappedId = makeStrictId ? makeStrictId(block.id) : block.id;
           if (makeStrictId) {

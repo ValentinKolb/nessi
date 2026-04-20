@@ -102,7 +102,6 @@ const convertMessages = (messages: Message[]) => {
       const content: AnthropicBlock[] = [];
       for (const block of message.content) {
         if (block.type === "text") content.push({ type: "text", text: block.text });
-        else if (block.type === "thinking") content.push({ type: "text", text: block.thinking });
         else if (block.type === "tool_call") {
           content.push({
             type: "tool_use",

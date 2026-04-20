@@ -20,7 +20,7 @@ import type {
   StoreEntry,
 } from "./types.js";
 import { toolToSpec } from "./tools.js";
-import { zeroUsage, toErrorMessage, estimateTokens, truncateMessages } from "./utils.js";
+import { zeroUsage, toErrorMessage, estimateTokens, truncateToolResults } from "./utils.js";
 
 // ----------------------------------------------------------------------------
 // Inbound event channel — lets the consumer push() events that the loop awaits
@@ -250,11 +250,11 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         }
       }
 
-      // Build messages from entries, strip thinking blocks, truncate tool results
-      const messages: Message[] = truncateMessages(
-        entries.map((e) => e.message),
-        maxToolResultChars,
-      );
+      // Build messages from entries, optionally truncate tool results
+      const rawMessages = entries.map((e) => e.message);
+      const messages: Message[] = typeof maxToolResultChars === "number"
+        ? truncateToolResults(rawMessages, maxToolResultChars)
+        : rawMessages;
 
       yield { type: "turn_start", agentId };
 
