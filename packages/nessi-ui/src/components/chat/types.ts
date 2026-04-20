@@ -35,7 +35,7 @@ export type UICompactionBlock = {
   message: string;
   sessionName: string;
   applied: boolean;
-  reason: "stop" | "error" | "aborted";
+  reason: "stop" | "error" | "aborted" | "pending";
   entriesBefore?: number;
   entriesAfter?: number;
   summaryPreview?: string;

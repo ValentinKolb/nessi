@@ -1,10 +1,13 @@
 import { createSignal, Show } from "solid-js";
 import type { UICompactionBlock } from "../types.js";
 import { haptics } from "../../../shared/browser/haptics.js";
+import { PulseDots } from "../../PulseDots.js";
 
-/** Collapsible status block that explains manual chat compaction in user-friendly language. */
+/** Collapsible status block that explains chat compaction in user-friendly language. */
 export const CompactionBlock = (props: { block: UICompactionBlock }) => {
   const [expanded, setExpanded] = createSignal(false);
+
+  const isPending = () => props.block.reason === "pending";
 
   const reduced = () => {
     const before = props.block.entriesBefore ?? 0;
@@ -21,7 +24,7 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
   let headRef!: HTMLButtonElement;
 
   const toggle = () => {
-    if (!hasDetails()) return;
+    if (isPending() || !hasDetails()) return;
     haptics.tap();
     setExpanded(!expanded());
     requestAnimationFrame(() => headRef.scrollIntoView({ block: "nearest", behavior: "smooth" }));
@@ -39,13 +42,18 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
         onClick={toggle}
       >
         <span class="i ti ti-fold text-[13px]" style={{ color: "var(--color-compact-accent)" }} />
-        <div class="flex-1 min-w-0 text-gh-fg-secondary truncate">{props.block.message}</div>
-        <Show when={props.block.entriesBefore !== undefined && props.block.entriesAfter !== undefined}>
+        <div class="flex-1 min-w-0 text-gh-fg-secondary truncate">
+          {props.block.message}
+        </div>
+        <Show when={isPending()}>
+          <PulseDots />
+        </Show>
+        <Show when={!isPending() && props.block.entriesBefore !== undefined && props.block.entriesAfter !== undefined}>
           <span class="shrink-0 text-[11px]" style={{ color: "var(--color-compact-accent)" }}>
             {props.block.entriesBefore}{" -> "}{props.block.entriesAfter}
           </span>
         </Show>
-        <Show when={hasDetails()}>
+        <Show when={!isPending() && hasDetails()}>
           <span class={`i ti ti-chevron-${expanded() ? "up" : "down"} text-gh-fg-subtle text-xs`} />
         </Show>
       </button>
