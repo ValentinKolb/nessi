@@ -178,6 +178,7 @@ export const ApiKeys = (props: {
         </div>
         <p class="settings-desc">
           Connect your Nextcloud for file access, calendar events, and Talk messages.
+          The assistant can read all files, create new files, and manage calendar events — but cannot modify or delete existing files.
         </p>
         <input
           type="text"

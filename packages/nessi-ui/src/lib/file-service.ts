@@ -11,8 +11,8 @@ import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
 
 const DEFAULT_READ_LIMIT = 200;
 const MAX_READ_LIMIT = 400;
-const READ_ROOTS = ["/input", "/output", "/nextcloud", "/github"];
-const WRITE_ROOTS = ["/output"];
+const READ_ROOTS = ["/input", "/output", "/nextcloud", "/github", "/skills", "/home"];
+const WRITE_ROOTS = ["/output", "/input", "/home", "/nextcloud"];
 
 export type FileListScope = "input" | "output" | "all";
 
@@ -97,7 +97,7 @@ const splitLines = (text: string) => {
 };
 
 /** Roots whose files live only in the bash VFS (not persisted in Dexie). */
-const VFS_ONLY_ROOTS = ["/github", "/nextcloud"];
+const VFS_ONLY_ROOTS = ["/github", "/nextcloud", "/skills", "/home"];
 const isVfsOnlyPath = (p: string) =>
   VFS_ONLY_ROOTS.some((r) => p === r || p.startsWith(`${r}/`));
 
@@ -192,23 +192,44 @@ export const createChatFileService = (options: {
     };
   };
 
+  const writeToVfs = async (path: string, content: string) => {
+    const bash = options.getBash();
+    if (!bash) throw new Error("Filesystem not available.");
+    await ensureOutputDir(bash, path);
+    await bash.fs.writeFile(path, content, "utf8");
+  };
+
   const writeImpl = async (path: string, content: string, overwrite = true): Promise<WriteFileResult> => {
     const normalized = validateMountedPath(path, WRITE_ROOTS);
-    const chatId = options.getChatId();
-    const existing = await getChatFileByPath(chatId, normalized);
-    if (existing && !overwrite) {
-      throw new Error(`File already exists: ${normalized}`);
-    }
-
     const bytes = encoder.encode(content);
-    await putOutputFile(chatId, normalized, bytes);
-    await mirrorOutputToRuntime(normalized, content);
-    options.onFilesChanged?.();
+
+    if (normalized.startsWith("/nextcloud")) {
+      // Nextcloud: create new files only — never overwrite existing cloud files
+      const bash = options.getBash();
+      if (bash && await bash.fs.exists(normalized)) {
+        throw new Error(`Cannot overwrite existing Nextcloud file: ${normalized}. Only new files can be created.`);
+      }
+      await writeToVfs(normalized, content);
+    } else if (isVfsOnlyPath(normalized) || normalized.startsWith("/input")) {
+      // VFS-only paths: write directly to bash filesystem (not persisted to DB)
+      const bash = options.getBash();
+      const exists = bash ? await bash.fs.exists(normalized) : false;
+      if (exists && !overwrite) throw new Error(`File already exists: ${normalized}`);
+      await writeToVfs(normalized, content);
+    } else if (normalized.startsWith("/output")) {
+      // Output: persist to DB + mirror to VFS
+      const chatId = options.getChatId();
+      const existing = await getChatFileByPath(chatId, normalized);
+      if (existing && !overwrite) throw new Error(`File already exists: ${normalized}`);
+      await putOutputFile(chatId, normalized, bytes);
+      await mirrorOutputToRuntime(normalized, content);
+      options.onFilesChanged?.();
+    }
 
     return {
       path: normalized,
       bytesWritten: bytes.byteLength,
-      created: !existing,
+      created: true,
     };
   };
 
@@ -228,8 +249,20 @@ export const createChatFileService = (options: {
         ? sourcePath
         : `/output/${basename(sourcePath)}`;
 
-    const { meta, bytes } = await readBytesFromMountedPath(options.getChatId(), sourcePath, options.getBash());
-    if (meta.mimeType === "application/pdf") {
+    if (targetPath.startsWith("/nextcloud")) {
+      throw new Error("Cannot overwrite existing Nextcloud files. Write to /output instead, or use a new filename under /nextcloud.");
+    }
+
+    let mimeType: string;
+    let bytes: Uint8Array;
+    if (isVfsOnlyPath(sourcePath)) {
+      ({ mimeType, bytes } = await readVfsBytes(sourcePath));
+    } else {
+      const result = await readBytesFromMountedPath(options.getChatId(), sourcePath, options.getBash());
+      mimeType = result.meta.mimeType;
+      bytes = result.bytes;
+    }
+    if (mimeType === "application/pdf") {
       throw new Error("PDF files cannot be edited directly. Extract them first or write a new text file under /output.");
     }
 
