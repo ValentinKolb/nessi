@@ -10,17 +10,16 @@ import type { CommandHelpers } from "./commands/helpers.js";
 import { createCommandHelpers } from "./commands/helpers.js";
 import { memoryTool } from "./tools/memory-tool.js";
 import { createPresentTool } from "./tools/present-tool.js";
-import { nextcloudApi } from "./nextcloud.js";
-import { createNextcloudFs } from "./nextcloud-fs.js";
-import { listCachedSkills, listEnabledCachedSkills, skillPath, skillReferencePath, type SkillEntry } from "./skill-registry.js";
+import { nextcloudApi, createNextcloudFs } from "../domains/nextcloud/index.js";
+import { skillPaths, skillRegistry, type SkillEntry } from "../skills/core/index.js";
 import type { ChatFileService } from "./file-service.js";
 import { extractPdfText } from "../skills/builtins/pdf/pdf-text.js";
-import { webTool } from "../skills/builtins/web/web-tool.js";
+import { webTool } from "./tools/web-tool.js";
 import { surveyTool } from "./tools/survey-tool.js";
 import { cardTool } from "./tools/card-tool.js";
 import { createImageAnalysisTool } from "./tools/image-analysis-tool.js";
 import { skillRuntime } from "../skills/core/index.js";
-import { createGitHubFs } from "./github-fs.js";
+import { createGitHubFs } from "../domains/github/index.js";
 import { truncateText } from "./utils.js";
 
 const MAX_OUTPUT_LENGTH = 30_000;
@@ -381,7 +380,7 @@ export const createBashWithSkills = (
   extraCommands?: Command[],
   initialFiles?: InitialFiles,
 ) => {
-  const allSkills = listCachedSkills();
+  const allSkills = skillRegistry.snapshot();
   const skills = allSkills.filter((skill) => skillIds.includes(skill.id));
 
   const files: InitialFiles = {
@@ -390,10 +389,10 @@ export const createBashWithSkills = (
   };
 
   for (const skill of skills) {
-    files[skillPath(skill.id)] = skill.doc;
+    files[skillPaths.doc(skill.id)] = skill.doc;
     if (skill.references) {
       for (const ref of skill.references) {
-        files[skillReferencePath(skill.id, ref.name)] = ref.content;
+        files[skillPaths.reference(skill.id, ref.name)] = ref.content;
       }
     }
   }
@@ -442,7 +441,7 @@ export const createMainBashRuntime = (options?: {
   if (options?.fileService) {
     helpers.files.readBytes = async (path) => (await options.fileService!.readBytes(path)).bytes;
   }
-  const enabledSkillIds = listEnabledCachedSkills().map((skill) => skill.id);
+  const enabledSkillIds = skillRegistry.enabledSnapshot().map((skill) => skill.id);
   const bash = createBashWithSkills(
     enabledSkillIds,
     helpers,

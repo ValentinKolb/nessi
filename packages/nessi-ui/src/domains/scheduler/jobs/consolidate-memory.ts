@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { job } from "@valentinkolb/sync-browser";
-import { createProvider, getActiveProviderEntry } from "../provider.js";
-import { formatAll, getMemoryLines, writeMemories } from "../memory.js";
-import { readJson, readString, writeJson, writeString } from "../json-storage.js";
+import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
+import { memoryService } from "../../memory/index.js";
+import { localStorageJson } from "../../../shared/storage/local-storage.js";
 import { getConsolidationPrompt } from "./background-prompt.js";
 import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
 
@@ -15,21 +15,21 @@ const MIN_CHATS_SINCE_LAST = 2;
 
 /** Increment the counter of chats processed since last consolidation. */
 export const incrementChatsSinceConsolidation = () => {
-  const current = readJson<number>(CHATS_SINCE_KEY, 0);
-  writeJson(CHATS_SINCE_KEY, current + 1);
+  const current = localStorageJson.read<number>(CHATS_SINCE_KEY, 0);
+  localStorageJson.write(CHATS_SINCE_KEY, current + 1);
 };
 
 const shouldConsolidateAsync = async (): Promise<boolean> => {
-  const lines = await getMemoryLines();
+  const lines = await memoryService.lines();
   if (lines.length < MIN_MEMORY_LINES) return false;
 
-  const lastConsolidation = readString(LAST_CONSOLIDATION_KEY);
+  const lastConsolidation = localStorageJson.readString(LAST_CONSOLIDATION_KEY);
   if (lastConsolidation) {
     const hoursSince = (Date.now() - new Date(lastConsolidation).getTime()) / (1000 * 60 * 60);
     if (hoursSince < MIN_HOURS_SINCE_LAST) return false;
   }
 
-  const chatsSince = readJson<number>(CHATS_SINCE_KEY, 0);
+  const chatsSince = localStorageJson.read<number>(CHATS_SINCE_KEY, 0);
   if (chatsSince < MIN_CHATS_SINCE_LAST) return false;
 
   return true;
@@ -62,10 +62,10 @@ export const consolidateMemoryJob = job({
         return { consolidated: false, reason: "no-provider" };
       }
 
-      const memoryCount = (await getMemoryLines()).length;
+      const memoryCount = (await memoryService.lines()).length;
       log(`consolidating ${memoryCount} memories...`);
 
-      const memories = await formatAll();
+      const memories = await memoryService.formatAll();
       const promptTemplate = await getConsolidationPrompt();
       const systemPrompt = promptTemplate
         .replaceAll("{{memories}}", memories)
@@ -101,12 +101,12 @@ export const consolidateMemoryJob = job({
         .replace(/```$/gm, "")
         .trim();
 
-      const beforeCount = (await getMemoryLines()).length;
-      await writeMemories(cleaned);
-      const afterCount = (await getMemoryLines()).length;
+      const beforeCount = (await memoryService.lines()).length;
+      await memoryService.writeText(cleaned);
+      const afterCount = (await memoryService.lines()).length;
 
-      writeString(LAST_CONSOLIDATION_KEY, new Date().toISOString());
-      writeJson(CHATS_SINCE_KEY, 0);
+      localStorageJson.writeString(LAST_CONSOLIDATION_KEY, new Date().toISOString());
+      localStorageJson.write(CHATS_SINCE_KEY, 0);
 
       const summary = `${beforeCount} → ${afterCount} memories`;
       entry.finishedAt = new Date().toISOString();
@@ -132,12 +132,12 @@ export const runConsolidation = async (): Promise<{ consolidated: boolean; reaso
   const providerEntry = getActiveProviderEntry();
   if (!providerEntry) return { consolidated: false, reason: "no provider" };
 
-  const memoryCount = (await getMemoryLines()).length;
+  const memoryCount = (await memoryService.lines()).length;
   if (memoryCount === 0) return { consolidated: false, reason: "no memories" };
 
   log(`consolidating ${memoryCount} memories (manual)...`);
 
-  const memories = await formatAll();
+  const memories = await memoryService.formatAll();
   const promptTemplate = await getConsolidationPrompt();
   const systemPrompt = promptTemplate
     .replaceAll("{{memories}}", memories)
@@ -165,12 +165,12 @@ export const runConsolidation = async (): Promise<{ consolidated: boolean; reaso
     .replace(/```$/gm, "")
     .trim();
 
-  const beforeCount = (await getMemoryLines()).length;
-  await writeMemories(cleaned);
-  const afterCount = (await getMemoryLines()).length;
+  const beforeCount = (await memoryService.lines()).length;
+  await memoryService.writeText(cleaned);
+  const afterCount = (await memoryService.lines()).length;
 
-  writeString(LAST_CONSOLIDATION_KEY, new Date().toISOString());
-  writeJson(CHATS_SINCE_KEY, 0);
+  localStorageJson.writeString(LAST_CONSOLIDATION_KEY, new Date().toISOString());
+  localStorageJson.write(CHATS_SINCE_KEY, 0);
 
   const summary = `${beforeCount} → ${afterCount} memories`;
   log(`consolidate-memory done (manual) — ${summary}`);

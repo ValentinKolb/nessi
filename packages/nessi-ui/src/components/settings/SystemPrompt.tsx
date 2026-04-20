@@ -1,13 +1,5 @@
 import { createSignal, For, Show, onMount } from "solid-js";
-import {
-  loadPrompts,
-  loadUserPrompts,
-  saveUserPrompts,
-  getActivePromptId,
-  setActivePromptId,
-  newPromptId,
-  type Prompt,
-} from "../../lib/prompts.js";
+import { promptRepo, type Prompt } from "../../domains/prompt/index.js";
 import { haptics } from "../../shared/browser/haptics.js";
 
 const fromImport = (raw: string): Prompt | null => {
@@ -15,7 +7,7 @@ const fromImport = (raw: string): Prompt | null => {
     const parsed = JSON.parse(raw) as Partial<Prompt>;
     if (typeof parsed.name !== "string" || typeof parsed.content !== "string") return null;
     return {
-      id: typeof parsed.id === "string" && parsed.id.trim() ? parsed.id : newPromptId(),
+      id: typeof parsed.id === "string" && parsed.id.trim() ? parsed.id : promptRepo.newPromptId(),
       name: parsed.name,
       content: parsed.content,
     };
@@ -44,16 +36,16 @@ export const SystemPrompt = (props: {
 
   onMount(() => {
     void refreshPrompts();
-    setActiveId(getActivePromptId());
+    setActiveId(promptRepo.getActiveId());
   });
 
   const refreshPrompts = async () => {
-    setPrompts(await loadPrompts());
+    setPrompts(await promptRepo.list());
   };
 
   const activate = (id: string) => {
     setActiveId(id);
-    setActivePromptId(id);
+    promptRepo.setActiveId(id);
     haptics.success();
   };
 
@@ -64,8 +56,8 @@ export const SystemPrompt = (props: {
       haptics.error();
       return;
     }
-    const current = await loadUserPrompts();
-    await saveUserPrompts([...current, entry]);
+    const current = await promptRepo.listUser();
+    await promptRepo.saveAllUser([...current, entry]);
     setError("");
     setImporting(false);
     setImportText("");

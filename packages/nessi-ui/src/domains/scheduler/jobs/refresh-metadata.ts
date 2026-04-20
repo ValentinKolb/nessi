@@ -1,14 +1,14 @@
 import { z } from "zod";
 import { job } from "@valentinkolb/sync-browser";
 import type { StoreEntry } from "nessi-core";
-import { listChatMetas, isChatDirty, updateChatMeta, getChatEntryCount } from "../chat-storage.js";
-import { contentPartsToText } from "../utils.js";
-import { createProvider, getActiveProviderEntry } from "../provider.js";
-import { formatAll, getMemoryLines, writeMemories } from "../memory.js";
+import { chatRepo } from "../../chat/index.js";
+import { contentPartsToText } from "../../../lib/utils.js";
+import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
+import { memoryService } from "../../memory/index.js";
 import { getBackgroundPrompt } from "./background-prompt.js";
 import { parseBackgroundOutput, applyMemoryOps } from "./parse-background-output.js";
 import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
-import { loadPersistedEntries } from "../store.js";
+import { loadPersistedEntries } from "../../../lib/store.js";
 
 const MAX_TRANSCRIPT_CHARS = 4000;
 const MAX_MESSAGES = 50;
@@ -58,7 +58,7 @@ const processChat = async (
   const transcript = await buildTranscript(chatId);
   if (!transcript) return { memoryOps: 0 };
 
-  const memories = await formatAll();
+  const memories = await memoryService.formatAll();
   const promptTemplate = await getBackgroundPrompt();
   const systemPrompt = promptTemplate
     .replaceAll("{{memories}}", memories)
@@ -85,13 +85,13 @@ const processChat = async (
   const parsed = parseBackgroundOutput(responseText, fallbackTitle);
 
   // Update chat metadata
-  await updateChatMeta(chatId, {
+  await chatRepo.updateMeta(chatId, {
     title: parsed.title,
     titleSource: "generated",
     description: parsed.description,
     topics: parsed.topics,
     lastIndexedAt: new Date().toISOString(),
-    lastIndexedEntryCount: await getChatEntryCount(chatId),
+    lastIndexedEntryCount: await chatRepo.getEntryCount(chatId),
   });
 
   log(`indexed "${parsed.title}" — ${parsed.topics.length} topics, ${parsed.memoryOps.length} memory ops`);
@@ -101,11 +101,11 @@ const processChat = async (
   // Apply memory operations
   let memoryOpsApplied = 0;
   if (parsed.memoryOps.length > 0) {
-    const currentLines = await getMemoryLines();
+    const currentLines = await memoryService.lines();
     const { lines, applied, skipped } = applyMemoryOps(currentLines, parsed.memoryOps);
 
     if (applied > 0) {
-      await writeMemories(lines.join("\n"));
+      await memoryService.writeText(lines.join("\n"));
       memoryOpsApplied = applied;
 
       for (const op of parsed.memoryOps) {
@@ -126,10 +126,10 @@ export const runMetadataRefresh = async (signal?: AbortSignal): Promise<{ proces
   if (!providerEntry) return { processed: 0, memoryOps: 0, summary: "no provider configured" };
 
   // Find dirty chats, sorted chronologically (oldest first)
-  const metas = await listChatMetas();
+  const metas = await chatRepo.listMetas();
   const candidates: typeof metas = [];
   for (const meta of metas) {
-    if (await isChatDirty(meta)) candidates.push(meta);
+    if (await chatRepo.isChatDirty(meta)) candidates.push(meta);
   }
 
   candidates
@@ -156,9 +156,9 @@ export const runMetadataRefresh = async (signal?: AbortSignal): Promise<{ proces
       const msg = err instanceof Error ? err.message : String(err);
       log(`failed for chat "${meta.title}": ${msg}`);
       // Mark as indexed anyway to prevent infinite retries on malformed chats
-      await updateChatMeta(meta.id, {
+      await chatRepo.updateMeta(meta.id, {
         lastIndexedAt: new Date().toISOString(),
-        lastIndexedEntryCount: await getChatEntryCount(meta.id),
+        lastIndexedEntryCount: await chatRepo.getEntryCount(meta.id),
       });
     }
   }

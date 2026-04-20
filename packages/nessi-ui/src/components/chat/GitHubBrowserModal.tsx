@@ -1,9 +1,11 @@
 import { createEffect, createSignal, on, Show, For, onCleanup } from "solid-js";
 import { timed } from "@valentinkolb/stdlib/solid";
-import { githubApi, type GitHubRef } from "../../lib/github.js";
-import { getFileIcon } from "../../lib/file-icons.js";
-import { pprintBytes, formatDateTimeRelative } from "@valentinkolb/stdlib";
+import { githubApi, type GitHubRef } from "../../domains/github/index.js";
+import { fileIcons, pprintBytes, formatDateTimeRelative } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
+
+const getFileIcon = (name: string) =>
+  fileIcons.getFileIcon({ name, type: "file" }).split(" ").filter(c => c.startsWith("ti-")).join(" ");
 
 /* ------------------------------------------------------------------ */
 /*  API response types                                                */

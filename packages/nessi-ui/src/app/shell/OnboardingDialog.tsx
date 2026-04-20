@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { humanId } from "human-id";
-import { readString, writeString } from "../../lib/json-storage.js";
+import { localStorageJson } from "../../shared/storage/local-storage.js";
 import {
   getProviderPresets,
   getProviderIconUrl,
@@ -19,13 +19,13 @@ const ONBOARD_KEY = "nessi:onboard-version";
 const CURRENT_VERSION = "0.0.4";
 
 export const shouldShowOnboarding = () => {
-  const seen = readString(ONBOARD_KEY);
+  const seen = localStorageJson.readString(ONBOARD_KEY);
   return seen !== CURRENT_VERSION;
 };
 
-export const isFirstVisit = () => readString(ONBOARD_KEY) === null;
+export const isFirstVisit = () => localStorageJson.readString(ONBOARD_KEY) === null;
 
-const markOnboardingSeen = () => writeString(ONBOARD_KEY, CURRENT_VERSION);
+const markOnboardingSeen = () => localStorageJson.writeString(ONBOARD_KEY, CURRENT_VERSION);
 
 type Step = {
   id: string;

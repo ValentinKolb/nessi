@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defineTool } from "nessi-core";
-import { readJson } from "../../../lib/json-storage.js";
-import { truncateText } from "../../../lib/utils.js";
+import { localStorageJson } from "../../shared/storage/local-storage.js";
+import { truncateText } from "../utils.js";
 
 const STORAGE_KEY = "nessi:tavily";
 const MAX_EXTRACT_CONTENT = 15_000;
@@ -9,7 +9,7 @@ const VALID_TOPICS = ["general", "news", "finance"] as const;
 
 const getApiKey = () => {
   try {
-    const raw = readJson<{ apiKey?: string } | null>(STORAGE_KEY, null);
+    const raw = localStorageJson.read<{ apiKey?: string } | null>(STORAGE_KEY, null);
     return typeof raw?.apiKey === "string" && raw.apiKey.trim() ? raw.apiKey.trim() : null;
   } catch {
     return null;

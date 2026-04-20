@@ -1,10 +1,11 @@
 import { createEffect, createSignal, For, on, Show } from "solid-js";
-import { nextcloudApi } from "../../lib/nextcloud.js";
-import type { NextcloudRef } from "../../lib/nextcloud.js";
-import { parsePropfind, PROPFIND_BODY, type DavEntry } from "../../lib/nextcloud-fs.js";
-import { getFileIcon } from "../../lib/file-icons.js";
-import { pprintBytes } from "@valentinkolb/stdlib";
+import { nextcloudApi, parsePropfind, PROPFIND_BODY } from "../../domains/nextcloud/index.js";
+import type { NextcloudRef, DavEntry } from "../../domains/nextcloud/index.js";
+import { fileIcons, pprintBytes } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
+
+const getFileIcon = (name: string) =>
+  fileIcons.getFileIcon({ name, type: "file" }).split(" ").filter(c => c.startsWith("ti-")).join(" ");
 
 /** Nextcloud file browser modal for selecting files/folders as context references. */
 export const NextcloudBrowserModal = (props: {

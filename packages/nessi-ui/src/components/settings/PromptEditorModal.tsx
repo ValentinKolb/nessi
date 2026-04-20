@@ -1,7 +1,6 @@
 import { createCopyAction } from "../../lib/clipboard.js";
 import { createEffect, createSignal, Show } from "solid-js";
-import type { Prompt } from "../../lib/prompts.js";
-import { isDefault, loadPrompts, loadUserPrompts, newPromptId, saveUserPrompts } from "../../lib/prompts.js";
+import { promptRepo, type Prompt } from "../../domains/prompt/index.js";
 import { haptics } from "../../shared/browser/haptics.js";
 
 type PromptDraft = {
@@ -12,7 +11,7 @@ type PromptDraft = {
 
 const toDraft = (prompt: Prompt | null): PromptDraft => {
   if (!prompt) {
-    return { id: newPromptId(), name: "", content: "" };
+    return { id: promptRepo.newPromptId(), name: "", content: "" };
   }
   return { id: prompt.id, name: prompt.name, content: prompt.content };
 };
@@ -30,7 +29,7 @@ export const PromptEditorView = (props: {
   });
 
   const exportPrompt = async () => {
-    const all = await loadPrompts();
+    const all = await promptRepo.list();
     const prompt = all.find((entry) => entry.id === draft().id) ?? {
       id: draft().id,
       name: draft().name,
@@ -45,20 +44,20 @@ export const PromptEditorView = (props: {
       name: draft().name.trim() || "Untitled",
       content: draft().content,
     };
-    const userPrompts = await loadUserPrompts();
+    const userPrompts = await promptRepo.listUser();
     const idx = userPrompts.findIndex((prompt) => prompt.id === nextPrompt.id);
     const next = idx >= 0
       ? userPrompts.map((prompt) => (prompt.id === nextPrompt.id ? nextPrompt : prompt))
       : [...userPrompts, nextPrompt];
-    await saveUserPrompts(next);
+    await promptRepo.saveAllUser(next);
     haptics.success();
     props.onDone();
   };
 
   const remove = async () => {
     if (!props.prompt) return;
-    const prompts = await loadUserPrompts();
-    await saveUserPrompts(prompts.filter((entry) => entry.id !== props.prompt!.id));
+    const prompts = await promptRepo.listUser();
+    await promptRepo.saveAllUser(prompts.filter((entry) => entry.id !== props.prompt!.id));
     haptics.success();
     props.onDone();
   };
@@ -92,7 +91,7 @@ export const PromptEditorView = (props: {
           </button>
           <Show when={props.prompt}>
             <button class="btn-secondary danger-text" onClick={() => void remove()}>
-              {props.prompt && isDefault(props.prompt) ? "reset" : "delete"}
+              {props.prompt && promptRepo.isDefault(props.prompt) ? "reset" : "delete"}
             </button>
           </Show>
         </div>

@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { job } from "@valentinkolb/sync-browser";
-import { createProvider, getActiveProviderEntry } from "../provider.js";
-import { formatForPrompt } from "../memory.js";
-import { listChatMetas } from "../chat-storage.js";
-import { readJson, writeJson, readString, writeString } from "../json-storage.js";
+import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
+import { memoryService } from "../../memory/index.js";
+import { chatRepo } from "../../chat/index.js";
+import { localStorageJson } from "../../../shared/storage/local-storage.js";
 import { getSuggestionPrompt } from "./background-prompt.js";
 import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
 
@@ -19,10 +19,10 @@ const MIN_HOURS_BETWEEN_RUNS = 3;
 const MAX_RECENT_CHATS = 8;
 
 export const getSuggestions = (): string[] =>
-  readJson<string[]>(SUGGESTIONS_KEY, []);
+  localStorageJson.read<string[]>(SUGGESTIONS_KEY, []);
 
 const buildRecentChatsContext = async (): Promise<string> => {
-  const metas = await listChatMetas();
+  const metas = await chatRepo.listMetas();
   const recent = metas
     .filter((m) => m.description || (m.topics && m.topics.length > 0))
     .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
@@ -39,7 +39,7 @@ const buildRecentChatsContext = async (): Promise<string> => {
 };
 
 const shouldRun = (): boolean => {
-  const lastRun = readString(LAST_RUN_KEY);
+  const lastRun = localStorageJson.readString(LAST_RUN_KEY);
   if (!lastRun) return true;
   const hoursSince = (Date.now() - new Date(lastRun).getTime()) / (1000 * 60 * 60);
   return hoursSince >= MIN_HOURS_BETWEEN_RUNS;
@@ -72,7 +72,7 @@ export const suggestTopicsJob = job({
         return { generated: false, reason: "no-provider" };
       }
 
-      const memories = await formatForPrompt();
+      const memories = await memoryService.formatForPrompt();
       const recentChats = await buildRecentChatsContext();
       const promptTemplate = await getSuggestionPrompt();
       const systemPrompt = resolvePrompt(promptTemplate, memories, recentChats);
@@ -107,8 +107,8 @@ export const suggestTopicsJob = job({
         .filter((line) => line.length > 5 && line.length < 120)
         .slice(0, 6);
 
-      writeJson(SUGGESTIONS_KEY, suggestions);
-      writeString(LAST_RUN_KEY, new Date().toISOString());
+      localStorageJson.write(SUGGESTIONS_KEY, suggestions);
+      localStorageJson.writeString(LAST_RUN_KEY, new Date().toISOString());
 
       const summary = `${suggestions.length} suggestions generated`;
       entry.finishedAt = new Date().toISOString();
@@ -136,7 +136,7 @@ export const runSuggestTopics = async (): Promise<{ generated: boolean; reason?:
 
   log("suggest-topics (manual)...");
 
-  const memories = await formatForPrompt();
+  const memories = await memoryService.formatForPrompt();
   const recentChats = await buildRecentChatsContext();
   const promptTemplate = await getSuggestionPrompt();
   const systemPrompt = resolvePrompt(promptTemplate, memories, recentChats);
@@ -164,8 +164,8 @@ export const runSuggestTopics = async (): Promise<{ generated: boolean; reason?:
     .filter((line) => line.length > 5 && line.length < 120)
     .slice(0, 6);
 
-  writeJson(SUGGESTIONS_KEY, suggestions);
-  writeString(LAST_RUN_KEY, new Date().toISOString());
+  localStorageJson.write(SUGGESTIONS_KEY, suggestions);
+  localStorageJson.writeString(LAST_RUN_KEY, new Date().toISOString());
 
   const summary = `${suggestions.length} suggestions generated`;
   log(`suggest-topics done (manual) — ${summary}`);

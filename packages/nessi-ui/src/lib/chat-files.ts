@@ -387,7 +387,7 @@ const fileSection = (title: string, items: ChatFileMeta[], limit = 15) => {
 export const buildFileInfo = (
   newFiles: ChatFileMeta[],
   allFiles: ChatFileMeta[],
-  nextcloudRefs?: import("./nextcloud.js").NextcloudRef[],
+  nextcloudRefs?: import("../domains/nextcloud/index.js").NextcloudRef[],
   githubContext?: string,
 ) => {
   const inputFiles = allFiles.filter((meta) => meta.kind === "input");

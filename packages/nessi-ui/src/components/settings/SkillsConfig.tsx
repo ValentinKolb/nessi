@@ -1,11 +1,5 @@
 import { createSignal, For, Show, onMount } from "solid-js";
-import {
-  ensureUniqueSkillId,
-  listCachedSkills,
-  listSkills,
-  saveSkills,
-  type SkillEntry,
-} from "../../lib/skill-registry.js";
+import { skillRegistry, type SkillEntry } from "../../skills/core/index.js";
 import { haptics } from "../../shared/browser/haptics.js";
 const NATIVE_TOOLS = ["memory", "web", "survey", "card", "analyze_image", "present", "list_files", "read_file", "write_file", "edit_file", "bash"] as const;
 
@@ -19,7 +13,7 @@ export const SkillsConfig = (props: {
   const [error, setError] = createSignal("");
 
   const refresh = async () => {
-    setSkills(await listSkills());
+    setSkills(await skillRegistry.list());
   };
 
   onMount(() => {
@@ -32,8 +26,8 @@ export const SkillsConfig = (props: {
       if (typeof parsed.name !== "string" || typeof parsed.doc !== "string") {
         throw new Error("Invalid skill: name and doc are required");
       }
-      const existing = listCachedSkills();
-      const id = ensureUniqueSkillId(parsed.name, existing);
+      const existing = skillRegistry.snapshot();
+      const id = skillRegistry.ensureUniqueId(parsed.name, existing);
       const skill: SkillEntry = {
         id,
         name: parsed.name,
@@ -45,7 +39,7 @@ export const SkillsConfig = (props: {
         references: Array.isArray(parsed.references) ? parsed.references : undefined,
         builtin: false,
       };
-      await saveSkills([...existing, skill]);
+      await skillRegistry.saveAll([...existing, skill]);
       setError("");
       setImporting(false);
       setImportText("");

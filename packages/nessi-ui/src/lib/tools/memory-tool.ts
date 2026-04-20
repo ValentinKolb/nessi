@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineTool } from "nessi-core";
-import { addMemory, removeMemory, formatAll } from "../memory.js";
+import { memoryService } from "../../domains/memory/index.js";
 
 export const memoryTool = defineTool({
   name: "memory",
@@ -19,20 +19,20 @@ export const memoryTool = defineTool({
   switch (input.action) {
     case "add": {
       if (!input.text) return { result: "Error: text is required for add." };
-      const { total } = await addMemory(input.text);
+      const { total } = await memoryService.add(input.text);
       return { result: `Saved: ${input.text} (${total} total)` };
     }
     case "remove": {
       if (!input.id) return { result: "Error: id is required for remove." };
       try {
-        const { removed, remaining } = await removeMemory(input.id);
+        const { removed, remaining } = await memoryService.remove(input.id);
         return { result: `Removed line ${input.id}: ${removed} (${remaining} remaining)` };
       } catch (e) {
         return { result: `Error: ${e instanceof Error ? e.message : "unknown"}` };
       }
     }
     case "recall": {
-      return { result: await formatAll() };
+      return { result: await memoryService.formatAll() };
     }
   }
 });

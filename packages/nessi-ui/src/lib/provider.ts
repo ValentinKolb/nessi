@@ -11,7 +11,7 @@ import {
   type ProviderCapabilities,
 } from "nessi-ai";
 import { createSignal } from "solid-js";
-import { readJson, readString, removeKey, writeJson, writeString } from "./json-storage.js";
+import { localStorageJson } from "../shared/storage/local-storage.js";
 import { newId } from "./utils.js";
 
 /**
@@ -212,7 +212,7 @@ const migrate = () => {
     };
     saveProviders([entry]);
     setActiveProviderId(entry.id);
-    removeKey(LEGACY_PROVIDER_KEY);
+    localStorageJson.remove(LEGACY_PROVIDER_KEY);
   } catch { /* ignore */ }
 };
 
@@ -220,7 +220,7 @@ const migrate = () => {
 export const loadProviders = () => {
   providerVersion(); // track for reactivity
   migrate();
-  const storedRaw = readJson<unknown>(PROVIDERS_KEY, []);
+  const storedRaw = localStorageJson.read<unknown>(PROVIDERS_KEY, []);
   const stored = Array.isArray(storedRaw) ? storedRaw : [];
   const normalized = stored.map(normalizeProvider).filter((entry): entry is ProviderEntry => entry !== null);
   if (!Array.isArray(storedRaw) || JSON.stringify(stored) !== JSON.stringify(normalized)) {
@@ -231,20 +231,20 @@ export const loadProviders = () => {
 
 /** Persist provider configurations. */
 export const saveProviders = (providers: ProviderEntry[]) => {
-  writeJson(PROVIDERS_KEY, providers);
+  localStorageJson.write(PROVIDERS_KEY, providers);
   bumpVersion();
 };
 
 /** Read currently selected provider id. */
 export const getActiveProviderId = () => {
   providerVersion(); // track for reactivity
-  const value = readString(ACTIVE_KEY);
+  const value = localStorageJson.readString(ACTIVE_KEY);
   return value || null;
 };
 
 /** Set selected provider id. */
 export const setActiveProviderId = (id: string) => {
-  writeString(ACTIVE_KEY, id);
+  localStorageJson.writeString(ACTIVE_KEY, id);
   bumpVersion();
 };
 

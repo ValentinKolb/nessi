@@ -1,7 +1,7 @@
-import backgroundPromptContent from "../../assets/prompts/background-prompt.mustache?raw";
-import consolidationPromptContent from "../../assets/prompts/consolidation-prompt.mustache?raw";
-import suggestionPromptContent from "../../assets/prompts/suggestion-prompt.mustache?raw";
-import { settingsRepo } from "../../domains/settings/index.js";
+import backgroundPromptContent from "../../../assets/prompts/background-prompt.mustache?raw";
+import consolidationPromptContent from "../../../assets/prompts/consolidation-prompt.mustache?raw";
+import suggestionPromptContent from "../../../assets/prompts/suggestion-prompt.mustache?raw";
+import { settingsRepo } from "../../settings/index.js";
 
 export const getBackgroundPrompt = async () =>
   await settingsRepo.getBackgroundPrompt() ?? backgroundPromptContent;

@@ -1,8 +1,10 @@
 import { createSignal, For, Show } from "solid-js";
 import type { ChatFileMeta } from "../../lib/chat-files.js";
-import { pprintBytes } from "@valentinkolb/stdlib";
-import { getFileIcon } from "../../lib/file-icons.js";
+import { fileIcons, pprintBytes } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
+
+const getFileIcon = (name: string) =>
+  fileIcons.getFileIcon({ name, type: "file" }).split(" ").filter(c => c.startsWith("ti-")).join(" ");
 
 /* ── Tree data structure ── */
 

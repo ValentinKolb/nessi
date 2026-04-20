@@ -21,13 +21,13 @@ import { ChatFilesModal } from "./ChatFilesModal.js";
 import { NextcloudBrowserModal } from "./NextcloudBrowserModal.js";
 import { GitHubBrowserModal } from "./GitHubBrowserModal.js";
 import { createMainBashRuntime } from "../../lib/skills.js";
-import { getActivePrompt, resolvePrompt } from "../../lib/prompts.js";
+import { promptRepo, promptService } from "../../domains/prompt/index.js";
 import { createProvider, getActiveProviderEntry } from "../../lib/provider.js";
-import { contentPartsToUIContent, uiContentText, type UIUserContentPart } from "../../lib/chat-content.js";
+import { uiContentText, type UIUserContentPart } from "../../lib/chat-content.js";
 import { createProviderContextStore, loadPersistedEntries, persistentSessionStore, truncatePersistedEntries } from "../../lib/store.js";
-import { isAlwaysAllowed, setAlwaysAllowed } from "../../lib/tool-approvals.js";
-import { getTopicSuggestions } from "../../lib/memory.js";
-import { ensureChatMeta } from "../../lib/chat-storage.js";
+import { settingsRepo } from "../../domains/settings/index.js";
+import { memoryService } from "../../domains/memory/index.js";
+import { chatRepo } from "../../domains/chat/index.js";
 import { registerCommand } from "../../lib/slash-commands.js";
 import { createDefaultCompactFn } from "../../lib/compaction.js";
 import { loadCompactionSettings, getCompactionPrompt } from "../../lib/compaction-settings.js";
@@ -39,7 +39,6 @@ import {
   clearMessageFileRefs,
   classifyPendingChatFile,
   downloadChatFile,
-  fileMetasForMessage,
   listChatFiles,
   listInputFiles,
   listOutputFiles,
@@ -54,15 +53,16 @@ import {
 import { dropzone } from "@valentinkolb/stdlib/solid";
 import { haptics } from "../../shared/browser/haptics.js";
 import { parseSurveyQuestions } from "../../lib/tools/survey-tool.js";
-import { isNextcloudConfigured, type NextcloudRef } from "../../lib/nextcloud.js";
-import { hasGitHubToken, fetchIssueDetail, fetchPRDetail, formatIssueForPrompt, formatPRForPrompt, type GitHubRef } from "../../lib/github.js";
+import { loadMessages, summaryTextFromEntry, compactPreview } from "../../lib/message-loader.js";
+import { isNextcloudConfigured, type NextcloudRef } from "../../domains/nextcloud/index.js";
+import { hasGitHubToken, fetchIssueDetail, fetchPRDetail, formatIssueForPrompt, formatPRForPrompt, type GitHubRef } from "../../domains/github/index.js";
 import type { UIMessage as UIMsg } from "./types.js";
 
 const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
   const [topics, setTopics] = createSignal<string[]>([]);
   const refreshTopics = async () => {
-    const memoryTopics = await getTopicSuggestions();
-    const { getSuggestions } = await import("../../lib/jobs/suggest-topics.js");
+    const memoryTopics = await memoryService.topicSuggestions();
+    const { getSuggestions } = await import("../../domains/scheduler/jobs/suggest-topics.js");
     const aiTopics = getSuggestions();
     // Merge: AI suggestions first, then memory-based, deduplicated
     const seen = new Set<string>();
@@ -107,32 +107,6 @@ import { isAssistantMessage, isUserMessage } from "./guards.js";
 
 const msgId = () => humanId({ separator: "-", capitalize: false });
 
-const compactPreview = (text: string, max = 1200) =>
-  text.length <= max ? text : `${text.slice(0, max)}...`;
-
-const summaryTextFromEntry = (entry: StoreEntry): string | undefined => {
-  const message = entry.message;
-
-  if (message.role === "assistant") {
-    const text = message.content
-      .filter((block): block is Extract<typeof message.content[number], { type: "text" }> => block.type === "text")
-      .map((block) => block.text)
-      .join("\n")
-      .trim();
-    return text || undefined;
-  }
-
-  if (message.role === "user") {
-    const text = message.content
-      .map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : ""))
-      .join("\n")
-      .trim();
-    return text || undefined;
-  }
-
-  return undefined;
-};
-
 const summaryPreviewFromEntries = (entries: StoreEntry[]): string | undefined => {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
@@ -140,7 +114,6 @@ const summaryPreviewFromEntries = (entries: StoreEntry[]): string | undefined =>
     const text = summaryTextFromEntry(entry);
     if (text) return compactPreview(text);
   }
-
   return undefined;
 };
 
@@ -151,176 +124,6 @@ const assistantPreviewFromBlocks = (blocks: UIBlock[]) =>
     .filter(Boolean)
     .join("\n")
     .slice(0, 180);
-
-/** Rebuild UI messages from persisted nessi-core StoreEntry format. */
-const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
-  const entries = await loadPersistedEntries(chatId);
-
-  const toolResults = new Map<string, { result: unknown; isError?: boolean }>();
-  for (const entry of entries) {
-    if (entry.kind === "summary") continue;
-    const message = entry.message;
-    if (message.role === "tool_result" && message.callId) {
-      toolResults.set(message.callId, { result: message.result, isError: message.isError });
-    }
-  }
-
-  const messages: UIMessage[] = [];
-  let lastUserTimestamp: string | undefined;
-  for (const entry of entries) {
-    if (entry.kind === "summary") {
-      const summaryText = summaryTextFromEntry(entry);
-      if (summaryText) {
-        messages.push({
-          id: msgId(),
-          role: "assistant",
-          blocks: [{
-            type: "compaction",
-            title: "Checkpoint summary",
-            message: "Older history was condensed into a checkpoint summary.",
-            sessionName: "main",
-            applied: true,
-            reason: "stop",
-            summaryPreview: compactPreview(summaryText),
-          }],
-          meta: {
-            entrySeq: entry.seq,
-            timestamp: entry.createdAt,
-          },
-        });
-      }
-      continue;
-    }
-    const message = entry.message;
-
-    if (message.role === "user") {
-      const fileParts = (await fileMetasForMessage(chatId, entry.seq)).map((file) => ({
-        type: "file" as const,
-        fileId: file.id,
-        name: file.name,
-        mimeType: file.mimeType,
-        size: file.size,
-      }));
-      messages.push({
-        id: msgId(),
-        role: "user",
-        content: [...contentPartsToUIContent(message.content), ...fileParts],
-        timestamp: entry.createdAt,
-        entrySeq: entry.seq,
-      });
-      lastUserTimestamp = entry.createdAt;
-      continue;
-    }
-
-    if (message.role !== "assistant") continue;
-    const content = message.content as Array<{
-      type: string;
-      text?: string;
-      thinking?: string;
-      name?: string;
-      args?: unknown;
-      id?: string;
-    }>;
-
-    const blocks: UIBlock[] = [];
-    for (const block of content) {
-      if (block.type === "text" && block.text?.trim()) {
-        blocks.push({ type: "text", text: block.text });
-      } else if (block.type === "thinking" && block.thinking) {
-        blocks.push({ type: "thinking", text: block.thinking });
-      } else if (block.type === "tool_call" && block.id && block.name) {
-        const result = toolResults.get(block.id);
-        const args = (block.args ?? {}) as Record<string, unknown>;
-
-        // Reconstruct client-tool UI blocks from persisted tool_call data
-        if (block.name === "card") {
-          blocks.push({
-            type: "card",
-            layout: args.layout as UICardBlock["layout"],
-            data: args.data as Record<string, unknown> | undefined,
-            content: typeof args.content === "string" ? args.content : undefined,
-          });
-          continue;
-        }
-
-        if (block.name === "survey") {
-          const rawQ = args.questions;
-          const questions = typeof rawQ === "string"
-            ? parseSurveyQuestions(rawQ)
-            : Array.isArray(rawQ) ? rawQ as Array<{ question: string; options: string[] }> : [];
-          if (questions.length > 0) {
-            const resultText = typeof result?.result === "object" && result.result !== null
-              ? (result.result as Record<string, string>).result ?? ""
-              : typeof result?.result === "string" ? result.result : "";
-            const answers: Record<string, string> = {};
-            if (resultText) {
-              for (const line of String(resultText).split("\n")) {
-                const sep = line.indexOf(":");
-                if (sep > 0) answers[line.slice(0, sep).trim()] = line.slice(sep + 1).trim();
-              }
-            }
-            blocks.push({
-              type: "survey",
-              callId: block.id,
-              title: typeof args.title === "string" ? args.title : undefined,
-              questions,
-              submitted: result !== undefined,
-              answers: Object.keys(answers).length > 0 ? answers : undefined,
-            });
-            continue;
-          }
-        }
-
-        // Default: generic tool_call block
-        blocks.push({
-          type: "tool_call",
-          callId: block.id,
-          name: block.name,
-          args,
-          result: result?.result,
-          isError: result?.isError,
-        });
-      }
-    }
-
-    const durationMs = lastUserTimestamp && entry.createdAt
-      ? Math.max(0, new Date(entry.createdAt).getTime() - new Date(lastUserTimestamp).getTime())
-      : undefined;
-
-    // Merge consecutive assistant entries into a single UI message (matches live behavior)
-    const prev = messages[messages.length - 1];
-    if (prev && prev.role === "assistant") {
-      (prev as UIAssistantMessage).blocks.push(...blocks);
-      // Update meta with latest entry info
-      const meta = (prev as UIAssistantMessage).meta;
-      if (meta) {
-        meta.entrySeq = entry.seq;
-        meta.timestamp = entry.createdAt;
-        meta.model = message.model ?? meta.model;
-        meta.usage = message.usage ?? meta.usage;
-        meta.stopReason = message.stopReason ?? meta.stopReason;
-        if (durationMs !== undefined) meta.durationMs = durationMs;
-      }
-    } else {
-      messages.push({
-        id: msgId(),
-        role: "assistant",
-        blocks,
-        meta: {
-          entrySeq: entry.seq,
-          timestamp: entry.createdAt,
-          startedAt: lastUserTimestamp,
-          model: message.model,
-          usage: message.usage,
-          stopReason: message.stopReason,
-          durationMs,
-        },
-      });
-    }
-  }
-
-  return messages;
-};
 
 const textPart = (text: string): ContentPart => ({ type: "text", text });
 
@@ -773,7 +576,7 @@ export const ChatView = (props: {
 
     if (!toolEntry) return;
 
-    if (action === "always") await setAlwaysAllowed(toolEntry.name);
+    if (action === "always") await settingsRepo.setAlwaysAllowed(toolEntry.name);
     loop.push({ type: "approval_response", callId, approved });
 
     updateBlock(toolEntry.idx, (block) =>
@@ -882,7 +685,7 @@ export const ChatView = (props: {
           const entry = toolBlockIndices.get(event.callId);
           if (!entry) break;
 
-          if (await isAlwaysAllowed(event.name)) {
+          if ((await settingsRepo.loadToolApprovals())[event.name] === true) {
             activeLoop?.push({ type: "approval_response", callId: event.callId, approved: true });
             updateBlock(entry.idx, (block) =>
               block.type === "tool_call" ? { ...block, approval: "approved" } : block,
@@ -1306,7 +1109,7 @@ export const ChatView = (props: {
       { id: msgId(), role: "user", content, timestamp: new Date().toISOString(), entrySeq: predictedUserSeq },
     ]);
 
-    await ensureChatMeta(props.chatId, uiContentText(content) || attachedFiles[0]?.name || images[0]?.name || "Files chat");
+    await chatRepo.ensureMeta(props.chatId, uiContentText(content) || attachedFiles[0]?.name || images[0]?.name || "Files chat");
     clearPendingCallMappings();
     assistantIdx = -1;
     setPendingImages([]);
@@ -1316,7 +1119,7 @@ export const ChatView = (props: {
     setState("streaming", true);
 
     const store = createProviderContextStore(ensured.runtime.store, await latestPersistedSeq());
-    const prompt = await resolvePrompt(await getActivePrompt(), {
+    const prompt = await promptService.resolve(await promptRepo.getActive(), {
       fileInfo: buildFileInfo(newFiles, await listChatFiles(props.chatId), ncRefs, githubContext),
     });
     const input: ContentPart[] = [

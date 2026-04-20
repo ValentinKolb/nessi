@@ -2,7 +2,7 @@ import { createLocalStorageStore, scheduler, type Scheduler } from "@valentinkol
 import { refreshMetadataJob } from "./jobs/refresh-metadata.js";
 import { consolidateMemoryJob, incrementChatsSinceConsolidation } from "./jobs/consolidate-memory.js";
 import { suggestTopicsJob } from "./jobs/suggest-topics.js";
-import { schedulerRepo, type SchedulerRun } from "../domains/scheduler/index.js";
+import { schedulerRepo, type SchedulerRun } from "./index.js";
 
 const PREFIX = "[nessi:bg]";
 

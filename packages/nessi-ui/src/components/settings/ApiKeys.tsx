@@ -1,5 +1,5 @@
 import { createSignal, Show, onCleanup, onMount } from "solid-js";
-import { readJson, writeJson } from "../../lib/json-storage.js";
+import { localStorageJson } from "../../shared/storage/local-storage.js";
 import { haptics } from "../../shared/browser/haptics.js";
 
 const TAVILY_KEY = "nessi:tavily";
@@ -14,7 +14,7 @@ const useApiKey = (storageKey: string) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   onMount(() => {
-    const val = readJson<{ apiKey?: string }>(storageKey, {}).apiKey ?? "";
+    const val = localStorageJson.read<{ apiKey?: string }>(storageKey, {}).apiKey ?? "";
     setValue(val);
     setInitial(val);
   });
@@ -24,7 +24,7 @@ const useApiKey = (storageKey: string) => {
   const save = () => {
     const normalized = value().trim();
     setValue(normalized);
-    writeJson(storageKey, { apiKey: normalized });
+    localStorageJson.write(storageKey, { apiKey: normalized });
     setInitial(normalized);
     haptics.success();
     setSaved(true);
@@ -46,7 +46,7 @@ const useNextcloudConfig = () => {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   onMount(() => {
-    const val = readJson<NextcloudConfig>(NEXTCLOUD_KEY, {});
+    const val = localStorageJson.read<NextcloudConfig>(NEXTCLOUD_KEY, {});
     setConfig(val);
     setInitial(val);
   });
@@ -63,7 +63,7 @@ const useNextcloudConfig = () => {
       appPassword: (config().appPassword ?? "").trim(),
     };
     setConfig(normalized);
-    writeJson(NEXTCLOUD_KEY, normalized);
+    localStorageJson.write(NEXTCLOUD_KEY, normalized);
     setInitial(normalized);
     haptics.success();
     setSaved(true);

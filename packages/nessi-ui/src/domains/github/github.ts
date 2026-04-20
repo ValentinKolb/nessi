@@ -1,10 +1,10 @@
-import { readJson } from "./json-storage.js";
+import { localStorageJson } from "../../shared/storage/local-storage.js";
 
 const STORAGE_KEY = "nessi:github";
 const API_BASE = "https://api.github.com";
 
 const getToken = () => {
-  const raw = readJson<{ apiKey?: string } | null>(STORAGE_KEY, null);
+  const raw = localStorageJson.read<{ apiKey?: string } | null>(STORAGE_KEY, null);
   return typeof raw?.apiKey === "string" && raw.apiKey.trim() ? raw.apiKey.trim() : null;
 };
 

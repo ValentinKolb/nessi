@@ -1,12 +1,12 @@
 import { exportPdfText, mergePdfs, splitPdf } from "../../skills/builtins/pdf/pdf-ops.js";
-import { generateQrSvg } from "../qr.js";
-import type { QrOptions } from "../qr.js";
+import { qr } from "@valentinkolb/stdlib";
+type QrOptions = { on?: string; off?: string };
 import { barChart, lineChart, pieChart, scatterChart } from "../../skills/builtins/chart/chart.js";
 import type { BarChartData, LineChartData, PieChartData, ScatterChartData } from "../../skills/builtins/chart/chart.js";
-import { githubApi } from "../github.js";
-import type { GitHubApi } from "../github.js";
-import { nextcloudApi } from "../nextcloud.js";
-import type { NextcloudApi } from "../nextcloud.js";
+import { githubApi } from "../../domains/github/index.js";
+import type { GitHubApi } from "../../domains/github/index.js";
+import { nextcloudApi } from "../../domains/nextcloud/index.js";
+import type { NextcloudApi } from "../../domains/nextcloud/index.js";
 import {
   exportTable,
   getTableColumns,
@@ -153,7 +153,7 @@ export const createCommandHelpers = (): CommandHelpers => ({
     merge: mergePdfs,
   },
   qr: {
-    svg: generateQrSvg,
+    svg: (data: string, options?: QrOptions) => qr.toSvg(data, { on: options?.on, off: options?.off }),
   },
   chart: {
     bar: barChart,

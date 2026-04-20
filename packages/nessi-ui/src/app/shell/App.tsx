@@ -5,16 +5,12 @@ import { ChatView } from "../../components/chat/ChatView.js";
 import { Settings } from "../../components/settings/Settings.js";
 import { OnboardingDialog, shouldShowOnboarding } from "./OnboardingDialog.js";
 import { loadProviders, getActiveProviderEntry, setActiveProviderId } from "../../lib/provider.js";
-import {
-  hasPromptUpdate,
-  hasDefaultOverride,
-  acceptPromptUpdate,
-  acknowledgePromptVersion,
-} from "../../lib/prompts.js";
+import { promptRepo } from "../../domains/prompt/index.js";
 import { registerCommand } from "../../lib/slash-commands.js";
-import { deleteChat, getChatMeta, type ChatMeta } from "../../lib/chat-storage.js";
-import { startScheduler, stopScheduler, triggerMetadataRefresh } from "../../lib/scheduler.js";
-import { readString, writeString } from "../../lib/json-storage.js";
+import { chatRepo, type ChatMeta } from "../../domains/chat/index.js";
+import { deleteAllChatFiles } from "../../lib/chat-files.js";
+import { startScheduler, stopScheduler, triggerMetadataRefresh } from "../../domains/scheduler/scheduler.js";
+import { localStorageJson } from "../../shared/storage/local-storage.js";
 import { loadPersistedEntries } from "../../lib/store.js";
 import { formatDateTimeRelative, formatTime, formatDateTime, isToday } from "@valentinkolb/stdlib";
 
@@ -32,7 +28,7 @@ const ACTIVE_CHAT_KEY = "nessi:activeChat";
 
 const newId = () => humanId({ separator: "-", capitalize: false });
 
-const restoreOrNewId = () => readString(ACTIVE_CHAT_KEY) || newId();
+const restoreOrNewId = () => localStorageJson.readString(ACTIVE_CHAT_KEY) || newId();
 
 /** Top-level application shell with top navigation. */
 export const App = () => {
@@ -54,7 +50,7 @@ export const App = () => {
     // Trigger BG processing for the chat we're leaving
     void triggerMetadataRefresh();
     setActiveChatId(id);
-    writeString(ACTIVE_CHAT_KEY, id);
+    localStorageJson.writeString(ACTIVE_CHAT_KEY, id);
   };
 
   const newChat = () => switchChat(newId());
@@ -72,7 +68,7 @@ export const App = () => {
   const openSettings = () => settingsRef.showModal();
 
   const refreshActiveChatInfo = async () => {
-    const meta = await getChatMeta(activeChatId());
+    const meta = await chatRepo.getMeta(activeChatId());
     const entries = await loadPersistedEntries(activeChatId());
     setActiveChatTitle(meta?.title?.trim() ?? "");
     setActiveChatMeta(meta);
@@ -128,8 +124,8 @@ export const App = () => {
   };
 
   const refreshPromptBanner = async () => {
-    if (!await hasPromptUpdate()) return;
-    setIsOverride(await hasDefaultOverride());
+    if (!await promptRepo.hasUpdate()) return;
+    setIsOverride(await promptRepo.hasDefaultOverride());
     setShowUpdateBanner(true);
   };
 
@@ -152,7 +148,7 @@ export const App = () => {
     registerCommand({
       name: "clear",
       description: "Clear current chat",
-      action: () => { void deleteChat(activeChatId()); switchChat(newId()); },
+      action: () => { const id = activeChatId(); void chatRepo.deleteChat(id).then(() => deleteAllChatFiles(id)); switchChat(newId()); },
     });
 
     void startScheduler();
@@ -244,14 +240,14 @@ export const App = () => {
               <Show when={isOverride()}>
                 <button
                   class="btn-primary !py-1 !px-2.5"
-                  onClick={() => { haptics.success(); void acceptPromptUpdate(); setShowUpdateBanner(false); }}
+                  onClick={() => { haptics.success(); void promptRepo.acceptUpdate(); setShowUpdateBanner(false); }}
                 >
                   update
                 </button>
               </Show>
               <button
                 class="btn-secondary !py-1 !px-2.5"
-                onClick={() => { haptics.tap(); acknowledgePromptVersion(); setShowUpdateBanner(false); }}
+                onClick={() => { haptics.tap(); promptRepo.acknowledgeVersion(); setShowUpdateBanner(false); }}
               >
                 dismiss
               </button>

@@ -1,4 +1,4 @@
-import { readJson } from "./json-storage.js";
+import { localStorageJson } from "../../shared/storage/local-storage.js";
 
 const STORAGE_KEY = "nessi:nextcloud";
 
@@ -17,12 +17,12 @@ export type NextcloudRef = {
 
 /** Check whether Nextcloud credentials are configured (non-throwing). */
 export const isNextcloudConfigured = () => {
-  const raw = readJson<NextcloudConfig | null>(STORAGE_KEY, null);
+  const raw = localStorageJson.read<NextcloudConfig | null>(STORAGE_KEY, null);
   return Boolean(raw?.url?.trim() && raw?.user?.trim() && raw?.appPassword?.trim());
 };
 
 const getConfig = () => {
-  const raw = readJson<NextcloudConfig | null>(STORAGE_KEY, null);
+  const raw = localStorageJson.read<NextcloudConfig | null>(STORAGE_KEY, null);
   if (!raw?.url?.trim() || !raw?.user?.trim() || !raw?.appPassword?.trim()) {
     throw new Error("Nextcloud not configured. The user needs to add their Nextcloud URL, username, and app password in Settings → API Keys → Nextcloud.");
   }

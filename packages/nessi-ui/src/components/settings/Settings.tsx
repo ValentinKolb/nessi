@@ -10,8 +10,8 @@ import { CompactionSettings } from "./CompactionSettings.js";
 import { BackgroundLogsView, BackgroundTasks } from "./BackgroundTasks.js";
 import { BackgroundPromptEditor } from "./BackgroundPromptEditor.js";
 import { GeneralSettings } from "./GeneralSettings.js";
-import type { SkillEntry } from "../../lib/skill-registry.js";
-import type { Prompt } from "../../lib/prompts.js";
+import type { SkillEntry } from "../../skills/core/index.js";
+import type { Prompt } from "../../domains/prompt/index.js";
 import {
   loadProviders,
   saveProviders,

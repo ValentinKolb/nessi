@@ -1,9 +1,5 @@
 import { createEffect, createSignal, For, Show } from "solid-js";
-import type { SkillEntry } from "../../lib/skill-registry.js";
-import type { SkillReference } from "../../lib/skill-registry.js";
-import { ensureUniqueSkillId, listSkills, saveSkills } from "../../lib/skill-registry.js";
-import { createSkillDocTemplate, readSkillDocMeta, syncSkillDoc } from "../../lib/skill-doc.js";
-import { SNIPPET_TEMPLATE } from "../../lib/skill-templates.js";
+import { skillDoc, skillRegistry, skillTemplates, type SkillEntry, type SkillReference } from "../../skills/core/index.js";
 import { createCopyAction } from "../../lib/clipboard.js";
 import { haptics } from "../../shared/browser/haptics.js";
 
@@ -33,7 +29,7 @@ type SkillEditorDraft = {
 
 const toDraft = (skill: SkillEntry | null): SkillEditorDraft => {
   if (!skill) {
-    return { id: "", name: "my-skill", doc: createSkillDocTemplate(), code: SNIPPET_TEMPLATE, references: [], builtin: false };
+    return { id: "", name: "my-skill", doc: skillDoc.createTemplate(), code: skillTemplates.SNIPPET, references: [], builtin: false };
   }
   return {
     id: skill.id, name: skill.name, doc: skill.doc, code: skill.code ?? "",
@@ -151,7 +147,7 @@ export const SkillEditorView = (props: {
 
   const addCodeFile = () => {
     haptics.tap();
-    setDraft((p) => ({ ...p, code: p.code.trim() || SNIPPET_TEMPLATE }));
+    setDraft((p) => ({ ...p, code: p.code.trim() || skillTemplates.SNIPPET }));
     setActiveFile({ kind: "code", name: "skill.js" });
   };
 
@@ -189,15 +185,15 @@ export const SkillEditorView = (props: {
 
   const save = async () => {
     const current = draft();
-    const nextDoc = syncSkillDoc(current.doc, { name: current.name });
-    const parsed = readSkillDocMeta(nextDoc);
+    const nextDoc = skillDoc.syncDoc(current.doc, { name: current.name });
+    const parsed = skillDoc.readMeta(nextDoc);
     if (!parsed) {
       setActiveFile({ kind: "skill-md" });
       setError("Invalid SKILL.md frontmatter: name and description are required.");
       return;
     }
-    const existingSkills = await listSkills();
-    const id = current.id || ensureUniqueSkillId(parsed.name, existingSkills);
+    const existingSkills = await skillRegistry.list();
+    const id = current.id || skillRegistry.ensureUniqueId(parsed.name, existingSkills);
     const refs = current.references.filter((r) => r.name.trim() && r.content.trim());
     const nextSkill: SkillEntry = {
       id, name: parsed.name, description: parsed.description, command: parsed.command,
@@ -207,7 +203,7 @@ export const SkillEditorView = (props: {
     };
     const idx = existingSkills.findIndex((s) => s.id === id);
     const next = idx >= 0 ? existingSkills.map((s) => s.id === id ? { ...s, ...nextSkill } : s) : [...existingSkills, nextSkill];
-    await saveSkills(next);
+    await skillRegistry.saveAll(next);
     setError("");
     haptics.success();
     props.onDone();
@@ -216,8 +212,8 @@ export const SkillEditorView = (props: {
   const remove = async () => {
     const current = draft();
     if (!current.id || current.builtin) return;
-    const existingSkills = await listSkills();
-    await saveSkills(existingSkills.filter((s) => s.id !== current.id));
+    const existingSkills = await skillRegistry.list();
+    await skillRegistry.saveAll(existingSkills.filter((s) => s.id !== current.id));
     haptics.success();
     props.onDone();
   };
@@ -228,7 +224,7 @@ export const SkillEditorView = (props: {
     if (current.code.trim()) exported.code = current.code;
     const refs = current.references.filter((r) => r.name.trim() && r.content.trim());
     if (refs.length > 0) exported.references = refs;
-    const parsed = readSkillDocMeta(current.doc);
+    const parsed = skillDoc.readMeta(current.doc);
     if (parsed) { exported.description = parsed.description; exported.command = parsed.command; exported.enabled = parsed.enabled; }
     copyExport(JSON.stringify(exported, null, 2));
   };
@@ -391,7 +387,7 @@ export const SkillEditorView = (props: {
               class="flex-1 min-h-0 w-full resize-none bg-transparent p-3 font-mono text-[12.5px] leading-relaxed text-gh-fg placeholder:text-gh-fg-subtle focus:outline-none hide-scrollbar"
               value={draft().code}
               onInput={(e) => setCode(e.currentTarget.value)}
-              placeholder={SNIPPET_TEMPLATE}
+              placeholder={skillTemplates.SNIPPET}
               spellcheck={false}
             />
           </Show>

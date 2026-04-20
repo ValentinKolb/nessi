@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, Show, onMount, onCleanup } from "solid-js";
-import { deleteChat as deleteChatData, listChatMetas, type ChatMeta } from "../lib/chat-storage.js";
+import { chatRepo, type ChatMeta } from "../domains/chat/index.js";
+import { deleteAllChatFiles } from "../lib/chat-files.js";
 import { formatDateTimeRelative } from "@valentinkolb/stdlib";
 import { dbEvents } from "../shared/db/db-events.js";
 import { haptics } from "../shared/browser/haptics.js";
@@ -16,7 +17,7 @@ export const ChatModal = (props: {
   const [chats, setChats] = createSignal<ChatMeta[]>([]);
   const [query, setQuery] = createSignal("");
 
-  const refresh = async () => setChats(await listChatMetas());
+  const refresh = async () => setChats(await chatRepo.listMetas());
 
   const filteredChats = createMemo(() => {
     const q = query().trim().toLowerCase();
@@ -64,7 +65,7 @@ export const ChatModal = (props: {
 
   const deleteChat = (id: string) => {
     haptics.tap();
-    void deleteChatData(id);
+    void chatRepo.deleteChat(id).then(() => deleteAllChatFiles(id));
     void refresh();
     if (id === props.activeChatId) newChat();
   };

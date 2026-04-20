@@ -1,5 +1,5 @@
 import { createSignal, Show, onCleanup, onMount } from "solid-js";
-import { readMemories, writeMemories, getMemoryLines } from "../../lib/memory.js";
+import { memoryService } from "../../domains/memory/index.js";
 import { haptics } from "../../shared/browser/haptics.js";
 
 const CATEGORIES = [
@@ -19,7 +19,7 @@ export const MemoryEditor = () => {
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
   let clearTimer: ReturnType<typeof setTimeout> | undefined;
   const loadMemory = async () => {
-    const val = await readMemories();
+    const val = await memoryService.readText();
     setText(val);
     setInitial(val);
   };
@@ -34,7 +34,7 @@ export const MemoryEditor = () => {
   });
 
   const handleSave = async () => {
-    await writeMemories(text());
+    await memoryService.writeText(text());
     setInitial(text());
     haptics.success();
     setSaved(true);
@@ -49,7 +49,7 @@ export const MemoryEditor = () => {
       clearTimer = setTimeout(() => setConfirmClear(false), 3000);
       return;
     }
-    await writeMemories("");
+    await memoryService.writeText("");
     setText("");
     setInitial("");
     setConfirmClear(false);

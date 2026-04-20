@@ -1,5 +1,5 @@
 import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
-import { getBackgroundLogs, getRunLog, triggerJob, type JobRunLog } from "../../lib/scheduler.js";
+import { getBackgroundLogs, getRunLog, triggerJob, type JobRunLog } from "../../domains/scheduler/scheduler.js";
 import { formatDateTimeRelative } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
 import { PulseDots } from "../PulseDots.js";

@@ -12,7 +12,7 @@ import {
   setSuggestionPrompt,
   resetSuggestionPrompt,
   getDefaultSuggestionPrompt,
-} from "../../lib/jobs/background-prompt.js";
+} from "../../domains/scheduler/jobs/background-prompt.js";
 import { haptics } from "../../shared/browser/haptics.js";
 
 type Tab = "metadata" | "consolidation" | "suggestions";
