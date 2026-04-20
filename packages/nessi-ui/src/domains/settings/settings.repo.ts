@@ -5,6 +5,7 @@ import type { CompactionSettings, ImageAnalysisSettings, ToolApprovalMap } from 
 const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
   maxToolChars: 300,
   maxSourceChars: 24_000,
+  maxToolResultChars: 1500,
 };
 
 const normalizeMaxToolChars = (value: unknown) => {
@@ -17,6 +18,13 @@ const normalizeMaxSourceChars = (value: unknown) => {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_COMPACTION_SETTINGS.maxSourceChars;
   return Math.min(100_000, Math.max(4_000, Math.round(parsed)));
+};
+
+const normalizeMaxToolResultChars = (value: unknown) => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_COMPACTION_SETTINGS.maxToolResultChars;
+  if (parsed <= 0) return Infinity; // 0 = unlimited
+  return Math.min(100_000, Math.max(500, Math.round(parsed)));
 };
 
 const getDoc = async <T>(key: string, fallback: T): Promise<T> => {
@@ -61,6 +69,7 @@ const loadCompactionSettings = async (): Promise<CompactionSettings> => {
   return {
     maxToolChars: normalizeMaxToolChars(raw.maxToolChars),
     maxSourceChars: normalizeMaxSourceChars(raw.maxSourceChars),
+    maxToolResultChars: normalizeMaxToolResultChars(raw.maxToolResultChars),
   };
 };
 
@@ -68,6 +77,7 @@ const saveCompactionSettings = async (settings: CompactionSettings) => {
   await putDoc("compaction-settings", {
     maxToolChars: normalizeMaxToolChars(settings.maxToolChars),
     maxSourceChars: normalizeMaxSourceChars(settings.maxSourceChars),
+    maxToolResultChars: normalizeMaxToolResultChars(settings.maxToolResultChars),
   });
 };
 

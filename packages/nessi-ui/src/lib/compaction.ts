@@ -1,3 +1,4 @@
+import { truncateMiddle } from "nessi-core";
 import type { AssistantMessage, CompactFn, Message, Provider, StoreEntry, Usage } from "nessi-core";
 import { contentPartsToText } from "./utils.js";
 
@@ -28,14 +29,6 @@ const toText = (value: unknown) => {
   } catch {
     return String(value);
   }
-};
-
-/** Truncate long text keeping first half and last half with omission notice. */
-const truncateMiddle = (text: string, maxChars: number): string => {
-  if (text.length <= maxChars) return text;
-  const half = Math.floor(maxChars / 2);
-  const omitted = text.length - 2 * half;
-  return `${text.slice(0, half)}\n[... ${omitted} characters omitted ...]\n${text.slice(-half)}`;
 };
 
 // ---------------------------------------------------------------------------

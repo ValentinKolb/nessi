@@ -126,6 +126,8 @@ export type NessiOptions = {
   creditStore?: CreditStore;
   compact?: CompactFn;
   maxTurns?: number;
+  /** Max chars for tool results in the context sent to the provider. Longer results are truncated. */
+  maxToolResultChars?: number;
   signal?: AbortSignal;
 }
 

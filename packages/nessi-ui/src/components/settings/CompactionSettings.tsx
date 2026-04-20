@@ -4,15 +4,20 @@ import { haptics } from "../../shared/browser/haptics.js";
 
 const TOOL_CHAR_OPTIONS = [100, 200, 300, 500, 800, 1000, 2000] as const;
 const SOURCE_CHAR_OPTIONS = [4_000, 8_000, 12_000, 16_000, 24_000, 40_000, 60_000, 100_000] as const;
+const TOOL_RESULT_OPTIONS = [500, 1000, 1500, 3000, 5000, 10_000, 0] as const; // 0 = unlimited
 
 const formatSourceChars = (value: number) =>
   value >= 1_000 ? `${(value / 1_000).toFixed(0)}k` : String(value);
 
+const formatToolResultChars = (value: number) =>
+  value === 0 ? "unlimited" : formatSourceChars(value);
+
 export const CompactionSettings = (props: { onEditPrompt?: () => void }) => {
   const [maxToolChars, setMaxToolChars] = createSignal(300);
   const [maxSourceChars, setMaxSourceChars] = createSignal(24_000);
+  const [maxToolResultChars, setMaxToolResultChars] = createSignal(1500);
 
-  const [initial, setInitial] = createSignal({ t: 300, s: 24_000 });
+  const [initial, setInitial] = createSignal({ t: 300, s: 24_000, r: 1500 });
   const [saved, setSaved] = createSignal(false);
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -20,7 +25,12 @@ export const CompactionSettings = (props: { onEditPrompt?: () => void }) => {
     const s = await loadCompactionSettings();
     setMaxToolChars(s.maxToolChars);
     setMaxSourceChars(s.maxSourceChars);
-    setInitial({ t: s.maxToolChars, s: s.maxSourceChars });
+    setMaxToolResultChars(Number.isFinite(s.maxToolResultChars) ? s.maxToolResultChars : 0);
+    setInitial({
+      t: s.maxToolChars,
+      s: s.maxSourceChars,
+      r: Number.isFinite(s.maxToolResultChars) ? s.maxToolResultChars : 0,
+    });
   };
 
   onMount(() => {
@@ -35,9 +45,10 @@ export const CompactionSettings = (props: { onEditPrompt?: () => void }) => {
     const settings = {
       maxToolChars: maxToolChars(),
       maxSourceChars: maxSourceChars(),
+      maxToolResultChars: maxToolResultChars(),
     };
     await saveCompactionSettings(settings);
-    setInitial({ t: settings.maxToolChars, s: settings.maxSourceChars });
+    setInitial({ t: settings.maxToolChars, s: settings.maxSourceChars, r: settings.maxToolResultChars });
     haptics.success();
     setSaved(true);
     if (savedTimer) clearTimeout(savedTimer);
@@ -47,7 +58,8 @@ export const CompactionSettings = (props: { onEditPrompt?: () => void }) => {
   const dirty = () => {
     const i = initial();
     return maxToolChars() !== i.t
-      || maxSourceChars() !== i.s;
+      || maxSourceChars() !== i.s
+      || maxToolResultChars() !== i.r;
   };
 
   return (
@@ -63,11 +75,28 @@ export const CompactionSettings = (props: { onEditPrompt?: () => void }) => {
       </p>
       <div class="ui-subpanel p-2 space-y-2">
 
-        {/* Max tool chars */}
+        {/* Max tool result chars in context */}
         <label class="block">
-          <span class="text-[13px] text-gh-fg-muted">Max tool content chars</span>
+          <span class="text-[13px] text-gh-fg-muted">Max tool result chars in context</span>
           <p class="settings-desc mt-0.5">
-            Tool inputs and outputs longer than this are truncated in the summary source (first half + last half, middle omitted).
+            Tool results longer than this are truncated before sending to the model (first half + last half). Prevents large outputs from filling the context window.
+          </p>
+          <select
+            class="mt-1 ui-input"
+            value={String(maxToolResultChars())}
+            onInput={(e) => setMaxToolResultChars(Number(e.currentTarget.value))}
+          >
+            {TOOL_RESULT_OPTIONS.map((v) => (
+              <option value={String(v)}>{formatToolResultChars(v)}</option>
+            ))}
+          </select>
+        </label>
+
+        {/* Max tool chars for summary */}
+        <label class="block">
+          <span class="text-[13px] text-gh-fg-muted">Max tool content in summary</span>
+          <p class="settings-desc mt-0.5">
+            Tool inputs and outputs longer than this are truncated in the compaction summary source.
           </p>
           <select
             class="mt-1 ui-input"

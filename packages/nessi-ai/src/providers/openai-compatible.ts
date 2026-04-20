@@ -114,6 +114,7 @@ const convertMessages = (messages: Message[], systemPrompt: string | undefined, 
       const toolCalls: OAIToolCall[] = [];
       for (const block of message.content) {
         if (block.type === "text") text += block.text;
+        else if (block.type === "thinking") text += block.thinking;
         else if (block.type === "tool_call") {
           const mappedId = strictIds ? makeStrictId(block.id) : block.id;
           if (strictIds) {

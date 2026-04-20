@@ -20,7 +20,7 @@ import type {
   StoreEntry,
 } from "./types.js";
 import { toolToSpec } from "./tools.js";
-import { zeroUsage, toErrorMessage, estimateTokens } from "./utils.js";
+import { zeroUsage, toErrorMessage, estimateTokens, truncateMessages } from "./utils.js";
 
 // ----------------------------------------------------------------------------
 // Inbound event channel — lets the consumer push() events that the loop awaits
@@ -132,6 +132,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     creditStore,
     compact,
     maxTurns = Infinity,
+    maxToolResultChars,
     signal: externalSignal,
   } = options;
 
@@ -249,8 +250,11 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         }
       }
 
-      // Build messages from entries
-      const messages: Message[] = entries.map((e) => e.message);
+      // Build messages from entries, strip thinking blocks, truncate tool results
+      const messages: Message[] = truncateMessages(
+        entries.map((e) => e.message),
+        maxToolResultChars,
+      );
 
       yield { type: "turn_start", agentId };
 

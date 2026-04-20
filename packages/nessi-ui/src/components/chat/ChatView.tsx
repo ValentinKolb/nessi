@@ -330,6 +330,7 @@ type Runtime = {
   store: SessionStore;
   tools: Tool[];
   compactFn: CompactFn;
+  maxToolResultChars?: number;
   bash: Bash;
 };
 
@@ -634,6 +635,7 @@ export const ChatView = (props: {
           maxSourceChars: settings.maxSourceChars,
           compactionPrompt: await getCompactionPrompt(),
         }),
+        maxToolResultChars: Number.isFinite(settings.maxToolResultChars) ? settings.maxToolResultChars : undefined,
         bash: bashRuntime.bash,
       };
     }
@@ -1258,6 +1260,7 @@ export const ChatView = (props: {
       tools: ensured.runtime.tools,
       maxTurns: 40,
       compact: ensured.runtime.compactFn,
+      maxToolResultChars: ensured.runtime.maxToolResultChars,
     });
 
     activeLoop = loop;

@@ -60,6 +60,7 @@ const convertMessages = (messages: Message[]) => {
       const parts: GeminiPart[] = [];
       for (const block of message.content) {
         if (block.type === "text") parts.push({ text: block.text });
+        else if (block.type === "thinking") parts.push({ text: block.thinking });
         else if (block.type === "tool_call") {
           parts.push({ functionCall: { name: block.name, args: block.args } });
         }
