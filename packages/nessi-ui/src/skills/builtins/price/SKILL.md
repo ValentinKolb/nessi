@@ -1,6 +1,6 @@
 ---
 name: price
-description: "Live metal prices (gold, silver, platinum), jewelry valuation by weight and purity, and currency conversion. Use for any question about gold/silver prices, jewelry value, karat, alloy purity, or currency exchange rates."
+description: "Live metal/crypto prices, jewelry valuation by weight+purity, currency conversion. Use for gold, silver, platinum prices, jewelry value, or exchange rates."
 metadata:
   nessi:
     command: price

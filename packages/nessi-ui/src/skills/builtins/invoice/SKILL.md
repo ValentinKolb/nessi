@@ -1,6 +1,6 @@
 ---
 name: invoice
-description: "Generate professional invoices as printable HTML, optionally with XRechnung XML. Use when the user needs a bill, receipt, or invoice. Supports logo, tax ID, and all German invoice fields."
+description: "Generate invoices as printable HTML with optional XRechnung XML. Use for bills, receipts, or invoices."
 metadata:
   nessi:
     command: invoice

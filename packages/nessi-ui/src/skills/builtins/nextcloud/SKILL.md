@@ -18,13 +18,19 @@ If unclear whether the user means a local upload or a Nextcloud file, **ask befo
 
 ## Files
 
-Nextcloud files are at `/nextcloud/`. Just use normal commands:
+Nextcloud files are at `/nextcloud/`. Read files with normal commands:
 
 ```bash
 ls /nextcloud/
 cat /nextcloud/Documents/notes.md
-table filter /nextcloud/data.xlsx --where "status = active" --output /output/result.csv
-cp /output/result.csv /nextcloud/Documents/result.csv
+table query /nextcloud/data.xlsx --where "status = active" --output /output/result.csv
+```
+
+**You can create new files** in Nextcloud but **cannot overwrite or delete existing files**. Always use a new filename when writing:
+
+```bash
+cp /output/result.csv /nextcloud/Documents/result-new.csv
+write_file /nextcloud/Documents/report.md "# Report\n..."
 ```
 
 ## Calendar

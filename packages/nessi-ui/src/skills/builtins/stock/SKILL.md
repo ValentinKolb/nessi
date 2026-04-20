@@ -1,6 +1,6 @@
 ---
 name: stock
-description: "Live stock quotes, historical prices, and multi-stock comparison. Use for any question about stock prices, market data, or portfolio tracking. Outputs CSV for direct chart pipeline."
+description: "Live stock quotes, historical prices, multi-stock comparison. Use for stock prices, market data, or portfolio tracking. Outputs CSV for chart pipeline."
 metadata:
   nessi:
     command: stock

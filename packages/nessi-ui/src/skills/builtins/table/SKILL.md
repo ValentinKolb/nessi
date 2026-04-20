@@ -1,6 +1,6 @@
 ---
 name: table
-description: "Query, filter, aggregate (sum/avg/count/min/max/median), group, sort, calc(), and transform CSV/XLSX files. Always use this instead of awk, node -e, or python for any tabular data task."
+description: "Query, filter, aggregate, group, sort, and transform CSV/XLSX files. Always use instead of awk, python, or manual parsing for tabular data."
 metadata:
   nessi:
     command: table

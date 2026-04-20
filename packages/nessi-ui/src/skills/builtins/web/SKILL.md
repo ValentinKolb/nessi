@@ -1,6 +1,6 @@
 ---
 name: web
-description: "Search the web and extract page content. Use for current facts, docs, versions, prices, or any URL the user shares. Do NOT use for github.com URLs — use the github skill instead."
+description: "Search the web and extract page content. Use for current facts, docs, versions, or any URL. Not for github.com — use the github skill."
 metadata:
   nessi:
     command: web

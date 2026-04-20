@@ -1,6 +1,6 @@
 ---
 name: image
-description: "Resize, compress, crop, rotate, convert, and filter images. All processing happens locally in the browser — no upload, no server. Use for any image manipulation task."
+description: "Resize, compress, crop, rotate, convert, and filter images locally. Use for any image manipulation task."
 metadata:
   nessi:
     command: image

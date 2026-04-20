@@ -1,6 +1,6 @@
 ---
 name: qr
-description: Generate QR codes from text or URLs. Use this whenever the user mentions QR codes, wants to share a link as a scannable image, or needs a printable code. Renders inline with download.
+description: "Generate QR codes from text or URLs. Use for QR codes, scannable links, or printable codes."
 metadata:
   nessi:
     command: qr
