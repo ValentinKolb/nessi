@@ -37,7 +37,7 @@ export const Message = (props: {
       </Show>
       <Show when={assistantMessage()}>
         {(msg) => (
-          <div class="space-y-0.5">
+          <div class="space-y-1">
             <For each={msg().blocks}>
               {(block) => (
                 <BlockRenderer
