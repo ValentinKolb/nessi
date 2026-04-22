@@ -13,7 +13,8 @@ import type {
   Tool,
 } from "nessi-core";
 import type { Bash } from "just-bash";
-import type { ChatState, UIMessage, UIBlock, UIAssistantMessage, UICompactionBlock, UICardBlock } from "./types.js";
+import type { ChatState, UIMessage, UIBlock, UIAssistantMessage, UICompactionBlock } from "./types.js";
+import { inlineToolHandlers } from "../../lib/inline-tool-blocks.js";
 import { MessageList } from "./MessageList.js";
 import { MessageInput } from "./MessageInput.js";
 import { TerminalView } from "./TerminalView.js";
@@ -52,7 +53,6 @@ import {
 } from "../../lib/chat-files.js";
 import { dropzone } from "@valentinkolb/stdlib/solid";
 import { haptics } from "../../shared/browser/haptics.js";
-import { parseSurveyQuestions } from "../../lib/tools/survey-tool.js";
 import { loadMessages, summaryTextFromEntry, compactPreview } from "../../lib/message-loader.js";
 import { isNextcloudConfigured, type NextcloudRef } from "../../domains/nextcloud/index.js";
 import { hasGitHubToken, fetchIssueDetail, fetchPRDetail, formatIssueForPrompt, formatPRForPrompt, type GitHubRef } from "../../domains/github/index.js";
@@ -190,13 +190,40 @@ export const ChatView = (props: {
 
   let assistantIdx = -1;
   const toolBlockIndices = new Map<string, { idx: number; name: string }>();
-  const surveyBlockIndices = new Map<string, number>();
+  const companionBlockIndices = new Map<string, number>();
   const approvalBlockIndices = new Map<string, number>();
 
   const clearPendingCallMappings = () => {
     toolBlockIndices.clear();
-    surveyBlockIndices.clear();
+    companionBlockIndices.clear();
     approvalBlockIndices.clear();
+  };
+
+  /** Run the inline-tool-block registry's fromArgs handler and, if it returns a block, append it as a companion. Idempotent per callId. */
+  const appendCompanionFromArgs = (name: string, args: unknown, callId: string) => {
+    if (companionBlockIndices.has(callId)) return null;
+    const handler = inlineToolHandlers[name];
+    const block = handler?.fromArgs?.(args, callId);
+    if (!block) return null;
+    const idx = appendBlock(block);
+    if (idx !== null) companionBlockIndices.set(callId, idx);
+    return block;
+  };
+
+  /** Run the inline-tool-block registry's fromResult handler; appends a full block or patches the tracked companion. */
+  const applyFromResult = (name: string, result: unknown, args: unknown, callId: string) => {
+    const handler = inlineToolHandlers[name];
+    const produced = handler?.fromResult?.(result, args, callId);
+    if (!produced) return;
+    if ("type" in produced && typeof produced.type === "string") {
+      const idx = appendBlock(produced as UIBlock);
+      if (idx !== null) companionBlockIndices.set(callId, idx);
+      return;
+    }
+    const companionIdx = companionBlockIndices.get(callId);
+    if (typeof companionIdx !== "number") return;
+    const patch = produced as Partial<UIBlock>;
+    updateBlock(companionIdx, (block) => ({ ...block, ...patch }) as UIBlock);
   };
 
   const closeStreamingAssistantMessage = () => {
@@ -591,7 +618,7 @@ export const ChatView = (props: {
       return;
     }
 
-    const blockIdx = surveyBlockIndices.get(callId);
+    const blockIdx = companionBlockIndices.get(callId);
     if (typeof blockIdx !== "number") return;
 
     const result = Object.entries(answers)
@@ -649,11 +676,6 @@ export const ChatView = (props: {
           attentionFeedbackSentForTurn = true;
           haptics.nudge();
         }
-        // Client tools with custom UI (card, survey) render their own blocks
-        // via action_request — don't create a generic tool_call block for them
-        const isClientUiTool = event.name === "card" || event.name === "survey";
-        if (isClientUiTool) break;
-
         const idx = appendBlock({
           type: "tool_call",
           callId: event.callId,
@@ -673,6 +695,7 @@ export const ChatView = (props: {
         updateBlock(entry.idx, (block) =>
           block.type === "tool_call" ? { ...block, args: event.args } : block,
         );
+        appendCompanionFromArgs(event.name, event.args, event.callId);
         break;
       }
 
@@ -711,45 +734,27 @@ export const ChatView = (props: {
           break;
         }
 
-        if (event.kind === "client_tool" && event.name === "card") {
-          const args = event.args as { layout?: string; data?: Record<string, unknown>; content?: string };
-          appendBlock({
-            type: "card",
-            layout: args.layout as UICardBlock["layout"],
-            data: args.data,
-            content: args.content,
-          });
-          activeLoop?.push({ type: "tool_result", callId: event.callId, result: { displayed: true } });
-          break;
-        }
-
-        if (event.kind === "client_tool" && event.name === "survey") {
-          const args = event.args as { title?: string; questions?: string | Array<{ question: string; options: string[] }> };
-          const questions = typeof args.questions === "string"
-            ? parseSurveyQuestions(args.questions)
-            : Array.isArray(args.questions) ? args.questions : [];
-          if (questions.length === 0) {
-            activeLoop?.push({
-              type: "tool_result",
-              callId: event.callId,
-              result: {
-                result:
-                  "Error: survey questions could not be parsed. Format: each line needs a question followed by 2+ options separated by |. " +
-                  "Example: {\"title\":\"Setup\",\"questions\":\"Language? | TypeScript | Python | Go\\nTests? | Yes | No\"}. " +
-                  "For a single choice: {\"questions\":\"What to do? | Option A | Option B | Option C\"}",
-              },
-            });
+        if (event.kind === "client_tool") {
+          if (event.name === "card") {
+            appendCompanionFromArgs(event.name, event.args, event.callId);
+            activeLoop?.push({ type: "tool_result", callId: event.callId, result: { displayed: true } });
             break;
           }
-          const idx = appendBlock({
-            type: "survey",
-            callId: event.callId,
-            title: args.title,
-            questions,
-            submitted: false,
-          });
-          if (idx !== null) {
-            surveyBlockIndices.set(event.callId, idx);
+
+          if (event.name === "survey") {
+            const produced = appendCompanionFromArgs(event.name, event.args, event.callId);
+            if (!produced) {
+              activeLoop?.push({
+                type: "tool_result",
+                callId: event.callId,
+                result: {
+                  result:
+                    "Error: survey questions could not be parsed. Format: each line needs a question followed by 2+ options separated by |. " +
+                    "Example: {\"title\":\"Setup\",\"questions\":\"Language? | TypeScript | Python | Go\\nTests? | Yes | No\"}. " +
+                    "For a single choice: {\"questions\":\"What to do? | Option A | Option B | Option C\"}",
+                },
+              });
+            }
           }
         }
 
@@ -767,6 +772,13 @@ export const ChatView = (props: {
             isError: event.isError ? true : block.isError,
           };
         });
+        const args = (() => {
+          const msg = state.messages[assistantIdx];
+          if (!msg || msg.role !== "assistant") return undefined;
+          const b = (msg as UIAssistantMessage).blocks[entry.idx];
+          return b?.type === "tool_call" ? b.args : undefined;
+        })();
+        if (!event.isError) applyFromResult(entry.name, event.result, args, event.callId);
         break;
       }
 

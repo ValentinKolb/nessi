@@ -8,6 +8,7 @@ import { ApprovalBlock } from "./ApprovalBlock.js";
 import { CompactionBlock } from "./CompactionBlock.js";
 import { ContextOverflowBlock } from "./ContextOverflowBlock.js";
 import { CardBlock } from "./CardBlock.js";
+import { PresentBlock } from "./PresentBlock.js";
 
 export type BlockProps = {
   block: UIBlock | { type: string; [key: string]: unknown };
@@ -26,6 +27,7 @@ const renderers: Record<string, Component<BlockProps>> = {
   compaction: CompactionBlock as Component<BlockProps>,
   context_overflow: ContextOverflowBlock as Component<BlockProps>,
   card: CardBlock as Component<BlockProps>,
+  present: PresentBlock as Component<BlockProps>,
 };
 
 /** Dispatch a UI block to its matching renderer component. */

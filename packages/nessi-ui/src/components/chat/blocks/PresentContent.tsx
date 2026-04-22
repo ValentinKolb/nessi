@@ -3,13 +3,13 @@ import { downloadChatFileByPath } from "../../../lib/chat-files.js";
 import { Portal } from "solid-js/web";
 import { haptics } from "../../../shared/browser/haptics.js";
 
-type TableData = {
+export type TableData = {
   headers: string[];
   rows: string[][];
   totalRows: number;
 };
 
-type PresentResult = {
+export type PresentResult = {
   status: string;
   path: string;
   name: string;
@@ -181,9 +181,9 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
   };
 
   return (
-    <div class="px-2 py-2 space-y-2">
+    <div class="space-y-2">
       <Show when={ct() === "svg"}>
-        <div class="bg-gh-surface rounded p-2 flex flex-col items-center gap-2">
+        <div class="flex flex-col items-center gap-2">
           <div class="max-w-md mx-auto w-full" innerHTML={content()} />
           <MaximizeButton onClick={() => { haptics.tap(); setFullscreen(true); }} />
         </div>
@@ -197,8 +197,8 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
       </Show>
 
       <Show when={ct() === "image"}>
-        <div class="bg-gh-surface rounded p-2 flex flex-col items-center gap-2">
-          <img src={content()} alt={name()} class="max-w-full rounded" />
+        <div class="flex flex-col items-center gap-2">
+          <img src={content()} alt={name()} class="max-w-full" />
           <MaximizeButton onClick={() => { haptics.tap(); setFullscreen(true); }} />
         </div>
         <FullscreenModal
@@ -215,19 +215,17 @@ export const PresentContent = (props: { result: PresentResult; chatId?: string }
       </Show>
 
       <Show when={ct() === "html"}>
-        <div class="rounded border border-gh-border-muted overflow-hidden bg-white">
-          <iframe
-            srcdoc={content()}
-            sandbox="allow-same-origin"
-            class="w-full border-0"
-            style={{ height: "500px" }}
-            title={name()}
-          />
-        </div>
+        <iframe
+          srcdoc={content()}
+          sandbox="allow-same-origin"
+          class="w-full border-0 bg-white"
+          style={{ height: "500px" }}
+          title={name()}
+        />
       </Show>
 
       <Show when={ct() === "text"}>
-        <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-xs text-gh-fg-muted bg-gh-surface rounded p-2 border border-gh-border-muted">
+        <pre class="overflow-x-auto whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-xs text-gh-fg-muted">
           {content()}
         </pre>
       </Show>

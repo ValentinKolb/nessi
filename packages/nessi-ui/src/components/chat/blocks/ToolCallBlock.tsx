@@ -1,6 +1,5 @@
-import { createSignal, For, Show, type JSX } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import type { UIToolCallBlock } from "../types.js";
-import { isPresentResult, PresentContent } from "./PresentContent.js";
 import { downloadChatFileByPath } from "../../../lib/chat-files.js";
 import { haptics } from "../../../shared/browser/haptics.js";
 import { PulseDots } from "../../PulseDots.js";
@@ -131,11 +130,6 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
     return formatValue(result);
   };
 
-  const presentResult = () => {
-    const r = props.block.result;
-    return isPresentResult(r) ? r : null;
-  };
-
   const hasResult = () => props.block.result !== undefined;
   const isRunning = () => !hasResult() && props.block.approval !== "pending";
   const isPending = () => props.block.approval === "pending";
@@ -156,12 +150,19 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
     void downloadChatFileByPath(props.chatId, presentPath());
   };
 
+  const presentHtmlContent = (): string | null => {
+    const r = props.block.result;
+    if (!r || typeof r !== "object") return null;
+    const content = (r as Record<string, unknown>).content;
+    return typeof content === "string" ? content : null;
+  };
+
   const handlePrintHtml = (e: MouseEvent) => {
     e.stopPropagation();
-    const pr = presentResult();
-    if (!pr?.content) return;
+    const content = presentHtmlContent();
+    if (!content) return;
     haptics.tap();
-    const blob = new Blob([pr.content], { type: "text/html" });
+    const blob = new Blob([content], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     window.open(url, "_blank");
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -170,7 +171,6 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
   let headRef!: HTMLButtonElement;
 
   const toggle = () => {
-    if (isPresent()) return;
     haptics.tap();
     setExpanded(!expanded());
     requestAnimationFrame(() => headRef.scrollIntoView({ block: "nearest", behavior: "smooth" }));
@@ -219,7 +219,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
             <span class="i ti ti-file-download hidden group-hover/dl:inline-block" />
           </span>
         </Show>
-        <Show when={!isPresent() && (hasResult() || props.block.args !== undefined)}>
+        <Show when={hasResult() || props.block.args !== undefined}>
           <span class={`i ti ti-chevron-${expanded() ? "up" : "down"} text-gh-fg-subtle text-xs`} />
         </Show>
       </button>
@@ -237,13 +237,8 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
         </div>
       </Show>
 
-      {/* Present: inline content, no collapsible */}
-      <Show when={isPresent() && presentResult()}>
-        {(pr) => <PresentContent result={pr()} chatId={props.chatId} />}
-      </Show>
-
-      {/* Other tools: collapsible details */}
-      <Show when={!isPresent() && expanded()}>
+      {/* Collapsible details */}
+      <Show when={expanded()}>
         <div class="px-2 py-2 space-y-2">
           <Show when={props.block.args !== undefined}>
             <div class="space-y-1">

@@ -5,11 +5,11 @@
 
 import { humanId } from "human-id";
 import type { StoreEntry } from "nessi-core";
-import type { UIMessage, UIBlock, UIAssistantMessage, UICardBlock } from "../components/chat/types.js";
+import type { UIMessage, UIBlock, UIAssistantMessage } from "../components/chat/types.js";
 import { contentPartsToUIContent } from "./chat-content.js";
 import { fileMetasForMessage } from "./chat-files.js";
 import { loadPersistedEntries } from "./store.js";
-import { parseSurveyQuestions } from "./tools/survey-tool.js";
+import { inlineToolHandlers } from "./inline-tool-blocks.js";
 
 const msgId = () => humanId({ separator: "-", capitalize: false });
 
@@ -117,44 +117,6 @@ export const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
         const result = toolResults.get(block.id);
         const args = (block.args ?? {}) as Record<string, unknown>;
 
-        if (block.name === "card") {
-          blocks.push({
-            type: "card",
-            layout: args.layout as UICardBlock["layout"],
-            data: args.data as Record<string, unknown> | undefined,
-            content: typeof args.content === "string" ? args.content : undefined,
-          });
-          continue;
-        }
-
-        if (block.name === "survey") {
-          const rawQ = args.questions;
-          const questions = typeof rawQ === "string"
-            ? parseSurveyQuestions(rawQ)
-            : Array.isArray(rawQ) ? rawQ as Array<{ question: string; options: string[] }> : [];
-          if (questions.length > 0) {
-            const resultText = typeof result?.result === "object" && result.result !== null
-              ? (result.result as Record<string, string>).result ?? ""
-              : typeof result?.result === "string" ? result.result : "";
-            const answers: Record<string, string> = {};
-            if (resultText) {
-              for (const line of String(resultText).split("\n")) {
-                const sep = line.indexOf(":");
-                if (sep > 0) answers[line.slice(0, sep).trim()] = line.slice(sep + 1).trim();
-              }
-            }
-            blocks.push({
-              type: "survey",
-              callId: block.id,
-              title: typeof args.title === "string" ? args.title : undefined,
-              questions,
-              submitted: result !== undefined,
-              answers: Object.keys(answers).length > 0 ? answers : undefined,
-            });
-            continue;
-          }
-        }
-
         blocks.push({
           type: "tool_call",
           callId: block.id,
@@ -163,6 +125,24 @@ export const loadMessages = async (chatId: string): Promise<UIMessage[]> => {
           result: result?.result,
           isError: result?.isError,
         });
+
+        const handler = inlineToolHandlers[block.name];
+        const fromArgsBlock = handler?.fromArgs?.(args, block.id) ?? null;
+        if (fromArgsBlock) blocks.push(fromArgsBlock);
+
+        if (result !== undefined && !result.isError) {
+          const produced = handler?.fromResult?.(result.result, args, block.id) ?? null;
+          if (produced) {
+            if ("type" in produced && typeof produced.type === "string") {
+              blocks.push(produced as UIBlock);
+            } else if (fromArgsBlock) {
+              const last = blocks[blocks.length - 1];
+              if (last && last === fromArgsBlock) {
+                blocks[blocks.length - 1] = { ...fromArgsBlock, ...(produced as Partial<UIBlock>) } as UIBlock;
+              }
+            }
+          }
+        }
       }
     }
 

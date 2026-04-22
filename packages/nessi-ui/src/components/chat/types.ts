@@ -1,5 +1,6 @@
 import type { AssistantStopReason, Usage } from "nessi-ai";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
+import type { PresentResult } from "./blocks/PresentContent.js";
 
 export type UITextBlock = { type: "text"; text: string; isError?: boolean };
 export type UIToolCallBlock = {
@@ -56,7 +57,13 @@ export type UICardBlock = {
   content?: string;
 };
 
-export type UIBlock = UITextBlock | UIToolCallBlock | UIThinkingBlock | UISurveyBlock | UIApprovalBlock | UICompactionBlock | UIContextOverflowBlock | UICardBlock;
+export type UIPresentBlock = {
+  type: "present";
+  callId: string;
+  result: PresentResult;
+};
+
+export type UIBlock = UITextBlock | UIToolCallBlock | UIThinkingBlock | UISurveyBlock | UIApprovalBlock | UICompactionBlock | UIContextOverflowBlock | UICardBlock | UIPresentBlock;
 
 export type UIUserMessage = {
   id: string;
