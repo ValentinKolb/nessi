@@ -41,11 +41,18 @@ const Icon = (props: { name?: string }) => (
   </Show>
 );
 
-const CardHeader = (props: { icon?: string; title?: string }) => (
-  <Show when={props.title}>
+const CardHeader = (props: { icon?: string; title?: string; subtitle?: string }) => (
+  <Show when={props.title || props.subtitle}>
     <div class="ai-card-header">
-      <Icon name={asString(props.icon)} />
-      <span>{asString(props.title)}</span>
+      <Show when={props.title}>
+        <div class="ai-card-header-row">
+          <Icon name={asString(props.icon)} />
+          <span>{asString(props.title)}</span>
+        </div>
+      </Show>
+      <Show when={props.subtitle}>
+        <div class="ai-card-header-subtitle">{asString(props.subtitle)}</div>
+      </Show>
     </div>
   </Show>
 );
@@ -100,7 +107,7 @@ const MetricLayout = (props: { d: D }) => {
         </Show>
       </Show>
       <Show when={!isSingle()}>
-        <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
+        <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} subtitle={asString(props.d.subtitle)} />
         <div class="ai-card-metric-grid">
           <For each={items()}>
             {(item) => <MetricItem icon={item.icon} title={item.title} value={item.value} subtitle={item.subtitle} />}
@@ -127,7 +134,7 @@ const ChecklistLayout = (props: { d: D }) => {
 
   return (
     <div class="ai-card">
-      <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
+      <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} subtitle={asString(props.d.subtitle)} />
       <div class="ai-card-checklist">
         <For each={items()}>
           {(item) => (
@@ -152,7 +159,7 @@ const TableLayout = (props: { d: D }) => {
 
   return (
     <div class="ai-card">
-      <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
+      <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} subtitle={asString(props.d.subtitle)} />
       <div class="ui-table-wrap" style={{ "max-height": "400px" }}>
         <table class="ui-table">
           <Show when={columns().length > 0}>

@@ -632,25 +632,35 @@ dialog::backdrop {
 
 /* ─── AI Cards ─── */
 .ai-card {
-  background: var(--color-gh-canvas);
-  border-radius: 0.75rem;
-  border: 1px solid var(--color-gh-border-muted);
-  padding: 1.25rem 1.5rem;
+  background: var(--color-gh-surface);
+  border-radius: 0.25rem;
+  padding: 0.7rem 0.9rem;
   font-size: 0.875rem;
   color: var(--color-gh-fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
-/* Header */
+/* Header — inline title + optional subtitle above the content. */
 .ai-card-header {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1rem;
-  font-weight: 700;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.6rem;
   color: var(--color-gh-fg);
-  margin-bottom: 0.75rem;
 }
-.ai-card-header .i { font-size: 1.25rem; color: var(--color-gh-accent); }
+.ai-card-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.ai-card-header-row .i { font-size: 1.1rem; color: var(--color-gh-accent); }
+.ai-card-header-subtitle {
+  font-size: 0.75rem;
+  color: var(--color-gh-fg-subtle);
+  line-height: 1.3;
+}
 
 /* Metric — single hero value */
 .ai-card-metric-value {
