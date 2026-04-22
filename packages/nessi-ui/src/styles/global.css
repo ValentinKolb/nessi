@@ -146,6 +146,12 @@ html.dark .text-block-markdown b {
   color: var(--color-gh-fg);
 }
 
+/* Dark mode: align card bg with tool-block bg (overlay) and drop the shadow. */
+html.dark .ai-card {
+  background: var(--color-gh-overlay);
+  box-shadow: none;
+}
+
 /*
  * Typography — Bricolage Grotesque
  *
