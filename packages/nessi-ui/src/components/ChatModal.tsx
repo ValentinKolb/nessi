@@ -118,7 +118,7 @@ export const ChatModal = (props: {
             <Show when={chats().length > 0} fallback={
               <div class="px-4 py-8 text-[13px] text-gh-fg-subtle text-center">No chats yet</div>
             }>
-              <div class="px-3 pt-3">
+              <div class="px-3">
                 <input
                   class="ui-input"
                   type="text"
@@ -130,11 +130,11 @@ export const ChatModal = (props: {
               <Show when={filteredChats().length > 0} fallback={
                 <div class="px-4 py-8 text-[13px] text-gh-fg-subtle text-center">No matching chats</div>
               }>
-                <div class="p-3 space-y-2">
+                <div class="p-3 space-y-1">
                   <For each={filteredChats()}>
                   {(chat) => (
                     <button
-                      class={`w-full text-left group min-w-0 rounded-xl border px-3.5 py-3 transition-colors ${
+                      class={`w-full text-left group min-w-0 rounded border px-3.5 py-3 transition-colors ${
                         chat.id === props.activeChatId
                           ? "border-gh-accent/25 bg-gh-accent-subtle text-gh-fg"
                           : "border-gh-border-muted bg-gh-surface text-gh-fg-muted hover:bg-gh-overlay hover:text-gh-fg"

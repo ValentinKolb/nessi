@@ -1,6 +1,6 @@
 /** Step-by-step guide for creating a Nextcloud app password and configuring CORS. */
 export const NextcloudHelpView = () => (
-  <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3 space-y-4">
+  <div class="min-h-0 flex-1 overflow-y-auto px-4 mb-5 space-y-4">
     <p class="text-xs text-gh-fg-muted">
       nessi needs your Nextcloud <strong>server URL</strong>, <strong>username</strong>, and an <strong>app password</strong> to access your files and calendar.
       Additionally, your server must allow CORS requests from nessi.

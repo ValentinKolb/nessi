@@ -174,7 +174,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
         </div>
         <Switch>
           <Match when={route().kind === "root"}>
-            <div class="hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
+            <div class="hide-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3 pt-0">
               <GeneralSettings />
               <ProvidersConfig
                 onCreateProvider={handleCreateProvider}
@@ -202,7 +202,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
             </div>
           </Match>
           <Match when={route().kind === "provider-editor"}>
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 mb-5">
               <ProviderEditorView
                 provider={currentProvider()}
                 isNew={isNewProvider()}
@@ -213,7 +213,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
             </div>
           </Match>
           <Match when={route().kind === "skill-editor"}>
-            <div class="min-h-0 flex-1 px-4 pb-4 pt-3">
+            <div class="min-h-0 flex-1 px-4 pb-4">
               <SkillEditorView
                 skill={currentSkill()}
                 onCancel={backToRoot}
@@ -222,7 +222,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
             </div>
           </Match>
           <Match when={route().kind === "prompt-editor"}>
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 mb-5">
               <PromptEditorView
                 prompt={currentPrompt()}
                 onCancel={backToRoot}
@@ -231,17 +231,17 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
             </div>
           </Match>
           <Match when={route().kind === "bg-prompt-editor"}>
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 mb-5">
               <BackgroundPromptEditor onDone={backToRoot} />
             </div>
           </Match>
           <Match when={route().kind === "bg-logs"}>
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 mb-5">
               <BackgroundLogsView />
             </div>
           </Match>
           <Match when={route().kind === "compaction-prompt-editor"}>
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3">
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 mb-5">
               <CompactionPromptEditor onDone={backToRoot} />
             </div>
           </Match>

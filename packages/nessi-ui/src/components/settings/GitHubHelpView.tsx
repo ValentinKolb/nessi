@@ -1,6 +1,6 @@
 /** Step-by-step guide for creating a GitHub Personal Access Token. */
 export const GitHubHelpView = () => (
-  <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-3 space-y-4">
+  <div class="min-h-0 flex-1 overflow-y-auto px-4 mb-5 space-y-4">
     <p class="text-xs text-gh-fg-muted">
       nessi needs a <strong>Personal Access Token (classic)</strong> to read your repositories, issues, and pull requests.
       The token is stored locally in your browser — it is never sent anywhere except to the GitHub API.
