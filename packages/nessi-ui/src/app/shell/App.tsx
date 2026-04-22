@@ -283,7 +283,7 @@ export const App = () => {
         onClick={(e) => { if (e.target === chatInfoRef) { haptics.tap(); chatInfoRef.close(); } }}
       >
         <div class="flex max-h-[82vh] min-h-0 flex-col">
-          <div class="px-4 py-3 flex items-center gap-2 border-b border-gh-border-muted">
+          <div class="modal-header px-4 py-3 flex items-center gap-2">
             <span class="text-[15px] font-semibold flex-1 text-gh-fg">Chat Info</span>
             <button
               class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"

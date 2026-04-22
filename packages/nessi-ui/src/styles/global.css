@@ -319,6 +319,15 @@ dialog::backdrop {
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
 }
 
+/** Modal header — opaque surface fading to transparent downwards, replaces flat grey bars. */
+.modal-header {
+  background: linear-gradient(
+    to bottom,
+    var(--color-gh-surface),
+    color-mix(in srgb, var(--color-gh-surface) 0%, transparent)
+  );
+}
+
 /* ─── Shared table style ─── */
 .ui-table-wrap {
   overflow-x: auto;

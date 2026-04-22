@@ -151,7 +151,7 @@ export const Settings = (props: { ref: (el: HTMLDialogElement) => void; onClose:
       }}
     >
       <div class={`flex max-h-[92vh] min-h-0 flex-col ${route().kind !== "root" ? "h-[92vh]" : ""}`}>
-        <div class="flex items-center gap-2 px-4 py-3 bg-gh-overlay rounded-t-md">
+        <div class="modal-header flex items-center gap-2 px-4 py-3 rounded-t-md">
           <Show when={route().kind !== "root"}>
             <button
               class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"

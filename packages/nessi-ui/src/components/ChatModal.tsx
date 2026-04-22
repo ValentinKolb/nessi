@@ -88,7 +88,7 @@ export const ChatModal = (props: {
       >
         <div class="flex max-h-[84vh] min-h-0 flex-col">
           {/* Header */}
-          <div class="px-4 py-3 flex items-center gap-2 border-b border-gh-border-muted">
+          <div class="modal-header px-4 py-3 flex items-center gap-2">
             <span class="text-[15px] font-semibold flex-1 text-gh-fg">Chats</span>
             <button
               class="flex h-7 w-7 items-center justify-center rounded-md nav-icon"

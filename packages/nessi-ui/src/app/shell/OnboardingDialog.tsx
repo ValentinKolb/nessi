@@ -578,7 +578,7 @@ export const OnboardingDialog = (props: {
           onClick={(e) => e.stopPropagation()}
         >
           <Show when={!currentStep()?.hideHeader}>
-            <div class="shrink-0 border-b border-gh-border-muted px-6 py-4 text-center">
+            <div class="modal-header shrink-0 px-6 py-4 text-center">
               <h3 class="text-[16px] font-semibold text-gh-fg">{currentStep()?.title}</h3>
               <Show when={currentStep()?.subtitle}>
                 <p class="mt-1 text-[13px] text-gh-fg-subtle">{currentStep()?.subtitle}</p>
