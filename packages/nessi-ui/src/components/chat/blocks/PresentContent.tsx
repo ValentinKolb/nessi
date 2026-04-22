@@ -105,27 +105,21 @@ const DataTable = (props: { data: TableData }) => {
 
   return (
     <div class="flex flex-col gap-1.5">
-      <div class="overflow-x-auto rounded border border-gh-border-muted">
-        <table class="min-w-full text-xs tabular-nums">
+      <div class="ui-table-wrap">
+        <table class="ui-table tabular-nums">
           <thead>
             <tr>
               <For each={props.data.headers}>
-                {(h) => (
-                  <th class="px-2.5 py-1.5 text-left font-medium bg-gh-overlay text-gh-fg-secondary whitespace-nowrap border-b border-gh-border-muted">
-                    {h}
-                  </th>
-                )}
+                {(h) => <th class="whitespace-nowrap">{h}</th>}
               </For>
             </tr>
           </thead>
           <tbody>
             <For each={visibleRows()}>
-              {(row, rowIdx) => (
-                <tr class={rowIdx() % 2 === 0 ? "bg-gh-surface" : "bg-gh-overlay/40"}>
+              {(row) => (
+                <tr>
                   <For each={row}>
-                    {(cell) => (
-                      <td class="px-2.5 py-1.5 whitespace-nowrap text-gh-fg-muted">{cell}</td>
-                    )}
+                    {(cell) => <td class="whitespace-nowrap">{cell}</td>}
                   </For>
                 </tr>
               )}

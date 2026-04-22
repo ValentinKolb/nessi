@@ -319,9 +319,39 @@ dialog::backdrop {
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
 }
 
-.prose table {
-  display: block;
+/* ─── Shared table style ─── */
+.ui-table-wrap {
   overflow-x: auto;
+  /* Cancel the outer border-spacing so cells sit flush with siblings on all sides. */
+  margin: -4px;
+}
+
+.ui-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 4px;
+  background: transparent;
+}
+
+.ui-table th,
+.ui-table td {
+  background: var(--color-gh-surface);
+  color: var(--color-gh-fg);
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  border-radius: 0.25rem;
+}
+
+.ui-table thead th {
+  background: var(--color-gh-overlay);
+  font-weight: 600;
+}
+
+.ui-table tbody tr:hover td {
+  background: var(--color-gh-overlay);
 }
 
 /* ─── Shared component classes ─── */
@@ -667,17 +697,6 @@ dialog::backdrop {
 .ai-card-check-item .i { font-size: 1.25rem; }
 .ai-card-check-item .ok { color: var(--color-status-ok); }
 .ai-card-done { text-decoration: line-through; color: var(--color-gh-fg-subtle); }
-
-/* Table */
-.ai-card-table-wrap { overflow: auto; max-height: 400px; }
-.ai-card-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
-.ai-card-table th {
-  text-align: left; font-weight: 600; color: var(--color-gh-fg-muted);
-  padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--color-gh-border-muted);
-  position: sticky; top: 0; background: var(--color-gh-canvas);
-}
-.ai-card-table td { padding: 0.5rem 0.75rem; }
-.ai-card-table tbody tr:nth-child(even) td { background: var(--color-gh-muted); }
 
 /* ─── Card HTML mode ─── */
 .ai-card-html { font-size: 0.875rem; line-height: 1.6; }

@@ -22,14 +22,21 @@ const normalizeChannelMarkers = (md: string) =>
     .replace(/^\s*final\s*$/gim, "")
     .replace(/\n{3,}/g, "\n\n");
 
+const wrapTables = (html: string) =>
+  html
+    .replace(/<table(\s|>)/g, '<div class="ui-table-wrap"><table class="ui-table"$1')
+    .replace(/<\/table>/g, "</table></div>");
+
 const renderMarkdown = (md: string) =>
-  sanitizeHtml(marked.parse(normalizeChannelMarkers(md), { async: false }) as string, {
+  sanitizeHtml(wrapTables(marked.parse(normalizeChannelMarkers(md), { async: false }) as string), {
     allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "h1", "h2"],
     allowedAttributes: {
       ...sanitizeHtml.defaults.allowedAttributes,
       a: ["href", "name", "target", "rel"],
       img: ["src", "alt", "title"],
       code: ["class"],
+      div: ["class"],
+      table: ["class"],
     },
     allowedSchemes: ["http", "https", "mailto", "data"],
   });

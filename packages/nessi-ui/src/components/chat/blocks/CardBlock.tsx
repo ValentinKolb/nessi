@@ -153,8 +153,8 @@ const TableLayout = (props: { d: D }) => {
   return (
     <div class="ai-card">
       <CardHeader icon={asString(props.d.icon)} title={asString(props.d.title)} />
-      <div class="ai-card-table-wrap">
-        <table class="ai-card-table">
+      <div class="ui-table-wrap" style={{ "max-height": "400px" }}>
+        <table class="ui-table">
           <Show when={columns().length > 0}>
             <thead>
               <tr>
