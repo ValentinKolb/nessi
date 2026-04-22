@@ -335,37 +335,52 @@ dialog::backdrop {
 }
 
 /* ─── Shared table style ─── */
+/*
+ * Cells flush with wrap edges; gaps between cells are created by padding on
+ * non-first cells and non-first rows (adjacent-sibling selectors). The visible
+ * "tile" (bg, padding, radius) lives on an inner .ui-cell span, so first/last
+ * cells need no special handling.
+ */
 .ui-table-wrap {
   overflow-x: auto;
-  /* Cancel the outer border-spacing so cells sit flush with siblings on all sides. */
-  margin: -4px;
 }
 
 .ui-table {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 4px;
+  border-collapse: collapse;
   background: transparent;
 }
 
 .ui-table th,
 .ui-table td {
+  padding: 0;
+  background: transparent;
+  vertical-align: top;
+  text-align: left;
+}
+
+.ui-table th + th,
+.ui-table td + td { padding-left: 4px; }
+
+.ui-table tbody tr + tr > *,
+.ui-table thead + tbody tr:first-child > * { padding-top: 4px; }
+
+.ui-table .ui-cell {
+  display: block;
   background: var(--color-gh-surface);
   color: var(--color-gh-fg);
   padding: 0.7rem 0.9rem;
-  text-align: left;
-  vertical-align: top;
+  border-radius: 0.25rem;
   font-size: 0.8125rem;
   line-height: 1.5;
-  border-radius: 0.25rem;
 }
 
-.ui-table thead th {
+.ui-table thead th .ui-cell {
   background: var(--color-gh-overlay);
   font-weight: 600;
 }
 
-.ui-table tbody tr:hover td {
+.ui-table tbody tr:hover td .ui-cell {
   background: var(--color-gh-overlay);
 }
 

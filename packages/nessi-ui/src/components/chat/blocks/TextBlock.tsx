@@ -25,7 +25,8 @@ const normalizeChannelMarkers = (md: string) =>
 const wrapTables = (html: string) =>
   html
     .replace(/<table(\s|>)/g, '<div class="ui-table-wrap"><table class="ui-table"$1')
-    .replace(/<\/table>/g, "</table></div>");
+    .replace(/<\/table>/g, "</table></div>")
+    .replace(/<(th|td)([^>]*)>([\s\S]*?)<\/\1>/g, '<$1$2><span class="ui-cell">$3</span></$1>');
 
 const renderMarkdown = (md: string) =>
   sanitizeHtml(wrapTables(marked.parse(normalizeChannelMarkers(md), { async: false }) as string), {
@@ -37,6 +38,7 @@ const renderMarkdown = (md: string) =>
       code: ["class"],
       div: ["class"],
       table: ["class"],
+      span: ["class"],
     },
     allowedSchemes: ["http", "https", "mailto", "data"],
   });

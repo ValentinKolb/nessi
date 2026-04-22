@@ -165,7 +165,7 @@ const TableLayout = (props: { d: D }) => {
           <Show when={columns().length > 0}>
             <thead>
               <tr>
-                <For each={columns()}>{(col) => <th>{col}</th>}</For>
+                <For each={columns()}>{(col) => <th><span class="ui-cell">{col}</span></th>}</For>
               </tr>
             </thead>
           </Show>
@@ -173,7 +173,7 @@ const TableLayout = (props: { d: D }) => {
             <For each={rows()}>
               {(row) => (
                 <tr>
-                  <For each={row}>{(cell) => <td>{cell}</td>}</For>
+                  <For each={row}>{(cell) => <td><span class="ui-cell">{cell}</span></td>}</For>
                 </tr>
               )}
             </For>

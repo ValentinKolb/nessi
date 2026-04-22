@@ -110,7 +110,7 @@ const DataTable = (props: { data: TableData }) => {
           <thead>
             <tr>
               <For each={props.data.headers}>
-                {(h) => <th class="whitespace-nowrap">{h}</th>}
+                {(h) => <th><span class="ui-cell whitespace-nowrap">{h}</span></th>}
               </For>
             </tr>
           </thead>
@@ -119,7 +119,7 @@ const DataTable = (props: { data: TableData }) => {
               {(row) => (
                 <tr>
                   <For each={row}>
-                    {(cell) => <td class="whitespace-nowrap">{cell}</td>}
+                    {(cell) => <td><span class="ui-cell whitespace-nowrap">{cell}</span></td>}
                   </For>
                 </tr>
               )}
