@@ -78,6 +78,14 @@ packages/
   nessi-ui/    Browser UI, settings, local persistence, Docker setup
 ```
 
+## Skills
+
+This repo also ships standalone AI coding skills (e.g. structured workflows, prompting strategies) that work with any Claude Code project.
+
+```bash
+bunx skills add https://github.com/ValentinKolb/nessi
+```
+
 ## Notes
 
 - `nessi-ai` and `nessi-core` are the reusable libraries.
