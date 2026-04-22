@@ -271,7 +271,7 @@ body {
 
 /* ─── Form elements ─── */
 :where(input, textarea, select, dialog, .btn-primary, .btn-secondary) {
-  border-radius: 0.45rem;
+  border-radius: 0.75rem;
 }
 
 :where(input, textarea, select):focus-visible {
@@ -362,7 +362,7 @@ dialog::backdrop {
   font-size: 0.8125rem;
   line-height: 1.35rem;
   padding: 0.5rem 0.75rem;
-  border-radius: 0.45rem;
+  border-radius: 0.75rem;
   border: 1px solid var(--color-gh-border);
   transition: border-color 150ms ease;
 }
@@ -380,14 +380,14 @@ dialog::backdrop {
 
 .ui-panel {
   background: var(--color-gh-overlay);
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   min-width: 0;
   overflow-x: hidden;
 }
 
 .ui-subpanel {
   background: var(--color-gh-surface);
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   min-width: 0;
   overflow-x: hidden;
 }
@@ -426,7 +426,7 @@ dialog::backdrop {
 .ui-note {
   background: var(--color-gh-accent-subtle);
   color: color-mix(in oklab, var(--color-gh-fg-muted) 72%, var(--color-gh-accent));
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   padding: 0.75rem 0.85rem;
   font-size: 0.75rem;
   line-height: 1.4;
@@ -518,7 +518,7 @@ dialog::backdrop {
 .ui-row {
   font-size: 0.8125rem;
   padding: 0.5rem 0.7rem;
-  border-radius: 0.45rem;
+  border-radius: 0.75rem;
   background: var(--color-gh-surface);
   transition: background-color 120ms ease;
   min-width: 0;
@@ -561,7 +561,7 @@ dialog::backdrop {
   color: var(--color-gh-fg);
   border: 1px solid var(--color-gh-border-muted);
   padding: 0.1em 0.3em;
-  border-radius: 0.3rem;
+  border-radius: 0.25rem;
   font-size: 0.85em;
 }
 
@@ -569,7 +569,7 @@ dialog::backdrop {
   background: var(--color-gh-overlay);
   border: 1px solid var(--color-gh-border-muted);
   color: var(--color-gh-fg);
-  border-radius: 0.5rem;
+  border-radius: 0.25rem;
   overflow: hidden;
 }
 

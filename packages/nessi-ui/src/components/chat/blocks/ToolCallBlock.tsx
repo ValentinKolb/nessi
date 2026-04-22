@@ -177,7 +177,7 @@ export const ToolCallBlock = (props: { block: UIToolCallBlock; chatId?: string; 
   };
 
   return (
-    <div class="ui-panel text-[13px] overflow-hidden tool-call-block rounded-md">
+    <div class="ui-panel text-[13px] overflow-hidden tool-call-block rounded">
       <button
         ref={headRef}
         class="w-full flex items-center gap-1.5 md:gap-2 px-2 py-1 bg-gh-muted hover:bg-gh-subtle text-left tool-call-head"

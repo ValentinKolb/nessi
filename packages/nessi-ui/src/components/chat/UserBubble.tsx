@@ -31,7 +31,7 @@ export const UserBubble = (props: {
               <img
                 src={part.src}
                 alt={part.name ?? "uploaded image"}
-                class="max-h-40 max-w-[220px] rounded-md object-contain shadow-[inset_0_0_0_1px_var(--color-gh-border-muted)]"
+                class="max-h-40 max-w-[220px] rounded object-contain shadow-[inset_0_0_0_1px_var(--color-gh-border-muted)]"
               />
             )}
           </For>

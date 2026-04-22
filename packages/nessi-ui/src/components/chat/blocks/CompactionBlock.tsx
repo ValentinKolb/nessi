@@ -32,7 +32,7 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
 
   return (
     <div
-      class="overflow-hidden rounded-md text-[13px]"
+      class="overflow-hidden rounded text-[13px]"
       style={{ "background-color": "var(--color-compact-bg)" }}
     >
       <button
@@ -80,7 +80,7 @@ export const CompactionBlock = (props: { block: UICompactionBlock }) => {
               <div>
                 <div class="text-gh-fg-secondary mb-1">Checkpoint summary preview</div>
                 <pre
-                  class="whitespace-pre-wrap break-words max-h-48 overflow-y-auto px-2 py-1 rounded-md"
+                  class="whitespace-pre-wrap break-words max-h-48 overflow-y-auto px-2 py-1 rounded"
                   style={{ "background-color": "var(--color-compact-pre)" }}
                 >
                   {preview()}

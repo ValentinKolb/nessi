@@ -13,7 +13,7 @@ export const ContextOverflowBlock = (props: {
   const last = () => props.block.lastTotal;
 
   return (
-    <div class="rounded-lg border border-amber-400/30 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2.5 text-[13px] space-y-2">
+    <div class="rounded border border-amber-400/30 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2.5 text-[13px] space-y-2">
       <div class="flex items-start gap-2">
         <span class="i ti ti-alert-triangle text-amber-500 text-base shrink-0 mt-0.5" />
         <div class="flex-1 min-w-0 space-y-1">
