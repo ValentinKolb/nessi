@@ -64,6 +64,7 @@ export type OutboundEvent =
   | { type: "steer_applied"; agentId: string; message: string }
   | { type: "compaction_start"; agentId: string }
   | { type: "compaction_end"; agentId: string }
+  | { type: "interrupted"; agentId: string }
   | { type: "done"; agentId: string; reason: DoneReason };
 
 export type InboundEvent =

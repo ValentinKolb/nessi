@@ -25,7 +25,7 @@ export type UserMessage = {
   content: ContentPart[];
 };
 
-export type AssistantStopReason = "stop" | "tool_use" | "max_tokens" | "aborted" | "error";
+export type AssistantStopReason = "stop" | "tool_use" | "max_tokens" | "aborted" | "interrupted" | "error";
 
 export type AssistantMessage = {
   role: "assistant";

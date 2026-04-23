@@ -138,6 +138,7 @@ const TokenBadge = (props: { usage?: Usage; contextWindow?: number }) => {
 /** Chat composer with bordered container, model selector, and file controls. */
 export const MessageInput = (props: {
   onSend: (text: string) => void;
+  onInterrupt?: () => void;
   onAddFiles?: (files: FileList | File[]) => void;
   onRemoveImage?: (index: number) => void;
   onRemovePendingFile?: (id: string) => void;
@@ -538,17 +539,23 @@ export const MessageInput = (props: {
             {/* Token usage badge */}
             <TokenBadge usage={props.lastUsage} contextWindow={props.contextWindow} />
 
-            {/* Send button — just the arrow, no bg */}
+            {/* Send / Interrupt button — arrow when idle, stop while streaming */}
             <button
               class={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-                canSend() && !props.disabled
-                  ? "text-gh-fg-secondary hover:text-gh-accent"
-                  : "text-gh-fg-subtle opacity-30"
+                props.disabled && props.onInterrupt
+                  ? "text-gh-accent hover:text-gh-danger"
+                  : canSend() && !props.disabled
+                    ? "text-gh-fg-secondary hover:text-gh-accent"
+                    : "text-gh-fg-subtle opacity-30"
               }`}
-              onClick={handleSend}
-              disabled={props.disabled || !canSend()}
+              onClick={() => {
+                if (props.disabled && props.onInterrupt) props.onInterrupt();
+                else handleSend();
+              }}
+              disabled={props.disabled ? !props.onInterrupt : !canSend()}
+              title={props.disabled && props.onInterrupt ? "Stop" : "Send"}
             >
-              <span class="i ti ti-arrow-up text-base" />
+              <span class={`i ti ${props.disabled && props.onInterrupt ? "ti-player-stop" : "ti-arrow-up"} text-base`} />
             </button>
           </div>
         </div>

@@ -141,6 +141,9 @@ export const nessi = (options: NessiOptions): NessiLoop => {
   const steerQueue: string[] = [];
   const subscribers: Array<(event: OutboundEvent) => void> = [];
   const abortController = new AbortController();
+  /** Events injected synchronously from abort() — drained by iterator.next() before polling the generator. */
+  const pendingInjections: OutboundEvent[] = [];
+  let interrupted = false;
   let lastUsage: Usage = zeroUsage();
 
   // Pull the inbound event for a specific callId/type, buffering unrelated events.
@@ -269,6 +272,19 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       let overflowRatio: number | undefined;
       let providerFailure: Extract<ProviderEvent, { type: "error" }> | null = null;
 
+      /** Build a partial assistant message for commit when the turn is interrupted mid-stream. */
+      const makeInterruptedMessage = (): AssistantMessage => ({
+        role: "assistant",
+        content: [
+          ...(currentText ? [{ type: "text" as const, text: currentText }] : []),
+          ...(currentThinking ? [{ type: "thinking" as const, thinking: currentThinking }] : []),
+          ...toolCalls,
+        ],
+        model: provider.model,
+        usage: turnUsage,
+        stopReason: "interrupted",
+      });
+
       try {
         streamLoop: for await (const event of provider.stream({
           systemPrompt,
@@ -327,6 +343,15 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           }
         }
       } catch (err) {
+        if (signal.aborted) {
+          const msg = makeInterruptedMessage();
+          if (msg.content.length > 0) {
+            await store.append(msg);
+            yield { type: "turn_end", agentId, message: msg };
+          }
+          yield { type: "done", agentId, reason: "aborted" };
+          return;
+        }
         yield { type: "error", agentId, error: toErrorMessage(err), retryable: false };
         yield { type: "done", agentId, reason: "error" };
         return;
@@ -379,6 +404,11 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       }
 
       if (signal.aborted) {
+        const msg = makeInterruptedMessage();
+        if (msg.content.length > 0) {
+          await store.append(msg);
+          yield { type: "turn_end", agentId, message: msg };
+        }
         yield { type: "done", agentId, reason: "aborted" };
         return;
       }
@@ -636,6 +666,11 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     [Symbol.asyncIterator]() {
       return {
         async next() {
+          // Drain synchronously-injected events first (e.g. from abort()).
+          // Subscribers were already notified at injection time — don't re-fire.
+          if (pendingInjections.length > 0) {
+            return { value: pendingInjections.shift()!, done: false };
+          }
           const result = await generator.next();
           if (!result.done && result.value) {
             for (const listener of subscribers) {
@@ -668,7 +703,16 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       }
     },
     abort() {
+      if (interrupted) return;
+      interrupted = true;
       abortController.abort();
+      const event: OutboundEvent = { type: "interrupted", agentId };
+      // Synchronous notification — UI can react without waiting for the generator to drain.
+      for (const listener of subscribers) {
+        try { listener(event); } catch { /* isolate listener errors */ }
+      }
+      // Also buffer for for-await consumers.
+      pendingInjections.push(event);
     },
   };
 

@@ -1163,14 +1163,30 @@ export const ChatView = (props: {
 
     activeLoop = loop;
 
+    // Interrupt plumbing: synchronous subscribe fires the moment abort() is called,
+    // so the UI releases the streaming state even if the for-await is blocked on
+    // the provider. Late content events that arrive during the loop's wind-down
+    // are dropped by the guard below.
+    let currentTurnInterrupted = false;
+    const LATE_EVENT_TYPES = new Set(["text", "thinking", "tool_start", "tool_call", "tool_end", "action_request"]);
+    const unsubInterrupt = loop.subscribe((event) => {
+      if (event.type !== "interrupted") return;
+      currentTurnInterrupted = true;
+      haptics.tap();
+      closeStreamingAssistantMessage();
+      setState("streaming", false);
+    });
+
     try {
       for await (const event of loop) {
+        if (currentTurnInterrupted && LATE_EVENT_TYPES.has(event.type)) continue;
         await handleNessiEvent(event);
       }
     } catch (error) {
       haptics.error();
       appendStatusMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
+      unsubInterrupt();
       activeLoop = null;
       clearPendingCallMappings();
       closeStreamingAssistantMessage();
@@ -1287,6 +1303,12 @@ export const ChatView = (props: {
     );
 
     return sections.join("\n\n");
+  };
+
+  const handleInterrupt = () => {
+    if (!activeLoop) return;
+    haptics.tap();
+    activeLoop.abort();
   };
 
   const handleSend = (text: string) => {
@@ -1408,6 +1430,7 @@ export const ChatView = (props: {
         <TopicSuggestions messages={state.messages} onSelect={handleSend} />
         <MessageInput
           onSend={handleSend}
+          onInterrupt={handleInterrupt}
           onAddFiles={addPendingFiles}
           onRemoveImage={removePendingImage}
           onRemovePendingFile={removePendingFile}
