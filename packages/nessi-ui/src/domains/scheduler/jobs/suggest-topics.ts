@@ -1,5 +1,3 @@
-import { z } from "zod";
-import { job } from "@valentinkolb/sync-browser";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
 import { memoryService } from "../../memory/index.js";
 import { chatRepo } from "../../chat/index.js";
@@ -74,94 +72,9 @@ const shouldRun = (): boolean => {
   return hoursSince >= MIN_HOURS_BETWEEN_RUNS;
 };
 
-export const suggestTopicsJob = job({
-  id: "suggest-topics",
-  schema: z.object({}),
-  process: async ({ ctx }) => {
-    const entry: JobRunLog = { jobId: "suggest-topics", startedAt: new Date().toISOString(), status: "running" };
-    await pushJobLog(entry);
-    log("started suggest-topics");
-
-    try {
-      if (!shouldRun()) {
-        entry.finishedAt = new Date().toISOString();
-        entry.status = "success";
-        entry.result = "skipped (too recent)";
-        await pushJobLog(entry);
-        log("suggest-topics skipped (too recent)");
-        return { generated: false, reason: "too-recent" };
-      }
-
-      const providerEntry = getActiveProviderEntry();
-      if (!providerEntry) {
-        entry.finishedAt = new Date().toISOString();
-        entry.status = "success";
-        entry.result = "skipped (no provider)";
-        await pushJobLog(entry);
-        return { generated: false, reason: "no-provider" };
-      }
-
-      const memories = await memoryService.formatForPrompt();
-      const recentChats = await buildRecentChatsContext();
-      const promptTemplate = await getSuggestionPrompt();
-      const systemPrompt = resolvePrompt(promptTemplate, memories, recentChats);
-
-      const provider = createProvider(providerEntry);
-      const result = await provider.complete({
-        systemPrompt,
-        messages: [
-          { role: "user", content: [{ type: "text", text: "Generate conversation starters." }] },
-        ],
-        maxOutputTokens: 800,
-        signal: ctx.signal,
-      });
-
-      const responseText = extractResponseText(result.message.content as ContentBlock[]);
-
-      if (!responseText) {
-        const diag = `empty response (${describeBlocks(result.message.content as ContentBlock[])})`;
-        entry.finishedAt = new Date().toISOString();
-        entry.status = "error";
-        entry.error = diag;
-        await pushJobLog(entry);
-        log(`suggest-topics failed: ${diag}`);
-        return { generated: false, reason: "empty-response" };
-      }
-
-      const suggestions = responseText
-        .split("\n")
-        .map((line) => line.replace(/^[-*•\d.)\s]+/, "").trim())
-        .filter((line) => line.length > 5 && line.length < 120)
-        .slice(0, 6);
-
-      localStorageJson.write(SUGGESTIONS_KEY, suggestions);
-      localStorageJson.writeString(LAST_RUN_KEY, new Date().toISOString());
-
-      const summary = `${suggestions.length} suggestions generated`;
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "success";
-      entry.result = summary;
-      await pushJobLog(entry);
-      log(`suggest-topics done — ${summary}`);
-      return { generated: true, count: suggestions.length, suggestions };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "error";
-      entry.error = msg;
-      await pushJobLog(entry);
-      log(`suggest-topics failed: ${msg}`);
-      throw err;
-    }
-  },
-});
-
-/** Run suggestion generation directly, bypassing scheduler guards. */
-export const runSuggestTopics = async (): Promise<{ generated: boolean; reason?: string; summary?: string }> => {
+const generateSuggestions = async (signal?: AbortSignal): Promise<{ summary: string; count: number }> => {
   const providerEntry = getActiveProviderEntry();
-  if (!providerEntry) return { generated: false, reason: "no provider" };
-
-  log("suggest-topics (manual)...");
+  if (!providerEntry) throw new Error("No provider configured");
 
   const memories = await memoryService.formatForPrompt();
   const recentChats = await buildRecentChatsContext();
@@ -175,13 +88,13 @@ export const runSuggestTopics = async (): Promise<{ generated: boolean; reason?:
       { role: "user", content: [{ type: "text", text: "Generate conversation starters." }] },
     ],
     maxOutputTokens: 800,
+    signal,
   });
 
   const responseText = extractResponseText(result.message.content as ContentBlock[]);
 
   if (!responseText) {
-    const diag = `empty response (${describeBlocks(result.message.content as ContentBlock[])})`;
-    return { generated: false, reason: diag };
+    throw new Error(`empty response (${describeBlocks(result.message.content as ContentBlock[])})`);
   }
 
   const suggestions = responseText
@@ -193,7 +106,58 @@ export const runSuggestTopics = async (): Promise<{ generated: boolean; reason?:
   localStorageJson.write(SUGGESTIONS_KEY, suggestions);
   localStorageJson.writeString(LAST_RUN_KEY, new Date().toISOString());
 
-  const summary = `${suggestions.length} suggestions generated`;
-  log(`suggest-topics done (manual) — ${summary}`);
-  return { generated: true, summary };
+  return { summary: `${suggestions.length} suggestions generated`, count: suggestions.length };
+};
+
+/**
+ * Scheduler process — gated by shouldRun to avoid more than one run every N hours.
+ * Throws on provider errors so `after` can retry with exponential backoff.
+ */
+export const suggestTopicsProcess = async (
+  signal?: AbortSignal,
+): Promise<{ generated: boolean; reason?: string; summary?: string }> => {
+  const entry: JobRunLog = { jobId: "suggest-topics", startedAt: new Date().toISOString(), status: "running" };
+  await pushJobLog(entry);
+
+  try {
+    if (!shouldRun()) {
+      entry.finishedAt = new Date().toISOString();
+      entry.status = "success";
+      entry.result = "skipped (too recent)";
+      await pushJobLog(entry);
+      return { generated: false, reason: "too-recent" };
+    }
+
+    const { summary } = await generateSuggestions(signal);
+    entry.finishedAt = new Date().toISOString();
+    entry.status = "success";
+    entry.result = summary;
+    await pushJobLog(entry);
+    log(`suggest-topics done — ${summary}`);
+    return { generated: true, summary };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    entry.finishedAt = new Date().toISOString();
+    entry.status = "error";
+    entry.error = msg;
+    await pushJobLog(entry);
+    log(`suggest-topics failed: ${msg}`);
+    throw err;
+  }
+};
+
+/** Run suggestion generation directly, bypassing the scheduler gate (manual trigger). */
+export const runSuggestTopics = async (): Promise<{ generated: boolean; reason?: string; summary?: string }> => {
+  const providerEntry = getActiveProviderEntry();
+  if (!providerEntry) return { generated: false, reason: "no provider" };
+
+  log("suggest-topics (manual)...");
+  try {
+    const { summary } = await generateSuggestions();
+    log(`suggest-topics done (manual) — ${summary}`);
+    return { generated: true, summary };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { generated: false, reason: msg };
+  }
 };

@@ -1,5 +1,3 @@
-import { z } from "zod";
-import { job } from "@valentinkolb/sync-browser";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
 import { memoryService } from "../../memory/index.js";
 import { localStorageJson } from "../../../shared/storage/local-storage.js";
@@ -47,104 +45,12 @@ const shouldConsolidateAsync = async (): Promise<boolean> => {
   return true;
 };
 
-export const consolidateMemoryJob = job({
-  id: "consolidate-memory",
-  schema: z.object({}),
-  process: async ({ ctx }) => {
-    const entry: JobRunLog = { jobId: "consolidate-memory", startedAt: new Date().toISOString(), status: "running" };
-    await pushJobLog(entry);
-    log("started consolidate-memory");
-
-    try {
-      if (!await shouldConsolidateAsync()) {
-        entry.finishedAt = new Date().toISOString();
-        entry.status = "success";
-        entry.result = "skipped (conditions not met)";
-        await pushJobLog(entry);
-        log("consolidate-memory skipped (conditions not met)");
-        return { consolidated: false, reason: "conditions-not-met" };
-      }
-
-      const providerEntry = getActiveProviderEntry();
-      if (!providerEntry) {
-        entry.finishedAt = new Date().toISOString();
-        entry.status = "success";
-        entry.result = "skipped (no provider)";
-        await pushJobLog(entry);
-        return { consolidated: false, reason: "no-provider" };
-      }
-
-      const memoryCount = (await memoryService.lines()).length;
-      log(`consolidating ${memoryCount} memories...`);
-
-      const memories = await memoryService.formatAll();
-      const promptTemplate = await getConsolidationPrompt();
-      const systemPrompt = promptTemplate
-        .replaceAll("{{memories}}", memories)
-        .replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
-
-      const provider = createProvider(providerEntry);
-      const result = await provider.complete({
-        systemPrompt,
-        messages: [
-          { role: "user", content: [{ type: "text", text: "Please consolidate the memories above." }] },
-        ],
-        maxOutputTokens: 1500,
-        signal: ctx.signal,
-      });
-
-      const responseText = result.message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join(" ")
-        .trim();
-
-      if (!responseText) {
-        entry.finishedAt = new Date().toISOString();
-        entry.status = "error";
-        entry.error = "empty response";
-        await pushJobLog(entry);
-        log("consolidate-memory failed: empty response");
-        return { consolidated: false, reason: "empty-response" };
-      }
-
-      const cleaned = cleanConsolidationOutput(responseText);
-
-      const beforeCount = (await memoryService.lines()).length;
-      await memoryService.writeText(cleaned);
-      const afterCount = (await memoryService.lines()).length;
-
-      localStorageJson.writeString(LAST_CONSOLIDATION_KEY, new Date().toISOString());
-      localStorageJson.write(CHATS_SINCE_KEY, 0);
-
-      const summary = `${beforeCount} → ${afterCount} memories`;
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "success";
-      entry.result = summary;
-      await pushJobLog(entry);
-      log(`consolidate-memory done — ${summary}`);
-      return { consolidated: true, before: beforeCount, after: afterCount, summary };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "error";
-      entry.error = msg;
-      await pushJobLog(entry);
-      log(`consolidate-memory failed: ${msg}`);
-      throw err;
-    }
-  },
-});
-
-/** Run consolidation directly, bypassing scheduler guards. */
-export const runConsolidation = async (): Promise<{ consolidated: boolean; reason?: string; summary?: string }> => {
+const consolidateOnce = async (signal?: AbortSignal): Promise<{ summary: string }> => {
   const providerEntry = getActiveProviderEntry();
-  if (!providerEntry) return { consolidated: false, reason: "no provider" };
+  if (!providerEntry) throw new Error("No provider configured");
 
   const memoryCount = (await memoryService.lines()).length;
-  if (memoryCount === 0) return { consolidated: false, reason: "no memories" };
-
-  log(`consolidating ${memoryCount} memories (manual)...`);
+  log(`consolidating ${memoryCount} memories...`);
 
   const memories = await memoryService.formatAll();
   const promptTemplate = await getConsolidationPrompt();
@@ -159,6 +65,7 @@ export const runConsolidation = async (): Promise<{ consolidated: boolean; reaso
       { role: "user", content: [{ type: "text", text: "Please consolidate the memories above." }] },
     ],
     maxOutputTokens: 1500,
+    signal,
   });
 
   const responseText = result.message.content
@@ -167,7 +74,7 @@ export const runConsolidation = async (): Promise<{ consolidated: boolean; reaso
     .join(" ")
     .trim();
 
-  if (!responseText) return { consolidated: false, reason: "empty response" };
+  if (!responseText) throw new Error("empty response from provider");
 
   const cleaned = cleanConsolidationOutput(responseText);
 
@@ -178,7 +85,61 @@ export const runConsolidation = async (): Promise<{ consolidated: boolean; reaso
   localStorageJson.writeString(LAST_CONSOLIDATION_KEY, new Date().toISOString());
   localStorageJson.write(CHATS_SINCE_KEY, 0);
 
-  const summary = `${beforeCount} → ${afterCount} memories`;
-  log(`consolidate-memory done (manual) — ${summary}`);
-  return { consolidated: true, summary };
+  return { summary: `${beforeCount} → ${afterCount} memories` };
+};
+
+/**
+ * Scheduler process — gated by shouldConsolidateAsync to only run when the
+ * memory state warrants it. Throws on provider errors so `after` can retry
+ * with exponential backoff.
+ */
+export const consolidateMemoryProcess = async (
+  signal?: AbortSignal,
+): Promise<{ consolidated: boolean; reason?: string; summary?: string }> => {
+  const entry: JobRunLog = { jobId: "consolidate-memory", startedAt: new Date().toISOString(), status: "running" };
+  await pushJobLog(entry);
+
+  try {
+    if (!await shouldConsolidateAsync()) {
+      entry.finishedAt = new Date().toISOString();
+      entry.status = "success";
+      entry.result = "skipped (conditions not met)";
+      await pushJobLog(entry);
+      return { consolidated: false, reason: "conditions-not-met" };
+    }
+
+    const { summary } = await consolidateOnce(signal);
+    entry.finishedAt = new Date().toISOString();
+    entry.status = "success";
+    entry.result = summary;
+    await pushJobLog(entry);
+    log(`consolidate-memory done — ${summary}`);
+    return { consolidated: true, summary };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    entry.finishedAt = new Date().toISOString();
+    entry.status = "error";
+    entry.error = msg;
+    await pushJobLog(entry);
+    log(`consolidate-memory failed: ${msg}`);
+    throw err;
+  }
+};
+
+/** Run consolidation directly, bypassing the scheduler gate (manual trigger). */
+export const runConsolidation = async (): Promise<{ consolidated: boolean; reason?: string; summary?: string }> => {
+  const providerEntry = getActiveProviderEntry();
+  if (!providerEntry) return { consolidated: false, reason: "no provider" };
+
+  const memoryCount = (await memoryService.lines()).length;
+  if (memoryCount === 0) return { consolidated: false, reason: "no memories" };
+
+  try {
+    const { summary } = await consolidateOnce();
+    log(`consolidate-memory done (manual) — ${summary}`);
+    return { consolidated: true, summary };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { consolidated: false, reason: msg };
+  }
 };

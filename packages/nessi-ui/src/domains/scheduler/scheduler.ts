@@ -1,7 +1,7 @@
-import { createLocalStorageStore, scheduler, type Scheduler } from "@valentinkolb/sync-browser";
-import { refreshMetadataJob } from "./jobs/refresh-metadata.js";
-import { consolidateMemoryJob, incrementChatsSinceConsolidation } from "./jobs/consolidate-memory.js";
-import { suggestTopicsJob } from "./jobs/suggest-topics.js";
+import { createLocalStorageStore, scheduler, type Scheduler, type ScheduleAfterCtx } from "@valentinkolb/sync-browser";
+import { refreshMetadataProcess } from "./jobs/refresh-metadata.js";
+import { consolidateMemoryProcess, incrementChatsSinceConsolidation } from "./jobs/consolidate-memory.js";
+import { suggestTopicsProcess } from "./jobs/suggest-topics.js";
 import { schedulerRepo, type SchedulerRun } from "./index.js";
 import { settingsRepo } from "../settings/index.js";
 
@@ -20,6 +20,42 @@ export const getBackgroundLogs = () => schedulerRepo.listLogs();
 
 let instance: Scheduler | null = null;
 
+const retryOnError = (baseMs: number, maxMs: number, maxFailures = 3) =>
+  async <R>({ ctx }: { ctx: ScheduleAfterCtx<R> }) => {
+    if (ctx.error && ctx.failureCount < maxFailures) {
+      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs, maxMs }) });
+    }
+  };
+
+const registerSchedules = async (sched: Scheduler, cronConfig: Record<string, string>) => {
+  // refresh-metadata — fanout dispatcher (per-chat retries live on processChatJob)
+  await sched.create({
+    id: "refresh-metadata",
+    cron: cronConfig["refresh-metadata"]!,
+    process: async () => refreshMetadataProcess(),
+    after: retryOnError(30_000, 5 * 60_000),
+  });
+  log(`registered refresh-metadata (${cronConfig["refresh-metadata"]})`);
+
+  // consolidate-memory — atomic; retry on provider/LLM failures
+  await sched.create({
+    id: "consolidate-memory",
+    cron: cronConfig["consolidate-memory"]!,
+    process: async ({ ctx }) => consolidateMemoryProcess(ctx.signal),
+    after: retryOnError(5 * 60_000, 60 * 60_000),
+  });
+  log(`registered consolidate-memory (${cronConfig["consolidate-memory"]})`);
+
+  // suggest-topics — atomic; retry on provider/LLM failures
+  await sched.create({
+    id: "suggest-topics",
+    cron: cronConfig["suggest-topics"]!,
+    process: async ({ ctx }) => suggestTopicsProcess(ctx.signal),
+    after: retryOnError(5 * 60_000, 60 * 60_000),
+  });
+  log(`registered suggest-topics (${cronConfig["suggest-topics"]})`);
+};
+
 export const startScheduler = async () => {
   if (instance) return instance;
 
@@ -29,38 +65,11 @@ export const startScheduler = async () => {
     instance = scheduler({
       id: "nessi",
       store: createLocalStorageStore("nessi-sync"),
-      dispatch: { tickMs: 2000 },
     });
     log("scheduler instance created");
 
     const cronConfig = await settingsRepo.getCronConfig();
-
-    await instance.register({
-      id: "refresh-metadata",
-      cron: cronConfig["refresh-metadata"]!,
-      job: refreshMetadataJob,
-      input: {},
-      misfire: "catch_up_one",
-    });
-    log(`registered refresh-metadata (${cronConfig["refresh-metadata"]})`);
-
-    await instance.register({
-      id: "consolidate-memory",
-      cron: cronConfig["consolidate-memory"]!,
-      job: consolidateMemoryJob,
-      input: {},
-      misfire: "catch_up_one",
-    });
-    log(`registered consolidate-memory (${cronConfig["consolidate-memory"]})`);
-
-    await instance.register({
-      id: "suggest-topics",
-      cron: cronConfig["suggest-topics"]!,
-      job: suggestTopicsJob,
-      input: {},
-      misfire: "catch_up_one",
-    });
-    log(`registered suggest-topics (${cronConfig["suggest-topics"]})`);
+    await registerSchedules(instance, cronConfig);
 
     instance.start();
     log("scheduler started");
@@ -83,40 +92,14 @@ export const stopScheduler = async () => {
   log("scheduler stopped");
 };
 
-/** Manually trigger a job, bypassing schedule and internal guards. */
+/** Manually trigger a job — runs its scheduled process immediately without advancing cron. */
 export const triggerJob = async (jobId: string) => {
-  const entry: JobRunLog = { jobId, startedAt: new Date().toISOString(), status: "running" };
-  await pushJobLog(entry);
+  if (!instance) return;
   log(`manual trigger: ${jobId}`);
-
   try {
-    if (jobId === "refresh-metadata") {
-      const { runMetadataRefresh } = await import("./jobs/refresh-metadata.js");
-      const result = await runMetadataRefresh();
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "success";
-      entry.result = result.summary;
-    } else if (jobId === "consolidate-memory") {
-      const { runConsolidation } = await import("./jobs/consolidate-memory.js");
-      const result = await runConsolidation();
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "success";
-      entry.result = result.summary ?? result.reason;
-    } else if (jobId === "suggest-topics") {
-      const { runSuggestTopics } = await import("./jobs/suggest-topics.js");
-      const result = await runSuggestTopics();
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "success";
-      entry.result = result.summary ?? result.reason;
-    }
-    await pushJobLog(entry);
-    log(`manual trigger done: ${jobId} — ${entry.result}`);
+    await instance.runNow({ id: jobId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    entry.finishedAt = new Date().toISOString();
-    entry.status = "error";
-    entry.error = msg;
-    await pushJobLog(entry);
     log(`manual trigger failed: ${jobId} — ${msg}`);
   }
 };
@@ -124,7 +107,7 @@ export const triggerJob = async (jobId: string) => {
 export const triggerMetadataRefresh = async () => {
   if (!instance) return;
   try {
-    await instance.triggerNow({ id: "refresh-metadata" });
+    await instance.runNow({ id: "refresh-metadata" });
   } catch (err) {
     log(`trigger failed: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -137,17 +120,11 @@ export const notifyChatProcessed = () => {
 /** Re-register a job with its current cron from settings (idempotent). */
 export const reloadCron = async (jobId: string) => {
   if (!instance) return;
-  const cron = await settingsRepo.getCronFor(jobId);
-  const jobMap: Record<string, Parameters<typeof instance.register>[0]["job"]> = {
-    "refresh-metadata": refreshMetadataJob,
-    "consolidate-memory": consolidateMemoryJob,
-    "suggest-topics": suggestTopicsJob,
-  };
-  const job = jobMap[jobId];
-  if (!job) return;
+  const cronConfig = await settingsRepo.getCronConfig();
   try {
-    await instance.register({ id: jobId, cron, job, input: {}, misfire: "catch_up_one" });
-    log(`reloaded cron for ${jobId}: ${cron}`);
+    // registerSchedules is idempotent — same id + new cron just updates the slot timing.
+    await registerSchedules(instance, cronConfig);
+    log(`reloaded cron for ${jobId}: ${cronConfig[jobId]}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`reloadCron failed for ${jobId}: ${msg}`);

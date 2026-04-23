@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { job } from "@valentinkolb/sync-browser";
 import type { StoreEntry } from "nessi-core";
 import { chatRepo } from "../../chat/index.js";
@@ -120,72 +119,98 @@ const processChat = async (
   return { memoryOps: memoryOpsApplied };
 };
 
-/** Run metadata refresh directly (bypasses scheduler queue). */
-export const runMetadataRefresh = async (signal?: AbortSignal): Promise<{ processed: number; memoryOps: number; summary: string }> => {
-  const providerEntry = getActiveProviderEntry();
-  if (!providerEntry) return { processed: 0, memoryOps: 0, summary: "no provider configured" };
-
-  // Find dirty chats, sorted chronologically (oldest first)
-  const metas = await chatRepo.listMetas();
-  const candidates: typeof metas = [];
-  for (const meta of metas) {
-    if (await chatRepo.isChatDirty(meta)) candidates.push(meta);
-  }
-
-  candidates
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-
-  if (candidates.length === 0) {
-    log("skipped — no dirty chats");
-    return { processed: 0, memoryOps: 0, summary: "no dirty chats" };
-  }
-
-  log(`running "refresh-metadata" — ${candidates.length} dirty chat${candidates.length > 1 ? "s" : ""}`);
-
-  let processed = 0;
-  let totalMemoryOps = 0;
-
-  for (const meta of candidates) {
-    if (signal?.aborted) break;
-
-    try {
-      const result = await processChat(meta.id, meta.title, signal ?? new AbortController().signal);
-      processed++;
-      totalMemoryOps += result.memoryOps;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`failed for chat "${meta.title}": ${msg} — will retry on next tick`);
-    }
-  }
-
-  const summary = `processed ${processed} chat${processed !== 1 ? "s" : ""}${totalMemoryOps > 0 ? `, ${totalMemoryOps} memory ops` : ""}`;
-  log(`done — ${summary}`);
-  return { processed, memoryOps: totalMemoryOps, summary };
-};
-
-export const refreshMetadataJob = job({
-  id: "refresh-metadata",
-  schema: z.object({}),
+/**
+ * Per-chat processing job — submitted from the refresh-metadata scheduler.
+ * Keyed by chat id so submits dedupe while a chat is in-flight. Retries
+ * with exponential backoff up to 5 failures before giving up (key released).
+ */
+export const processChatJob = job<{ chatId: string; fallbackTitle: string }>({
+  id: "process-chat",
   process: async ({ ctx }) => {
-    const entry: JobRunLog = { jobId: "refresh-metadata", startedAt: new Date().toISOString(), status: "running" };
-    await pushJobLog(entry);
-    log("started refresh-metadata");
-
+    const chatLogEntry: JobRunLog = {
+      jobId: `process-chat:${ctx.input.chatId}`,
+      startedAt: new Date().toISOString(),
+      status: "running",
+    };
+    await pushJobLog(chatLogEntry);
     try {
-      const result = await runMetadataRefresh(ctx.signal);
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "success";
-      entry.result = result.summary;
-      await pushJobLog(entry);
+      const result = await processChat(ctx.input.chatId, ctx.input.fallbackTitle, ctx.signal);
+      chatLogEntry.finishedAt = new Date().toISOString();
+      chatLogEntry.status = "success";
+      chatLogEntry.result = result.memoryOps > 0 ? `${result.memoryOps} memory ops` : "indexed";
+      await pushJobLog(chatLogEntry);
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      entry.finishedAt = new Date().toISOString();
-      entry.status = "error";
-      entry.error = msg;
-      await pushJobLog(entry);
-      log(`refresh-metadata failed: ${msg}`);
+      chatLogEntry.finishedAt = new Date().toISOString();
+      chatLogEntry.status = "error";
+      chatLogEntry.error = msg;
+      await pushJobLog(chatLogEntry);
       throw err;
     }
   },
+  after: async ({ ctx }) => {
+    if (ctx.error && ctx.failureCount < 5) {
+      const delayMs = ctx.expBackoff({ baseMs: 60_000, maxMs: 30 * 60_000 });
+      log(`process-chat retry scheduled for "${ctx.input.chatId}" in ${Math.round(delayMs / 1000)}s (attempt ${ctx.failureCount + 2})`);
+      ctx.reschedule({ delayMs });
+    }
+  },
 });
+
+/**
+ * Scheduler process — fans out one processChatJob per dirty chat.
+ * Runs fast; actual work happens in each job with independent retry state.
+ */
+export const refreshMetadataProcess = async (): Promise<{ submitted: number; summary: string }> => {
+  const entry: JobRunLog = { jobId: "refresh-metadata", startedAt: new Date().toISOString(), status: "running" };
+  await pushJobLog(entry);
+
+  try {
+    const providerEntry = getActiveProviderEntry();
+    if (!providerEntry) {
+      entry.finishedAt = new Date().toISOString();
+      entry.status = "success";
+      entry.result = "no provider configured";
+      await pushJobLog(entry);
+      return { submitted: 0, summary: entry.result };
+    }
+
+    const metas = await chatRepo.listMetas();
+    const candidates: typeof metas = [];
+    for (const meta of metas) {
+      if (await chatRepo.isChatDirty(meta)) candidates.push(meta);
+    }
+    candidates.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+    if (candidates.length === 0) {
+      entry.finishedAt = new Date().toISOString();
+      entry.status = "success";
+      entry.result = "no dirty chats";
+      await pushJobLog(entry);
+      return { submitted: 0, summary: entry.result };
+    }
+
+    for (const meta of candidates) {
+      await processChatJob.submit({
+        key: `chat:${meta.id}`,
+        input: { chatId: meta.id, fallbackTitle: meta.title },
+      });
+    }
+
+    entry.finishedAt = new Date().toISOString();
+    entry.status = "success";
+    entry.result = `submitted ${candidates.length} chat${candidates.length > 1 ? "s" : ""}`;
+    await pushJobLog(entry);
+    log(`refresh-metadata — ${entry.result}`);
+    return { submitted: candidates.length, summary: entry.result };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    entry.finishedAt = new Date().toISOString();
+    entry.status = "error";
+    entry.error = msg;
+    await pushJobLog(entry);
+    log(`refresh-metadata failed: ${msg}`);
+    throw err;
+  }
+};
