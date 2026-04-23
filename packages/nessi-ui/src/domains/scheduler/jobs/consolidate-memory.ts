@@ -13,6 +13,18 @@ const MIN_MEMORY_LINES = 8;
 const MIN_HOURS_SINCE_LAST = 4;
 const MIN_CHATS_SINCE_LAST = 2;
 
+/** Strip code fences, markdown headers, horizontal rules, and collapse blank-line runs. */
+const cleanConsolidationOutput = (raw: string): string =>
+  raw
+    .replace(/^```\w*\n?/gm, "")
+    .replace(/```$/gm, "")
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .filter((line) => !/^\s*-{3,}\s*$/.test(line))
+    .join("\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+
 /** Increment the counter of chats processed since last consolidation. */
 export const incrementChatsSinceConsolidation = () => {
   const current = localStorageJson.read<number>(CHATS_SINCE_KEY, 0);
@@ -96,10 +108,7 @@ export const consolidateMemoryJob = job({
         return { consolidated: false, reason: "empty-response" };
       }
 
-      const cleaned = responseText
-        .replace(/^```\w*\n?/gm, "")
-        .replace(/```$/gm, "")
-        .trim();
+      const cleaned = cleanConsolidationOutput(responseText);
 
       const beforeCount = (await memoryService.lines()).length;
       await memoryService.writeText(cleaned);
@@ -160,10 +169,7 @@ export const runConsolidation = async (): Promise<{ consolidated: boolean; reaso
 
   if (!responseText) return { consolidated: false, reason: "empty response" };
 
-  const cleaned = responseText
-    .replace(/^```\w*\n?/gm, "")
-    .replace(/```$/gm, "")
-    .trim();
+  const cleaned = cleanConsolidationOutput(responseText);
 
   const beforeCount = (await memoryService.lines()).length;
   await memoryService.writeText(cleaned);

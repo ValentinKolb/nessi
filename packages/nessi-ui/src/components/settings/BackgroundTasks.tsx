@@ -1,13 +1,15 @@
 import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import { getBackgroundLogs, getRunLog, triggerJob, type JobRunLog } from "../../domains/scheduler/scheduler.js";
+import { settingsRepo } from "../../domains/settings/settings.repo.js";
+import { dbEvents } from "../../shared/db/db-events.js";
 import { formatDateTimeRelative } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
 import { PulseDots } from "../PulseDots.js";
 
 const JOBS = [
-  { id: "refresh-metadata", label: "Chat metadata", cron: "every minute" },
-  { id: "consolidate-memory", label: "Memory consolidation", cron: "every 2 hours" },
-  { id: "suggest-topics", label: "Chat suggestions", cron: "every 30 minutes" },
+  { id: "refresh-metadata", label: "Chat metadata" },
+  { id: "consolidate-memory", label: "Memory consolidation" },
+  { id: "suggest-topics", label: "Chat suggestions" },
 ] as const;
 
 const StatusBadge = (props: { status: JobRunLog["status"] }) => {
@@ -27,15 +29,25 @@ const StatusBadge = (props: { status: JobRunLog["status"] }) => {
 
 export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?: () => void }) => {
   const [logs, setLogs] = createSignal<readonly JobRunLog[]>([]);
+  const [cronConfig, setCronConfig] = createSignal<Record<string, string>>({});
   let timer: ReturnType<typeof setInterval> | undefined;
 
   const refresh = async () => {
     setLogs(await getRunLog());
   };
 
+  const refreshCron = async () => {
+    setCronConfig(await settingsRepo.getCronConfig());
+  };
+
   onMount(() => {
     void refresh();
+    void refreshCron();
     timer = setInterval(() => { void refresh(); }, 2000);
+    const unsub = dbEvents.subscribe((event) => {
+      if (event.scope === "settings") void refreshCron();
+    });
+    onCleanup(unsub);
   });
 
   onCleanup(() => { if (timer) clearInterval(timer); });
@@ -67,7 +79,7 @@ export const BackgroundTasks = (props: { onEditPrompts?: () => void; onOpenLogs?
               <div class="ui-row">
                 <div class="flex items-center gap-2 min-w-0">
                   <span class="shrink-0 text-gh-fg-secondary">{job.label}</span>
-                  <span class="text-[11px] text-gh-fg-subtle">{job.cron}</span>
+                  <span class="text-[11px] text-gh-fg-subtle font-mono">{cronConfig()[job.id] ?? ""}</span>
                   <div class="flex-1" />
                   <Show when={latest()}>
                     {(run) => (

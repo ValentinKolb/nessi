@@ -13,21 +13,35 @@ import {
   resetSuggestionPrompt,
   getDefaultSuggestionPrompt,
 } from "../../domains/scheduler/jobs/background-prompt.js";
+import { settingsRepo, DEFAULT_CRON_CONFIG } from "../../domains/settings/settings.repo.js";
+import { reloadCron } from "../../domains/scheduler/scheduler.js";
 import { haptics } from "../../shared/browser/haptics.js";
 
 type Tab = "metadata" | "consolidation" | "suggestions";
+
+const TAB_TO_JOB: Record<Tab, keyof typeof DEFAULT_CRON_CONFIG> = {
+  metadata: "refresh-metadata",
+  consolidation: "consolidate-memory",
+  suggestions: "suggest-topics",
+};
 
 export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
   const [tab, setTab] = createSignal<Tab>("metadata");
   const [metadataText, setMetadataText] = createSignal("");
   const [consolidationText, setConsolidationText] = createSignal("");
   const [suggestionText, setSuggestionText] = createSignal("");
+  const [metadataCron, setMetadataCron] = createSignal("");
+  const [consolidationCron, setConsolidationCron] = createSignal("");
+  const [suggestionCron, setSuggestionCron] = createSignal("");
   const [saved, setSaved] = createSignal(false);
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
   const loadPrompts = async () => {
     setMetadataText(await getBackgroundPrompt());
     setConsolidationText(await getConsolidationPrompt());
     setSuggestionText(await getSuggestionPrompt());
+    setMetadataCron(await settingsRepo.getCronFor("refresh-metadata"));
+    setConsolidationCron(await settingsRepo.getCronFor("consolidate-memory"));
+    setSuggestionCron(await settingsRepo.getCronFor("suggest-topics"));
   };
 
   onMount(() => {
@@ -46,34 +60,52 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
 
   const save = async () => {
     const current = tab();
-    if (current === "metadata") await setBackgroundPrompt(metadataText());
-    else if (current === "consolidation") await setConsolidationPrompt(consolidationText());
-    else await setSuggestionPrompt(suggestionText());
+    const jobId = TAB_TO_JOB[current];
+    if (current === "metadata") {
+      await setBackgroundPrompt(metadataText());
+      await settingsRepo.setCronFor(jobId, metadataCron());
+    } else if (current === "consolidation") {
+      await setConsolidationPrompt(consolidationText());
+      await settingsRepo.setCronFor(jobId, consolidationCron());
+    } else {
+      await setSuggestionPrompt(suggestionText());
+      await settingsRepo.setCronFor(jobId, suggestionCron());
+    }
+    await reloadCron(jobId);
     haptics.success();
     flashSaved();
   };
 
   const reset = async () => {
     const current = tab();
+    const jobId = TAB_TO_JOB[current];
+    const defaultCron = DEFAULT_CRON_CONFIG[jobId];
     if (current === "metadata") {
       const text = await resetBackgroundPrompt();
       setMetadataText(text);
+      setMetadataCron(defaultCron);
     } else if (current === "consolidation") {
       const text = await resetConsolidationPrompt();
       setConsolidationText(text);
+      setConsolidationCron(defaultCron);
     } else {
       const text = await resetSuggestionPrompt();
       setSuggestionText(text);
+      setSuggestionCron(defaultCron);
     }
+    await settingsRepo.setCronFor(jobId, defaultCron);
+    await reloadCron(jobId);
     haptics.success();
     flashSaved();
   };
 
   const isDefault = () => {
     const current = tab();
-    if (current === "metadata") return metadataText() === getDefaultBackgroundPrompt();
-    if (current === "consolidation") return consolidationText() === getDefaultConsolidationPrompt();
-    return suggestionText() === getDefaultSuggestionPrompt();
+    const jobId = TAB_TO_JOB[current];
+    const defaultCron = DEFAULT_CRON_CONFIG[jobId];
+    if (current === "metadata") return metadataText() === getDefaultBackgroundPrompt() && metadataCron() === defaultCron;
+    if (current === "consolidation") return consolidationText() === getDefaultConsolidationPrompt() && consolidationCron() === defaultCron;
+    return suggestionText() === getDefaultSuggestionPrompt() && suggestionCron() === defaultCron;
   };
 
   const currentText = () => {
@@ -89,6 +121,22 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
     else if (current === "consolidation") setConsolidationText(text);
     else setSuggestionText(text);
   };
+
+  const currentCron = () => {
+    const current = tab();
+    if (current === "metadata") return metadataCron();
+    if (current === "consolidation") return consolidationCron();
+    return suggestionCron();
+  };
+
+  const setCurrentCron = (cron: string) => {
+    const current = tab();
+    if (current === "metadata") setMetadataCron(cron);
+    else if (current === "consolidation") setConsolidationCron(cron);
+    else setSuggestionCron(cron);
+  };
+
+  const currentCronDefault = () => DEFAULT_CRON_CONFIG[TAB_TO_JOB[tab()]];
 
   const TabButton = (tabProps: { id: Tab; label: string }) => (
     <button
@@ -131,6 +179,18 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
           Use <code>{"{{memories}}"}</code> and <code>{"{{recent_chats}}"}</code> to inject context.
           Recent chats are auto-generated summaries, not full transcripts.
         </Show>
+      </div>
+
+      {/* Schedule */}
+      <div class="flex items-center gap-2 shrink-0">
+        <label class="text-[12px] text-gh-fg-muted shrink-0">Schedule (cron):</label>
+        <input
+          class="ui-input font-mono text-[12px]"
+          type="text"
+          value={currentCron()}
+          placeholder={currentCronDefault()}
+          onInput={(e) => setCurrentCron(e.currentTarget.value)}
+        />
       </div>
 
       {/* Editor */}

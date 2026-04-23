@@ -118,6 +118,41 @@ const setImageAnalysisPrompt = async (prompt: string) => {
   await putDoc("image-analysis-prompt", prompt);
 };
 
+export const DEFAULT_CRON_CONFIG = {
+  "refresh-metadata": "*/2 * * * *",
+  "consolidate-memory": "0 */2 * * *",
+  "suggest-topics": "*/30 * * * *",
+} as const satisfies Record<string, string>;
+
+type CronConfig = Record<string, string>;
+
+const CRON_REGEX = /^(\S+\s+){4}\S+$/;
+
+const isValidCron = (cron: unknown): cron is string =>
+  typeof cron === "string" && CRON_REGEX.test(cron.trim());
+
+const getCronConfig = async (): Promise<CronConfig> => {
+  const stored = await getDoc<CronConfig>("scheduler-crons", {});
+  const merged: CronConfig = { ...DEFAULT_CRON_CONFIG };
+  for (const [id, cron] of Object.entries(stored)) {
+    if (isValidCron(cron)) merged[id] = cron;
+  }
+  return merged;
+};
+
+const getCronFor = async (jobId: keyof typeof DEFAULT_CRON_CONFIG | string): Promise<string> => {
+  const config = await getCronConfig();
+  return config[jobId] ?? (DEFAULT_CRON_CONFIG as Record<string, string>)[jobId] ?? "* * * * *";
+};
+
+const setCronFor = async (jobId: string, cron: string): Promise<void> => {
+  const current = await getDoc<CronConfig>("scheduler-crons", {});
+  const next: CronConfig = { ...current };
+  if (isValidCron(cron)) next[jobId] = cron.trim();
+  else delete next[jobId];
+  await putDoc("scheduler-crons", next);
+};
+
 export const settingsRepo = {
   DEFAULT_COMPACTION_SETTINGS,
   DEFAULT_IMAGE_ANALYSIS_SETTINGS,
@@ -139,4 +174,7 @@ export const settingsRepo = {
   setImageAnalysisSettings,
   getImageAnalysisPrompt,
   setImageAnalysisPrompt,
+  getCronConfig,
+  getCronFor,
+  setCronFor,
 } as const;

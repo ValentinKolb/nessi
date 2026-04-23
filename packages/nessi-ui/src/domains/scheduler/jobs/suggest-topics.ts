@@ -18,6 +18,35 @@ const LAST_RUN_KEY = "nessi:suggestions-last-run";
 const MIN_HOURS_BETWEEN_RUNS = 3;
 const MAX_RECENT_CHATS = 8;
 
+type ContentBlock = { type: string; text?: string; thinking?: string };
+
+/** Extract usable response text, falling back to the last line of thinking blocks when no text blocks exist. */
+const extractResponseText = (blocks: readonly ContentBlock[]): string => {
+  const textOut = blocks
+    .filter((b) => b.type === "text" && typeof b.text === "string")
+    .map((b) => b.text as string)
+    .join(" ")
+    .trim();
+  if (textOut) return textOut;
+
+  const thinkingTails = blocks
+    .filter((b) => b.type === "thinking" && typeof b.thinking === "string")
+    .map((b) => {
+      const lines = (b.thinking as string).split("\n").map((l) => l.trim()).filter(Boolean);
+      return lines[lines.length - 1] ?? "";
+    })
+    .filter(Boolean);
+  return thinkingTails.join("\n").trim();
+};
+
+/** Diagnostic string: "blocks: thinking×2, text×0" — for error reporting when response is empty. */
+const describeBlocks = (blocks: readonly ContentBlock[]): string => {
+  const counts: Record<string, number> = {};
+  for (const b of blocks) counts[b.type] = (counts[b.type] ?? 0) + 1;
+  const parts = Object.entries(counts).map(([type, n]) => `${type}×${n}`);
+  return `blocks: ${parts.length > 0 ? parts.join(", ") : "none"}`;
+};
+
 export const getSuggestions = (): string[] =>
   localStorageJson.read<string[]>(SUGGESTIONS_KEY, []);
 
@@ -83,21 +112,19 @@ export const suggestTopicsJob = job({
         messages: [
           { role: "user", content: [{ type: "text", text: "Generate conversation starters." }] },
         ],
-        maxOutputTokens: 400,
+        maxOutputTokens: 800,
         signal: ctx.signal,
       });
 
-      const responseText = result.message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join(" ")
-        .trim();
+      const responseText = extractResponseText(result.message.content as ContentBlock[]);
 
       if (!responseText) {
+        const diag = `empty response (${describeBlocks(result.message.content as ContentBlock[])})`;
         entry.finishedAt = new Date().toISOString();
         entry.status = "error";
-        entry.error = "empty response";
+        entry.error = diag;
         await pushJobLog(entry);
+        log(`suggest-topics failed: ${diag}`);
         return { generated: false, reason: "empty-response" };
       }
 
@@ -147,16 +174,15 @@ export const runSuggestTopics = async (): Promise<{ generated: boolean; reason?:
     messages: [
       { role: "user", content: [{ type: "text", text: "Generate conversation starters." }] },
     ],
-    maxOutputTokens: 400,
+    maxOutputTokens: 800,
   });
 
-  const responseText = result.message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join(" ")
-    .trim();
+  const responseText = extractResponseText(result.message.content as ContentBlock[]);
 
-  if (!responseText) return { generated: false, reason: "empty response" };
+  if (!responseText) {
+    const diag = `empty response (${describeBlocks(result.message.content as ContentBlock[])})`;
+    return { generated: false, reason: diag };
+  }
 
   const suggestions = responseText
     .split("\n")

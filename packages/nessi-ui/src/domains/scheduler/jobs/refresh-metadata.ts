@@ -154,12 +154,7 @@ export const runMetadataRefresh = async (signal?: AbortSignal): Promise<{ proces
       totalMemoryOps += result.memoryOps;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      log(`failed for chat "${meta.title}": ${msg}`);
-      // Mark as indexed anyway to prevent infinite retries on malformed chats
-      await chatRepo.updateMeta(meta.id, {
-        lastIndexedAt: new Date().toISOString(),
-        lastIndexedEntryCount: await chatRepo.getEntryCount(meta.id),
-      });
+      log(`failed for chat "${meta.title}": ${msg} — will retry on next tick`);
     }
   }
 

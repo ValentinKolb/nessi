@@ -3,6 +3,7 @@ import { refreshMetadataJob } from "./jobs/refresh-metadata.js";
 import { consolidateMemoryJob, incrementChatsSinceConsolidation } from "./jobs/consolidate-memory.js";
 import { suggestTopicsJob } from "./jobs/suggest-topics.js";
 import { schedulerRepo, type SchedulerRun } from "./index.js";
+import { settingsRepo } from "../settings/index.js";
 
 const PREFIX = "[nessi:bg]";
 
@@ -32,32 +33,34 @@ export const startScheduler = async () => {
     });
     log("scheduler instance created");
 
+    const cronConfig = await settingsRepo.getCronConfig();
+
     await instance.register({
       id: "refresh-metadata",
-      cron: "* * * * *",
+      cron: cronConfig["refresh-metadata"]!,
       job: refreshMetadataJob,
       input: {},
       misfire: "catch_up_one",
     });
-    log("registered refresh-metadata (every minute)");
+    log(`registered refresh-metadata (${cronConfig["refresh-metadata"]})`);
 
     await instance.register({
       id: "consolidate-memory",
-      cron: "0 */2 * * *",
+      cron: cronConfig["consolidate-memory"]!,
       job: consolidateMemoryJob,
       input: {},
       misfire: "catch_up_one",
     });
-    log("registered consolidate-memory (every 2h)");
+    log(`registered consolidate-memory (${cronConfig["consolidate-memory"]})`);
 
     await instance.register({
       id: "suggest-topics",
-      cron: "*/30 * * * *",
+      cron: cronConfig["suggest-topics"]!,
       job: suggestTopicsJob,
       input: {},
       misfire: "catch_up_one",
     });
-    log("registered suggest-topics (every 30min)");
+    log(`registered suggest-topics (${cronConfig["suggest-topics"]})`);
 
     instance.start();
     log("scheduler started");
@@ -129,6 +132,26 @@ export const triggerMetadataRefresh = async () => {
 
 export const notifyChatProcessed = () => {
   incrementChatsSinceConsolidation();
+};
+
+/** Re-register a job with its current cron from settings (idempotent). */
+export const reloadCron = async (jobId: string) => {
+  if (!instance) return;
+  const cron = await settingsRepo.getCronFor(jobId);
+  const jobMap: Record<string, Parameters<typeof instance.register>[0]["job"]> = {
+    "refresh-metadata": refreshMetadataJob,
+    "consolidate-memory": consolidateMemoryJob,
+    "suggest-topics": suggestTopicsJob,
+  };
+  const job = jobMap[jobId];
+  if (!job) return;
+  try {
+    await instance.register({ id: jobId, cron, job, input: {}, misfire: "catch_up_one" });
+    log(`reloaded cron for ${jobId}: ${cron}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`reloadCron failed for ${jobId}: ${msg}`);
+  }
 };
 
 export const getScheduler = () => instance;
