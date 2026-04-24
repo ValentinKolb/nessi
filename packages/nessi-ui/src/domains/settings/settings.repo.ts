@@ -1,3 +1,4 @@
+import { isValidCron as isValidCronExpr } from "cron-validator";
 import { db } from "../../shared/db/db.js";
 import { dbEvents } from "../../shared/db/db-events.js";
 import type { CompactionSettings, ImageAnalysisSettings, ToolApprovalMap } from "./settings.types.js";
@@ -126,10 +127,8 @@ export const DEFAULT_CRON_CONFIG = {
 
 type CronConfig = Record<string, string>;
 
-const CRON_REGEX = /^(\S+\s+){4}\S+$/;
-
 const isValidCron = (cron: unknown): cron is string =>
-  typeof cron === "string" && CRON_REGEX.test(cron.trim());
+  typeof cron === "string" && isValidCronExpr(cron.trim(), { alias: true, allowSevenAsSunday: true });
 
 const getCronConfig = async (): Promise<CronConfig> => {
   const stored = await getDoc<CronConfig>("scheduler-crons", {});
@@ -177,4 +176,5 @@ export const settingsRepo = {
   getCronConfig,
   getCronFor,
   setCronFor,
+  isValidCron,
 } as const;

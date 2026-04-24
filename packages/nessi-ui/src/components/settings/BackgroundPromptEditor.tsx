@@ -138,6 +138,9 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
 
   const currentCronDefault = () => DEFAULT_CRON_CONFIG[TAB_TO_JOB[tab()]];
 
+  /** Cron is considered valid when it passes the 5-field regex. Empty input is treated as "will fall back to default" and blocks save to avoid silent acceptance. */
+  const currentCronValid = () => settingsRepo.isValidCron(currentCron());
+
   const TabButton = (tabProps: { id: Tab; label: string }) => (
     <button
       class={`px-3 py-1.5 text-[13px] font-medium transition-colors relative ${
@@ -182,15 +185,22 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
       </div>
 
       {/* Schedule */}
-      <div class="flex items-center gap-2 shrink-0">
-        <label class="text-[12px] text-gh-fg-muted shrink-0">Schedule (cron):</label>
-        <input
-          class="ui-input font-mono text-[12px]"
-          type="text"
-          value={currentCron()}
-          placeholder={currentCronDefault()}
-          onInput={(e) => setCurrentCron(e.currentTarget.value)}
-        />
+      <div class="shrink-0 space-y-1">
+        <div class="flex items-center gap-2">
+          <label class="text-[12px] text-gh-fg-muted shrink-0">Schedule (cron):</label>
+          <input
+            class={`ui-input font-mono text-[12px] ${currentCronValid() ? "" : "border-gh-danger"}`}
+            type="text"
+            value={currentCron()}
+            placeholder={currentCronDefault()}
+            onInput={(e) => setCurrentCron(e.currentTarget.value)}
+          />
+        </div>
+        <Show when={!currentCronValid()}>
+          <p class="text-[11px] text-gh-danger pl-[calc(6rem+0.5rem)]">
+            Invalid cron expression — needs 5 whitespace-separated fields (min hour dom month dow).
+          </p>
+        </Show>
       </div>
 
       {/* Editor */}
@@ -210,7 +220,7 @@ export const BackgroundPromptEditor = (props: { onDone: () => void }) => {
         </div>
         <div class="ui-actions-right">
           <button class="btn-secondary" onClick={() => { haptics.tap(); props.onDone(); }}>cancel</button>
-          <button class="btn-primary" onClick={() => void save()}>
+          <button class="btn-primary" onClick={() => void save()} disabled={!currentCronValid()}>
             {saved() ? "saved!" : "save"}
           </button>
         </div>
