@@ -5,6 +5,12 @@ const isDirty = (meta: ChatMeta, entries: PersistedStoreEntry[]) => {
   const latestEntryAt = entries[entries.length - 1]?.createdAt;
   if (entries.length !== meta.lastIndexedEntryCount) return true;
   if (latestEntryAt && latestEntryAt > meta.lastIndexedAt) return true;
+  // Indexed but missing description → chat was stamped without a real summary.
+  // Re-flag as dirty unless a retry-pause is still active.
+  if (!meta.description) {
+    if (!meta.summaryNextRetryAt) return true;
+    return Date.now() >= new Date(meta.summaryNextRetryAt).getTime();
+  }
   return false;
 };
 

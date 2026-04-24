@@ -123,6 +123,7 @@ export const gemini = (model: string, options?: GeminiOptions): Provider => {
     if (temperature !== undefined) generationConfig.temperature = temperature;
     const maxOutputTokens = request.maxOutputTokens ?? options?.maxOutputTokens;
     if (maxOutputTokens !== undefined) generationConfig.maxOutputTokens = maxOutputTokens;
+    if (request.disableReasoning) generationConfig.thinkingConfig = { thinkingBudget: 0 };
     if (Object.keys(generationConfig).length > 0) body.generationConfig = generationConfig;
     return body;
   };

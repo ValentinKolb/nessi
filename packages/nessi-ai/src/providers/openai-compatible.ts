@@ -231,6 +231,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
       if (request.maxOutputTokens !== undefined) {
         body[config.compat?.maxTokensField ?? "max_completion_tokens"] = request.maxOutputTokens;
       }
+      if (request.disableReasoning) body.reasoning_effort = "low";
       const temperature = resolveTemperature(request);
       if (temperature !== undefined) body.temperature = temperature;
 
@@ -275,6 +276,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
       if (request.maxOutputTokens !== undefined) {
         body[config.compat?.maxTokensField ?? "max_completion_tokens"] = request.maxOutputTokens;
       }
+      if (request.disableReasoning) body.reasoning_effort = "low";
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",

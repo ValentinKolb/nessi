@@ -1,9 +1,12 @@
+import type { ScheduleCtx } from "@valentinkolb/sync-browser";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
 import { memoryService } from "../../memory/index.js";
 import { chatRepo } from "../../chat/index.js";
 import { localStorageJson } from "../../../shared/storage/local-storage.js";
 import { getSuggestionPrompt } from "./background-prompt.js";
-import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
+import { createLog, pushJobLog, type JobRunLog } from "../scheduler.js";
+
+const log = createLog("suggest-topics");
 
 const resolvePrompt = (template: string, memories: string, recentChats: string) =>
   template
@@ -37,12 +40,25 @@ const extractResponseText = (blocks: readonly ContentBlock[]): string => {
   return thinkingTails.join("\n").trim();
 };
 
-/** Diagnostic string: "blocks: thinking×2, text×0" — for error reporting when response is empty. */
-const describeBlocks = (blocks: readonly ContentBlock[]): string => {
+/**
+ * Diagnostic string for empty-response errors:
+ * "blocks: thinking×2, text×0, stopReason: max_tokens, outputTokens: 800"
+ * — gives the user enough context to tell provider-refuse from token-budget-exhaustion.
+ */
+const describeEmptyResponse = (
+  blocks: readonly ContentBlock[],
+  stopReason: string | undefined,
+  outputTokens: number | undefined,
+): string => {
   const counts: Record<string, number> = {};
   for (const b of blocks) counts[b.type] = (counts[b.type] ?? 0) + 1;
-  const parts = Object.entries(counts).map(([type, n]) => `${type}×${n}`);
-  return `blocks: ${parts.length > 0 ? parts.join(", ") : "none"}`;
+  const blockParts = Object.entries(counts).map(([type, n]) => `${type}×${n}`);
+  const parts: string[] = [
+    `blocks: ${blockParts.length > 0 ? blockParts.join(", ") : "none"}`,
+  ];
+  if (stopReason) parts.push(`stopReason: ${stopReason}`);
+  if (typeof outputTokens === "number") parts.push(`outputTokens: ${outputTokens}`);
+  return parts.join(", ");
 };
 
 export const getSuggestions = (): string[] =>
@@ -87,17 +103,17 @@ const generateSuggestions = async (signal?: AbortSignal): Promise<{ summary: str
     messages: [
       { role: "user", content: [{ type: "text", text: "Generate conversation starters." }] },
     ],
-    maxOutputTokens: 800,
+    disableReasoning: true,
     signal,
   });
+  const blocks = result.message.content as ContentBlock[];
+  const text = extractResponseText(blocks);
 
-  const responseText = extractResponseText(result.message.content as ContentBlock[]);
-
-  if (!responseText) {
-    throw new Error(`empty response (${describeBlocks(result.message.content as ContentBlock[])})`);
+  if (!text) {
+    throw new Error(`empty response (${describeEmptyResponse(blocks, result.message.stopReason, result.message.usage?.output)})`);
   }
 
-  const suggestions = responseText
+  const suggestions = text
     .split("\n")
     .map((line) => line.replace(/^[-*•\d.)\s]+/, "").trim())
     .filter((line) => line.length > 5 && line.length < 120)
@@ -110,17 +126,17 @@ const generateSuggestions = async (signal?: AbortSignal): Promise<{ summary: str
 };
 
 /**
- * Scheduler process — gated by shouldRun to avoid more than one run every N hours.
- * Throws on provider errors so `after` can retry with exponential backoff.
+ * Scheduler process — gated by shouldRun on cron ticks to avoid running more
+ * than once per N hours. Manual triggers (admin UI Run) bypass the gate.
  */
 export const suggestTopicsProcess = async (
-  signal?: AbortSignal,
+  ctx: ScheduleCtx,
 ): Promise<{ generated: boolean; reason?: string; summary?: string }> => {
   const entry: JobRunLog = { jobId: "suggest-topics", startedAt: new Date().toISOString(), status: "running" };
   await pushJobLog(entry);
 
   try {
-    if (!shouldRun()) {
+    if (ctx.trigger !== "manual" && !shouldRun()) {
       entry.finishedAt = new Date().toISOString();
       entry.status = "success";
       entry.result = "skipped (too recent)";
@@ -128,12 +144,12 @@ export const suggestTopicsProcess = async (
       return { generated: false, reason: "too-recent" };
     }
 
-    const { summary } = await generateSuggestions(signal);
+    const { summary } = await generateSuggestions(ctx.signal);
     entry.finishedAt = new Date().toISOString();
     entry.status = "success";
     entry.result = summary;
     await pushJobLog(entry);
-    log(`suggest-topics done — ${summary}`);
+    log(`done — ${summary}${ctx.trigger === "manual" ? " (manual)" : ""}`);
     return { generated: true, summary };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -141,23 +157,8 @@ export const suggestTopicsProcess = async (
     entry.status = "error";
     entry.error = msg;
     await pushJobLog(entry);
-    log(`suggest-topics failed: ${msg}`);
+    log(`failed: ${msg}`);
     throw err;
   }
 };
 
-/** Run suggestion generation directly, bypassing the scheduler gate (manual trigger). */
-export const runSuggestTopics = async (): Promise<{ generated: boolean; reason?: string; summary?: string }> => {
-  const providerEntry = getActiveProviderEntry();
-  if (!providerEntry) return { generated: false, reason: "no provider" };
-
-  log("suggest-topics (manual)...");
-  try {
-    const { summary } = await generateSuggestions();
-    log(`suggest-topics done (manual) — ${summary}`);
-    return { generated: true, summary };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { generated: false, reason: msg };
-  }
-};

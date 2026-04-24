@@ -5,14 +5,23 @@ import { suggestTopicsProcess } from "./jobs/suggest-topics.js";
 import { schedulerRepo, type SchedulerRun } from "./index.js";
 import { settingsRepo } from "../settings/index.js";
 
-const PREFIX = "[nessi:bg]";
+const PREFIX = "nessi:bg";
 
 export type JobRunLog = SchedulerRun;
 
-export const log = (msg: string) => {
-  console.debug(`${PREFIX} ${msg}`);
-  void schedulerRepo.pushLog(`[${new Date().toISOString()}] ${msg}`);
-};
+/**
+ * Create a scoped logger — every line gets `[nessi:bg <scope>]` prefix.
+ * Declared with `function` (hoisted) so job modules importing it at top level
+ * are safe against the circular import with this file.
+ */
+export function createLog(scope: string) {
+  return (msg: string) => {
+    console.debug(`[${PREFIX} ${scope}] ${msg}`);
+    void schedulerRepo.pushLog(`[${new Date().toISOString()}] [${scope}] ${msg}`);
+  };
+}
+
+export const log = createLog("scheduler");
 
 export const pushJobLog = (entry: JobRunLog) => schedulerRepo.pushRun(entry);
 export const getRunLog = () => schedulerRepo.listRuns();
@@ -32,7 +41,7 @@ const registerSchedules = async (sched: Scheduler, cronConfig: Record<string, st
   await sched.create({
     id: "refresh-metadata",
     cron: cronConfig["refresh-metadata"]!,
-    process: async () => refreshMetadataProcess(),
+    process: async ({ ctx }) => refreshMetadataProcess(ctx),
     after: retryOnError(30_000, 5 * 60_000),
   });
   log(`registered refresh-metadata (${cronConfig["refresh-metadata"]})`);
@@ -41,7 +50,7 @@ const registerSchedules = async (sched: Scheduler, cronConfig: Record<string, st
   await sched.create({
     id: "consolidate-memory",
     cron: cronConfig["consolidate-memory"]!,
-    process: async ({ ctx }) => consolidateMemoryProcess(ctx.signal),
+    process: async ({ ctx }) => consolidateMemoryProcess(ctx),
     after: retryOnError(5 * 60_000, 60 * 60_000),
   });
   log(`registered consolidate-memory (${cronConfig["consolidate-memory"]})`);
@@ -50,7 +59,7 @@ const registerSchedules = async (sched: Scheduler, cronConfig: Record<string, st
   await sched.create({
     id: "suggest-topics",
     cron: cronConfig["suggest-topics"]!,
-    process: async ({ ctx }) => suggestTopicsProcess(ctx.signal),
+    process: async ({ ctx }) => suggestTopicsProcess(ctx),
     after: retryOnError(5 * 60_000, 60 * 60_000),
   });
   log(`registered suggest-topics (${cronConfig["suggest-topics"]})`);

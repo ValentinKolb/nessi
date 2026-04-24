@@ -1,4 +1,4 @@
-import { job } from "@valentinkolb/sync-browser";
+import { job, type ScheduleCtx } from "@valentinkolb/sync-browser";
 import type { StoreEntry } from "nessi-core";
 import { chatRepo } from "../../chat/index.js";
 import { contentPartsToText } from "../../../lib/utils.js";
@@ -6,7 +6,10 @@ import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js
 import { memoryService } from "../../memory/index.js";
 import { getBackgroundPrompt } from "./background-prompt.js";
 import { parseBackgroundOutput, applyMemoryOps } from "./parse-background-output.js";
-import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
+import { createLog, pushJobLog, type JobRunLog } from "../scheduler.js";
+
+const log = createLog("refresh-metadata");
+const chatLog = createLog("process-chat");
 import { loadPersistedEntries } from "../../../lib/store.js";
 
 const MAX_TRANSCRIPT_CHARS = 4000;
@@ -46,6 +49,19 @@ const buildTranscript = async (chatId: string): Promise<string> => {
   return lines.join("\n").slice(0, MAX_TRANSCRIPT_CHARS);
 };
 
+/** Fallback summary for chats with no text content — no LLM call needed. */
+const writeFallbackSummary = async (chatId: string, fallbackTitle: string, entryCount: number) => {
+  await chatRepo.updateMeta(chatId, {
+    title: fallbackTitle,
+    titleSource: "fallback",
+    description: `Chat with ${entryCount} entr${entryCount === 1 ? "y" : "ies"} — no text content for automatic summary.`,
+    topics: [],
+    lastIndexedAt: new Date().toISOString(),
+    lastIndexedEntryCount: entryCount,
+    summaryNextRetryAt: undefined,
+  });
+};
+
 const processChat = async (
   chatId: string,
   fallbackTitle: string,
@@ -55,7 +71,15 @@ const processChat = async (
   if (!providerEntry) throw new Error("No provider configured");
 
   const transcript = await buildTranscript(chatId);
-  if (!transcript) return { memoryOps: 0 };
+  if (!transcript) {
+    // Chat has no text content (files/images only, or empty messages). Write a
+    // local fallback summary so the chat has a description and stops re-queueing.
+    // New user text later will grow entry count and trigger a real summary.
+    const entryCount = await chatRepo.getEntryCount(chatId);
+    await writeFallbackSummary(chatId, fallbackTitle, entryCount);
+    chatLog(`fallback summary written for "${fallbackTitle}" — ${entryCount} entries, no text`);
+    return { memoryOps: 0 };
+  }
 
   const memories = await memoryService.formatAll();
   const promptTemplate = await getBackgroundPrompt();
@@ -69,7 +93,7 @@ const processChat = async (
     messages: [
       { role: "user", content: [{ type: "text", text: `Conversation:\n${transcript}` }] },
     ],
-    maxOutputTokens: 800,
+    disableReasoning: true,
     signal,
   });
 
@@ -91,11 +115,12 @@ const processChat = async (
     topics: parsed.topics,
     lastIndexedAt: new Date().toISOString(),
     lastIndexedEntryCount: await chatRepo.getEntryCount(chatId),
+    summaryNextRetryAt: undefined,
   });
 
-  log(`indexed "${parsed.title}" — ${parsed.topics.length} topics, ${parsed.memoryOps.length} memory ops`);
-  if (parsed.description) log(`  description: ${parsed.description.slice(0, 120)}${parsed.description.length > 120 ? "..." : ""}`);
-  if (parsed.topics.length > 0) log(`  topics: ${parsed.topics.join(", ")}`);
+  chatLog(`indexed "${parsed.title}" — ${parsed.topics.length} topics, ${parsed.memoryOps.length} memory ops`);
+  if (parsed.description) chatLog(`  description: ${parsed.description.slice(0, 120)}${parsed.description.length > 120 ? "..." : ""}`);
+  if (parsed.topics.length > 0) chatLog(`  topics: ${parsed.topics.join(", ")}`);
 
   // Apply memory operations
   let memoryOpsApplied = 0;
@@ -108,12 +133,12 @@ const processChat = async (
       memoryOpsApplied = applied;
 
       for (const op of parsed.memoryOps) {
-        if (op.type === "add") log(`MEMORY_ADD: ${op.text} | ${op.reason}`);
-        else if (op.type === "replace") log(`MEMORY_REPLACE ${op.line}: ${op.text} | ${op.reason}`);
-        else log(`MEMORY_REMOVE ${op.line}: | ${op.reason}`);
+        if (op.type === "add") chatLog(`MEMORY_ADD: ${op.text} | ${op.reason}`);
+        else if (op.type === "replace") chatLog(`MEMORY_REPLACE ${op.line}: ${op.text} | ${op.reason}`);
+        else chatLog(`MEMORY_REMOVE ${op.line}: | ${op.reason}`);
       }
     }
-    if (skipped > 0) log(`${skipped} memory ops skipped (invalid line numbers)`);
+    if (skipped > 0) chatLog(`${skipped} memory ops skipped (invalid line numbers)`);
   }
 
   return { memoryOps: memoryOpsApplied };
@@ -121,10 +146,14 @@ const processChat = async (
 
 /**
  * Per-chat processing job — submitted from the refresh-metadata scheduler.
- * Keyed by chat id so submits dedupe while a chat is in-flight. Retries
- * with exponential backoff up to 5 failures before giving up (key released).
+ * Keyed by chat id so submits dedupe while a chat is in-flight.
+ *
+ * Retry semantics (driven by manualTrigger from the scheduler's ctx.trigger):
+ * - Manual (admin UI Run button): one-shot. Error is logged; user can click again.
+ * - Cron: 2 attempts with a short backoff between; after that, summaryNextRetryAt
+ *   is set to now + 6h so the chat leaves the dirty pool until the pause expires.
  */
-export const processChatJob = job<{ chatId: string; fallbackTitle: string }>({
+export const processChatJob = job<{ chatId: string; fallbackTitle: string; manualTrigger?: boolean }>({
   id: "process-chat",
   process: async ({ ctx }) => {
     const chatLogEntry: JobRunLog = {
@@ -150,10 +179,30 @@ export const processChatJob = job<{ chatId: string; fallbackTitle: string }>({
     }
   },
   after: async ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 5) {
-      const delayMs = ctx.expBackoff({ baseMs: 60_000, maxMs: 30 * 60_000 });
-      log(`process-chat retry scheduled for "${ctx.input.chatId}" in ${Math.round(delayMs / 1000)}s (attempt ${ctx.failureCount + 2})`);
+    if (!ctx.error) return;
+
+    // Manual trigger: one-shot. Do not reschedule, do not set a pause — the
+    // user sees the error in the log and can click Run again.
+    if (ctx.input.manualTrigger) {
+      chatLog(`manual-trigger error for "${ctx.input.chatId}" — not retrying`);
+      return;
+    }
+
+    // Cron path: 2 attempts, then 6h pause.
+    if (ctx.failureCount < 1) {
+      const delayMs = ctx.expBackoff({ baseMs: 60_000, maxMs: 60_000 });
+      chatLog(`retry scheduled for "${ctx.input.chatId}" in ${Math.round(delayMs / 1000)}s (attempt 2)`);
       ctx.reschedule({ delayMs });
+      return;
+    }
+    try {
+      await chatRepo.updateMeta(ctx.input.chatId, {
+        summaryNextRetryAt: new Date(Date.now() + 6 * 60 * 60_000).toISOString(),
+      });
+      chatLog(`giving up on "${ctx.input.chatId}" after 2 attempts — paused for 6h`);
+    } catch (pauseErr) {
+      const msg = pauseErr instanceof Error ? pauseErr.message : String(pauseErr);
+      chatLog(`pause-after-giveup failed for "${ctx.input.chatId}": ${msg}`);
     }
   },
 });
@@ -161,8 +210,9 @@ export const processChatJob = job<{ chatId: string; fallbackTitle: string }>({
 /**
  * Scheduler process — fans out one processChatJob per dirty chat.
  * Runs fast; actual work happens in each job with independent retry state.
+ * The per-chat job learns whether the trigger was manual via submit input.
  */
-export const refreshMetadataProcess = async (): Promise<{ submitted: number; summary: string }> => {
+export const refreshMetadataProcess = async (ctx: ScheduleCtx): Promise<{ submitted: number; summary: string }> => {
   const entry: JobRunLog = { jobId: "refresh-metadata", startedAt: new Date().toISOString(), status: "running" };
   await pushJobLog(entry);
 
@@ -191,18 +241,19 @@ export const refreshMetadataProcess = async (): Promise<{ submitted: number; sum
       return { submitted: 0, summary: entry.result };
     }
 
+    const manualTrigger = ctx.trigger === "manual";
     for (const meta of candidates) {
       await processChatJob.submit({
         key: `chat:${meta.id}`,
-        input: { chatId: meta.id, fallbackTitle: meta.title },
+        input: { chatId: meta.id, fallbackTitle: meta.title, manualTrigger },
       });
     }
 
     entry.finishedAt = new Date().toISOString();
     entry.status = "success";
-    entry.result = `submitted ${candidates.length} chat${candidates.length > 1 ? "s" : ""}`;
+    entry.result = `submitted ${candidates.length} chat${candidates.length > 1 ? "s" : ""}${manualTrigger ? " (manual)" : ""}`;
     await pushJobLog(entry);
-    log(`refresh-metadata — ${entry.result}`);
+    log(entry.result);
     return { submitted: candidates.length, summary: entry.result };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -210,7 +261,7 @@ export const refreshMetadataProcess = async (): Promise<{ submitted: number; sum
     entry.status = "error";
     entry.error = msg;
     await pushJobLog(entry);
-    log(`refresh-metadata failed: ${msg}`);
+    log(`failed: ${msg}`);
     throw err;
   }
 };

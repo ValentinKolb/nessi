@@ -1,8 +1,11 @@
+import type { ScheduleCtx } from "@valentinkolb/sync-browser";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
 import { memoryService } from "../../memory/index.js";
 import { localStorageJson } from "../../../shared/storage/local-storage.js";
 import { getConsolidationPrompt } from "./background-prompt.js";
-import { log, pushJobLog, type JobRunLog } from "../scheduler.js";
+import { createLog, pushJobLog, type JobRunLog } from "../scheduler.js";
+
+const log = createLog("consolidate-memory");
 
 const LAST_CONSOLIDATION_KEY = "nessi:last-consolidation";
 const CHATS_SINCE_KEY = "nessi:chats-since-consolidation";
@@ -64,7 +67,7 @@ const consolidateOnce = async (signal?: AbortSignal): Promise<{ summary: string 
     messages: [
       { role: "user", content: [{ type: "text", text: "Please consolidate the memories above." }] },
     ],
-    maxOutputTokens: 1500,
+    disableReasoning: true,
     signal,
   });
 
@@ -89,18 +92,18 @@ const consolidateOnce = async (signal?: AbortSignal): Promise<{ summary: string 
 };
 
 /**
- * Scheduler process — gated by shouldConsolidateAsync to only run when the
- * memory state warrants it. Throws on provider errors so `after` can retry
- * with exponential backoff.
+ * Scheduler process — gated by shouldConsolidateAsync on cron ticks so the
+ * provider is only called when memory state warrants it. Manual triggers
+ * (admin UI Run) bypass the gate and always consolidate.
  */
 export const consolidateMemoryProcess = async (
-  signal?: AbortSignal,
+  ctx: ScheduleCtx,
 ): Promise<{ consolidated: boolean; reason?: string; summary?: string }> => {
   const entry: JobRunLog = { jobId: "consolidate-memory", startedAt: new Date().toISOString(), status: "running" };
   await pushJobLog(entry);
 
   try {
-    if (!await shouldConsolidateAsync()) {
+    if (ctx.trigger !== "manual" && !await shouldConsolidateAsync()) {
       entry.finishedAt = new Date().toISOString();
       entry.status = "success";
       entry.result = "skipped (conditions not met)";
@@ -108,12 +111,12 @@ export const consolidateMemoryProcess = async (
       return { consolidated: false, reason: "conditions-not-met" };
     }
 
-    const { summary } = await consolidateOnce(signal);
+    const { summary } = await consolidateOnce(ctx.signal);
     entry.finishedAt = new Date().toISOString();
     entry.status = "success";
     entry.result = summary;
     await pushJobLog(entry);
-    log(`consolidate-memory done — ${summary}`);
+    log(`done — ${summary}${ctx.trigger === "manual" ? " (manual)" : ""}`);
     return { consolidated: true, summary };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -121,25 +124,8 @@ export const consolidateMemoryProcess = async (
     entry.status = "error";
     entry.error = msg;
     await pushJobLog(entry);
-    log(`consolidate-memory failed: ${msg}`);
+    log(`failed: ${msg}`);
     throw err;
   }
 };
 
-/** Run consolidation directly, bypassing the scheduler gate (manual trigger). */
-export const runConsolidation = async (): Promise<{ consolidated: boolean; reason?: string; summary?: string }> => {
-  const providerEntry = getActiveProviderEntry();
-  if (!providerEntry) return { consolidated: false, reason: "no provider" };
-
-  const memoryCount = (await memoryService.lines()).length;
-  if (memoryCount === 0) return { consolidated: false, reason: "no memories" };
-
-  try {
-    const { summary } = await consolidateOnce();
-    log(`consolidate-memory done (manual) — ${summary}`);
-    return { consolidated: true, summary };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { consolidated: false, reason: msg };
-  }
-};

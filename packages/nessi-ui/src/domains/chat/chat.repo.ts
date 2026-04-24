@@ -93,7 +93,7 @@ const ensureMeta = async (chatId: string, firstMessage: string) => {
 
 const updateMeta = async (
   chatId: string,
-  patch: Partial<Pick<ChatMeta, "title" | "titleSource" | "description" | "topics" | "lastIndexedAt" | "lastIndexedEntryCount">>,
+  patch: Partial<Pick<ChatMeta, "title" | "titleSource" | "description" | "topics" | "lastIndexedAt" | "lastIndexedEntryCount" | "summaryNextRetryAt">>,
 ) => {
   await db.init();
   const current = await db.instance.chats.get(chatId);
