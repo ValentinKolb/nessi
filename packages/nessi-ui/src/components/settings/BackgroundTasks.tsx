@@ -144,14 +144,32 @@ export const BackgroundLogsView = () => {
   onCleanup(() => { if (timer) clearInterval(timer); });
 
   return (
-    <div class="space-y-3">
-      <p class="settings-desc">
+    <div class="h-full flex flex-col gap-3">
+      <p class="settings-desc shrink-0">
         Persistent background scheduler logs from local storage.
       </p>
-      <div class="ui-panel p-3">
-        <pre class="font-mono whitespace-pre-wrap break-words text-[12px] leading-5 text-gh-fg-muted">
-          {textLogs().length > 0 ? textLogs().join("\n") : "No logs yet."}
-        </pre>
+      {/*
+        flex-col-reverse pins the scroll viewport to the newest entry without
+        any JS: scrollTop=0 maps to the visual bottom, so newly appended logs
+        stay in view while letting the user scroll up to read older lines.
+        Render order is reversed so the newest line is the first DOM child
+        (visually rendered at the bottom). flex-1 + min-h-0 lets the panel
+        grow to fill the remaining viewport height instead of capping at a
+        fixed max-height.
+      */}
+      <div class="ui-panel p-3 flex-1 min-h-0 overflow-y-auto flex flex-col-reverse">
+        <Show
+          when={textLogs().length > 0}
+          fallback={<span class="font-mono text-[12px] text-gh-fg-muted">No logs yet.</span>}
+        >
+          <For each={textLogs().slice().reverse()}>
+            {(line) => (
+              <div class="font-mono whitespace-pre-wrap break-words text-[12px] leading-5 text-gh-fg-muted">
+                {line}
+              </div>
+            )}
+          </For>
+        </Show>
       </div>
     </div>
   );
