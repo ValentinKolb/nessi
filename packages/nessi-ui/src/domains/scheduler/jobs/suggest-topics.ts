@@ -64,21 +64,24 @@ const describeEmptyResponse = (
 export const getSuggestions = (): string[] =>
   localStorageJson.read<string[]>(SUGGESTIONS_KEY, []);
 
+/**
+ * Build the recent-chats context block. We deliberately exclude the chat
+ * description here — descriptions contain file paths, tool outputs, and other
+ * chat-specific artefacts that tempt the model to suggest things that only
+ * make sense in the original chat ("continue analyzing rechnung.pdf"). Title
+ * and topics are abstract enough to inform suggestions without leaking
+ * non-portable context.
+ */
 const buildRecentChatsContext = async (): Promise<string> => {
   const metas = await chatRepo.listMetas();
   const recent = metas
-    .filter((m) => m.description || (m.topics && m.topics.length > 0))
+    .filter((m) => m.topics && m.topics.length > 0)
     .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
     .slice(0, MAX_RECENT_CHATS);
 
   if (recent.length === 0) return "No recent conversations.";
 
-  return recent.map((m) => {
-    const parts: string[] = [`- "${m.title}"`];
-    if (m.description) parts.push(`  ${m.description.slice(0, 200)}`);
-    if (m.topics && m.topics.length > 0) parts.push(`  Topics: ${m.topics.join(", ")}`);
-    return parts.join("\n");
-  }).join("\n");
+  return recent.map((m) => `- "${m.title}"\n  Topics: ${m.topics!.join(", ")}`).join("\n");
 };
 
 const shouldRun = (): boolean => {
