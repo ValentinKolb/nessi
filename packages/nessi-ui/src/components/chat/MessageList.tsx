@@ -3,6 +3,7 @@ import type { UIMessage, UIAssistantMessage } from "./types.js";
 import { isAssistantMessage } from "./guards.js";
 import { Message } from "./Message.js";
 import { PulseDots } from "../PulseDots.js";
+import { TopicSuggestions } from "./TopicSuggestions.js";
 
 const formatElapsed = (seconds: number) => {
   if (seconds < 60) return `${seconds}s`;
@@ -63,6 +64,7 @@ export const MessageList = (props: {
   onApproval?: (callId: string, action: "deny" | "allow" | "always") => void;
   onSurveySubmit?: (callId: string, answers: Record<string, string>) => void;
   onCompact?: () => void;
+  onSelectSuggestion?: (text: string) => void;
 }) => {
   let containerRef!: HTMLDivElement;
   let observer: MutationObserver | null = null;
@@ -119,9 +121,14 @@ export const MessageList = (props: {
       <Show
         when={props.messages.length > 0}
         fallback={
-          <div class="flex flex-col items-center justify-center h-full gap-1.5 select-none">
-            <img src="/logo.svg" alt="" class="h-7 w-7 opacity-20" />
-            <span class="text-[15px] text-gh-fg-subtle">What can I help with?</span>
+          <div class="flex flex-col items-center justify-center h-full gap-6 select-none px-4">
+            <div class="flex flex-col items-center gap-1.5">
+              <img src="/logo.svg" alt="" class="h-7 w-7 opacity-20" />
+              <span class="text-[15px] text-gh-fg-subtle">What can I help with?</span>
+            </div>
+            <Show when={props.onSelectSuggestion}>
+              {(onSelect) => <TopicSuggestions onSelect={onSelect()} />}
+            </Show>
           </div>
         }
       >

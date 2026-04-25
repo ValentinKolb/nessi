@@ -27,7 +27,6 @@ import { createProvider, getActiveProviderEntry } from "../../lib/provider.js";
 import { uiContentText, type UIUserContentPart } from "../../lib/chat-content.js";
 import { createProviderContextStore, loadPersistedEntries, persistentSessionStore, truncatePersistedEntries } from "../../lib/store.js";
 import { settingsRepo } from "../../domains/settings/index.js";
-import { memoryService } from "../../domains/memory/index.js";
 import { chatRepo } from "../../domains/chat/index.js";
 import { registerCommand } from "../../lib/slash-commands.js";
 import { createDefaultCompactFn } from "../../lib/compaction.js";
@@ -58,50 +57,6 @@ import { isNextcloudConfigured, type NextcloudRef } from "../../domains/nextclou
 import { hasGitHubToken, fetchIssueDetail, fetchPRDetail, formatIssueForPrompt, formatPRForPrompt, type GitHubRef } from "../../domains/github/index.js";
 import type { UIMessage as UIMsg } from "./types.js";
 
-const TopicSuggestions = (props: { messages: UIMsg[]; onSelect: (text: string) => void }) => {
-  const [topics, setTopics] = createSignal<string[]>([]);
-  const refreshTopics = async () => {
-    const memoryTopics = await memoryService.topicSuggestions();
-    const { getSuggestions } = await import("../../domains/scheduler/jobs/suggest-topics.js");
-    const aiTopics = getSuggestions();
-    // Merge: AI suggestions first, then memory-based, deduplicated
-    const seen = new Set<string>();
-    const merged: string[] = [];
-    for (const t of [...aiTopics, ...memoryTopics]) {
-      const key = t.toLowerCase().trim();
-      if (!seen.has(key)) { seen.add(key); merged.push(t); }
-    }
-    setTopics(merged.slice(0, 8));
-  };
-
-  createEffect(on(() => props.messages.length, (messageCount) => {
-    if (messageCount > 0) {
-      setTopics([]);
-      return;
-    }
-
-    void refreshTopics();
-  }, { defer: true }));
-
-  return (
-    <Show when={topics().length > 0}>
-      <div class="px-3 pb-1">
-        <div class="max-w-4xl mx-auto flex flex-wrap gap-1.5">
-          <For each={topics()}>
-            {(topic) => (
-              <button
-                class="text-[11px] text-gh-fg-muted hover:text-gh-fg px-2.5 py-1 rounded-lg bg-gh-overlay hover:bg-gh-muted transition-all truncate max-w-52"
-                onClick={() => { haptics.tap(); props.onSelect(topic); }}
-              >
-                {topic}
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
-    </Show>
-  );
-};
 
 import { isAssistantMessage, isUserMessage } from "./guards.js";
 
@@ -1411,6 +1366,7 @@ export const ChatView = (props: {
         onApproval={handleApproval}
         onSurveySubmit={handleSurveySubmit}
         onCompact={() => void handleCompactAndRetry()}
+        onSelectSuggestion={handleSend}
       />
       <Show when={!getActiveProviderEntry()}>
         <div class="px-3 pb-1">
@@ -1427,7 +1383,6 @@ export const ChatView = (props: {
         </div>
       </Show>
       <Show when={!terminalOpen()}>
-        <TopicSuggestions messages={state.messages} onSelect={handleSend} />
         <MessageInput
           onSend={handleSend}
           onInterrupt={handleInterrupt}
