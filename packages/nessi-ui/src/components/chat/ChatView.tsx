@@ -697,8 +697,11 @@ export const ChatView = (props: {
           }
 
           if (event.name === "survey") {
-            const produced = appendCompanionFromArgs(event.name, event.args, event.callId);
-            if (!produced) {
+            // Companion was likely created earlier by the tool_call event (same callId).
+            // appendCompanionFromArgs is idempotent and returns null on the second call,
+            // so check the indices map directly instead of the call's return value.
+            appendCompanionFromArgs(event.name, event.args, event.callId);
+            if (!companionBlockIndices.has(event.callId)) {
               activeLoop?.push({
                 type: "tool_result",
                 callId: event.callId,
