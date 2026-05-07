@@ -349,6 +349,11 @@ dialog::backdrop {
   width: 100%;
   border-collapse: collapse;
   background: transparent;
+  /* The 1px is a CSS hack: it gives the table an explicit height so that
+     `height: 100%` on td and .ui-cell below has something to resolve
+     against. The actual rendered height grows past 1px to fit content —
+     this only fixes the percentage propagation. */
+  height: 1px;
 }
 
 .ui-table th,
@@ -357,7 +362,16 @@ dialog::backdrop {
   background: transparent;
   vertical-align: top;
   text-align: left;
+  /* In CSS table layout, height: 100% on a td resolves against the row's
+     auto-computed height (= tallest cell content). Combined with
+     height: 100% on .ui-cell below, every tile fills the wrapped row
+     height — no JS, no fixed heights. */
+  height: 100%;
 }
+
+/* Reset @tailwindcss/typography's prose tbody/thead borders inside our table */
+.ui-table thead,
+.ui-table tbody tr { border: 0; }
 
 .ui-table th + th,
 .ui-table td + td { padding-left: 4px; }
@@ -367,12 +381,14 @@ dialog::backdrop {
 
 .ui-table .ui-cell {
   display: block;
+  height: 100%;
   background: var(--color-gh-surface);
   color: var(--color-gh-fg);
   padding: 0.7rem 0.9rem;
   border-radius: 0.25rem;
   font-size: 0.8125rem;
   line-height: 1.5;
+  box-sizing: border-box;
 }
 
 .ui-table thead th .ui-cell {
