@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineTool } from "nessi-core";
+import { defineTool } from "@valentinkolb/nessi";
 import { localStorageJson } from "../../shared/storage/local-storage.js";
 import { truncateText } from "../utils.js";
 

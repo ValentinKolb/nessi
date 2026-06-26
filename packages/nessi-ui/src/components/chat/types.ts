@@ -1,4 +1,4 @@
-import type { AssistantStopReason, Usage } from "nessi-ai";
+import type { AssistantStopReason, Usage } from "@valentinkolb/nessi/ai";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
 import type { PresentResult } from "./blocks/PresentContent.js";
 

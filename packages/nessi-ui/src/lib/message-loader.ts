@@ -1,10 +1,10 @@
 /**
- * Rebuild UI messages from persisted nessi-core StoreEntry format.
+ * Rebuild UI messages from persisted nessi StoreEntry format.
  * Pure function — no side effects, no signals, no component state.
  */
 
 import { humanId } from "human-id";
-import type { StoreEntry } from "nessi-core";
+import type { StoreEntry } from "@valentinkolb/nessi";
 import type { UIMessage, UIBlock, UIAssistantMessage } from "../components/chat/types.js";
 import { contentPartsToUIContent } from "./chat-content.js";
 import { fileMetasForMessage } from "./chat-files.js";

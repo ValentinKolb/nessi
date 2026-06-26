@@ -1,0 +1,42 @@
+{
+  "name": "@valentinkolb/nessi",
+  "version": "0.0.2",
+  "description": "Minimal agent loop and provider adapters for nessi.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./ai": "./src/ai/index.ts",
+    "./ai/providers/openai-compatible": "./src/ai/providers/openai-compatible.ts",
+    "./ai/providers/openai": "./src/ai/providers/openai.ts",
+    "./ai/providers/openrouter": "./src/ai/providers/openrouter.ts",
+    "./ai/providers/vllm": "./src/ai/providers/vllm.ts",
+    "./ai/providers/ollama": "./src/ai/providers/ollama.ts",
+    "./ai/providers/anthropic": "./src/ai/providers/anthropic.ts",
+    "./ai/providers/mistral": "./src/ai/providers/mistral.ts",
+    "./ai/providers/gemini": "./src/ai/providers/gemini.ts"
+  },
+  "scripts": {
+    "build:npm": "rm -rf dist && tsc --project tsconfig.json && node ../../scripts/prepare-nessi-publish.mjs",
+    "test": "bun test",
+    "test:ai": "bun test tests/ai",
+    "test:core": "bun test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "dependencies": {
+    "zod": "^4.3.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}

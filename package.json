@@ -12,10 +12,11 @@
   "scripts": {
     "dev": "bun run --filter nessi-ui dev",
     "build": "bun run --filter nessi-ui build",
-    "typecheck": "bun run --filter nessi-ai typecheck && bun run --filter nessi-core typecheck && bun run --filter nessi-ui typecheck",
-    "test": "bun run --filter nessi-ai test && bun run --filter nessi-core test",
-    "test:ai": "bun run --filter nessi-ai test",
-    "test:core": "bun run --filter nessi-core test",
+    "typecheck": "bun run --filter @valentinkolb/nessi typecheck && bun run --filter nessi-ui typecheck",
+    "test": "bun run --filter @valentinkolb/nessi test",
+    "test:ai": "bun run --filter @valentinkolb/nessi test:ai",
+    "test:core": "bun run --filter @valentinkolb/nessi test:core",
+    "build:nessi": "bun run --filter @valentinkolb/nessi build:npm",
     "dev:ui": "bun run --filter nessi-ui dev",
     "build:ui": "bun run --filter nessi-ui build",
     "preview:ui": "bun run --filter nessi-ui preview"

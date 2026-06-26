@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { defineTool } from "nessi-core";
-import type { Tool } from "nessi-core";
+import { defineTool } from "@valentinkolb/nessi";
+import type { Tool } from "@valentinkolb/nessi";
 import type { ChatFileService } from "../file-service.js";
 import { getTablePreview } from "../../skills/builtins/table/table-ops.js";
 

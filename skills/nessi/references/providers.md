@@ -11,7 +11,7 @@ for await (const event of provider.stream(request)) {}
 ## Hosted OpenAI
 
 ```ts
-import { openai } from "nessi-ai";
+import { openai } from "@valentinkolb/nessi/ai";
 
 const provider = openai("gpt-4.1-mini", {
   apiKey: process.env.OPENAI_API_KEY,
@@ -29,7 +29,7 @@ Useful options:
 ## OpenRouter
 
 ```ts
-import { openrouter } from "nessi-ai";
+import { openrouter } from "@valentinkolb/nessi/ai";
 
 const provider = openrouter("openai/gpt-4.1-mini", {
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -43,7 +43,7 @@ OpenRouter is a good default when the app needs model routing or easy model swap
 ## vLLM and custom OpenAI-compatible endpoints
 
 ```ts
-import { vllm, openAICompatible } from "nessi-ai";
+import { vllm, openAICompatible } from "@valentinkolb/nessi/ai";
 
 const localVllm = vllm("meta-llama/Llama-3.1-8B-Instruct", {
   baseURL: "http://localhost:8000/v1",
@@ -67,7 +67,7 @@ Use `openAICompatible` when a gateway follows Chat Completions semantics closely
 ## Ollama
 
 ```ts
-import { ollama } from "nessi-ai";
+import { ollama } from "@valentinkolb/nessi/ai";
 
 const provider = ollama("llama3.1", {
   baseURL: "http://localhost:11434",
@@ -80,7 +80,7 @@ Ollama is useful for local development and offline workflows. It streams NDJSON 
 ## Anthropic
 
 ```ts
-import { anthropic } from "nessi-ai";
+import { anthropic } from "@valentinkolb/nessi/ai";
 
 const provider = anthropic("claude-sonnet", {
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -93,7 +93,7 @@ Anthropic uses native content blocks for tool use. Consumers still receive norma
 ## Mistral
 
 ```ts
-import { mistral } from "nessi-ai";
+import { mistral } from "@valentinkolb/nessi/ai";
 
 const provider = mistral("mistral-small-latest", {
   apiKey: process.env.MISTRAL_API_KEY,
@@ -106,7 +106,7 @@ Mistral looks OpenAI-like but has enough tool-call differences to use its native
 ## Gemini
 
 ```ts
-import { gemini } from "nessi-ai";
+import { gemini } from "@valentinkolb/nessi/ai";
 
 const provider = gemini("gemini-2.0-flash", {
   apiKey: process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY,

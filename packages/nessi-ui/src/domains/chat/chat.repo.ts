@@ -1,4 +1,4 @@
-import type { Message, SessionStore } from "nessi-core";
+import type { Message, SessionStore } from "@valentinkolb/nessi";
 import { db } from "../../shared/db/db.js";
 import { dbEvents } from "../../shared/db/db-events.js";
 import { newId } from "../../lib/utils.js";

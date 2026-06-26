@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineTool } from "nessi-core";
+import { defineTool } from "@valentinkolb/nessi";
 
 export const cardToolDef = defineTool({
   name: "card",

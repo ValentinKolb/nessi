@@ -1,5 +1,5 @@
-import { truncateMiddle } from "nessi-core";
-import type { AssistantMessage, CompactFn, Message, Provider, StoreEntry, Usage } from "nessi-core";
+import { truncateMiddle } from "@valentinkolb/nessi";
+import type { AssistantMessage, CompactFn, Message, Provider, StoreEntry, Usage } from "@valentinkolb/nessi";
 import { contentPartsToText } from "./utils.js";
 
 const MAX_TOOL_CHARS = 300;

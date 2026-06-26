@@ -9,7 +9,7 @@ import {
   vllm,
   type Provider,
   type ProviderCapabilities,
-} from "nessi-ai";
+} from "@valentinkolb/nessi/ai";
 import { createSignal } from "solid-js";
 import { localStorageJson } from "../shared/storage/local-storage.js";
 import { newId } from "./utils.js";
@@ -320,7 +320,7 @@ const factories: Record<ProviderType, (providerEntry: ProviderEntry) => Provider
     }),
 };
 
-/** Build provider runtime adapter for nessi-core. */
+/** Build provider runtime adapter for nessi. */
 export const createProvider = (entry: ProviderEntry): Provider => factories[entry.type](entry);
 
 export const getProviderCapabilities = (entry: ProviderEntry): ProviderCapabilities =>

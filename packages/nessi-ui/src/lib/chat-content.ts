@@ -1,4 +1,4 @@
-import type { ContentPart } from "nessi-core";
+import type { ContentPart } from "@valentinkolb/nessi";
 
 export type UIUserContentPart =
   | { type: "text"; text: string }

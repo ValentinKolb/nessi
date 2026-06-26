@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineTool } from "nessi-core";
+import { defineTool } from "@valentinkolb/nessi";
 import { memoryService } from "../../domains/memory/index.js";
 
 export const memoryTool = defineTool({

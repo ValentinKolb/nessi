@@ -1,18 +1,34 @@
-# nessi-ai Quickstart
+# @valentinkolb/nessi Quickstart
 
-`nessi-ai` is a small provider adapter library. It gives applications a common `Provider` interface with:
+`@valentinkolb/nessi` exposes an agent loop at the package root and a provider adapter layer under `@valentinkolb/nessi/ai`.
+
+Use the root package when the app needs a managed agent loop with tools, storage, approvals, or compaction. Use the `/ai` subpath when the app only needs provider calls.
+
+The provider layer gives applications a common `Provider` interface with:
 
 - `complete(request)` for one-shot generation
 - `stream(request)` for streaming generation
 
-It does not run an agent loop, persist messages, or execute tools. Use `nessi-core` when those behaviors are required.
+The provider layer does not run an agent loop, persist messages, or execute tools.
 
 ## Install and import
 
-In this repo, `nessi-ai` is a workspace package. In a consuming project, install it however the package is published or linked for that project.
+In a consuming project, install the package once:
+
+```bash
+bun add @valentinkolb/nessi
+```
+
+Import providers from the `/ai` subpath:
 
 ```ts
-import { openrouter } from "nessi-ai";
+import { openrouter } from "@valentinkolb/nessi/ai";
+```
+
+Import agent-loop helpers from the package root:
+
+```ts
+import { nessi, defineTool, memoryStore } from "@valentinkolb/nessi";
 ```
 
 Provider constructors use this shape:
@@ -23,10 +39,41 @@ const provider = openrouter("openai/gpt-4.1-mini", {
 });
 ```
 
+## Agent loop with a tool
+
+```ts
+import { nessi, defineTool, memoryStore } from "@valentinkolb/nessi";
+import { openrouter } from "@valentinkolb/nessi/ai";
+import { z } from "zod";
+
+const searchDocs = defineTool({
+  name: "search_docs",
+  description: "Search internal documentation.",
+  inputSchema: z.object({ query: z.string() }),
+}).server(async ({ query }) => {
+  return { results: [`Result for ${query}`] };
+});
+
+const loop = nessi({
+  provider: openrouter("openai/gpt-4.1-mini", {
+    apiKey: process.env.OPENROUTER_API_KEY,
+  }),
+  systemPrompt: "Answer from the available tools when useful.",
+  input: "Find the docs for streaming events.",
+  store: memoryStore(),
+  tools: [searchDocs],
+});
+
+for await (const event of loop) {
+  if (event.type === "text") process.stdout.write(event.delta);
+  if (event.type === "error") throw new Error(event.error);
+}
+```
+
 ## One-shot completion
 
 ```ts
-import { openrouter } from "nessi-ai";
+import { openrouter } from "@valentinkolb/nessi/ai";
 
 const provider = openrouter("openai/gpt-4.1-mini", {
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -56,7 +103,7 @@ console.log(result.usage);
 ## Streaming text
 
 ```ts
-import { ollama } from "nessi-ai";
+import { ollama } from "@valentinkolb/nessi/ai";
 
 const provider = ollama("llama3.1", {
   baseURL: "http://localhost:11434",
@@ -87,7 +134,7 @@ for await (const event of provider.stream({ messages })) {
 ## Minimal provider switcher
 
 ```ts
-import { ollama, openrouter, type Provider } from "nessi-ai";
+import { ollama, openrouter, type Provider } from "@valentinkolb/nessi/ai";
 
 function createProvider(name: "local" | "hosted"): Provider {
   if (name === "local") {
@@ -104,5 +151,5 @@ function createProvider(name: "local" | "hosted"): Provider {
 
 - Do not call provider constructors with an object containing `model`; use `(model, options?)`.
 - Do not put hosted provider API keys in browser code.
-- Do not expect `nessi-ai` to execute tools; it emits normalized tool-call data.
+- Do not expect `@valentinkolb/nessi/ai` to execute tools; it emits normalized tool-call data.
 - Do not assume every provider supports every content type, tool behavior, or thinking event.

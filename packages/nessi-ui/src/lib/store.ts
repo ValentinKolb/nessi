@@ -1,4 +1,4 @@
-import type { ContentPart, Message, StoreEntry, SessionStore } from "nessi-core";
+import type { ContentPart, Message, StoreEntry, SessionStore } from "@valentinkolb/nessi";
 import { chatRepo, type ChatMeta, type PersistedStoreEntry } from "../domains/chat/index.js";
 
 export type { PersistedStoreEntry } from "../domains/chat/index.js";

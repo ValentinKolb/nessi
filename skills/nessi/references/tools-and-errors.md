@@ -1,8 +1,8 @@
 # Tools and Errors
 
-`nessi-ai` normalizes tool-call data, but it does not execute tools. The application owns the tool registry, validation, execution, and follow-up call.
+`@valentinkolb/nessi/ai` normalizes tool-call data, but it does not execute tools. The application owns the tool registry, validation, execution, and follow-up call.
 
-Use `nessi-core` if the user wants a ready-made agent loop with tool execution, approvals, store handling, and compaction.
+Use `@valentinkolb/nessi` if the user wants a ready-made agent loop with tool execution, approvals, store handling, and compaction.
 
 ## Define tool specs
 
@@ -28,7 +28,7 @@ const tools = [
 ## One-shot tool-call flow
 
 ```ts
-import type { Message } from "nessi-ai";
+import type { Message } from "@valentinkolb/nessi/ai";
 
 const messages: Message[] = [
   {
@@ -106,11 +106,11 @@ Recommended application behavior:
 1. Keep recent user-visible messages.
 2. Drop or summarize large tool results.
 3. Retry once after reducing context.
-4. If the app needs automatic compaction, use `nessi-core`.
+4. If the app needs automatic compaction, use `@valentinkolb/nessi`.
 
 ## Browser safety
 
-Do not call hosted providers directly from browser code with secret API keys. Put `nessi-ai` behind a backend route:
+Do not call hosted providers directly from browser code with secret API keys. Put `@valentinkolb/nessi/ai` behind a backend route:
 
 ```ts
 // server route

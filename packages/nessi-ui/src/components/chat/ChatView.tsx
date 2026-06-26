@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { humanId } from "human-id";
-import { compact, nessi } from "nessi-core";
+import { compact, nessi } from "@valentinkolb/nessi";
 import type {
   ContentPart,
   CompactEvent,
@@ -11,7 +11,7 @@ import type {
   SessionStore,
   StoreEntry,
   Tool,
-} from "nessi-core";
+} from "@valentinkolb/nessi";
 import type { Bash } from "just-bash";
 import type { ChatState, UIMessage, UIBlock, UIAssistantMessage, UICompactionBlock } from "./types.js";
 import { inlineToolHandlers } from "../../lib/inline-tool-blocks.js";
@@ -92,7 +92,7 @@ type Runtime = {
   bash: Bash;
 };
 
-/** Main chat runtime built directly on nessi-core loop (single main session, no subagents). */
+/** Main chat runtime built directly on nessi loop (single main session, no subagents). */
 import type { ProviderEntry } from "../../lib/provider.js";
 
 export const ChatView = (props: {
@@ -126,7 +126,7 @@ export const ChatView = (props: {
   const [nextcloudRefs, setNextcloudRefs] = createSignal<NextcloudRef[]>([]);
   const [githubBrowserOpen, setGitHubBrowserOpen] = createSignal(false);
   const [terminalOpen, setTerminalOpen] = createSignal(false);
-  const [lastUsage, setLastUsage] = createSignal<import("nessi-ai").Usage | undefined>(undefined);
+  const [lastUsage, setLastUsage] = createSignal<import("@valentinkolb/nessi/ai").Usage | undefined>(undefined);
   const [githubRefs, setGitHubRefs] = createSignal<GitHubRef[]>([]);
   const { isDragging: dropActive, handlers: dropHandlers } = dropzone.create({
     onDrop: (files) => void addPendingFiles(files),

@@ -3,20 +3,26 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Build a tiny Bun CLI that uses nessi-ai with OpenRouter to summarize text passed as a command-line argument. It should print streamed text as it arrives and read OPENROUTER_API_KEY from the environment.",
+      "prompt": "Build a tiny Bun CLI that uses @valentinkolb/nessi/ai with OpenRouter to summarize text passed as a command-line argument. It should print streamed text as it arrives and read OPENROUTER_API_KEY from the environment.",
       "expected_output": "A concise Bun/TypeScript CLI using openrouter(model, options), provider.stream(), text/error/usage event handling, and no browser-exposed secrets.",
       "files": []
     },
     {
       "id": 2,
-      "prompt": "I want a provider switcher for my Node service: use local Ollama in development and OpenAI in production. Show the nessi-ai code and keep the rest of the app independent from the provider choice.",
+      "prompt": "I want a provider switcher for my Node service: use local Ollama in development and OpenAI in production. Show the @valentinkolb/nessi/ai code and keep the rest of the app independent from the provider choice.",
       "expected_output": "A provider factory returning the shared Provider interface, using ollama(model, options) and openai(model, options), plus an example complete() call.",
       "files": []
     },
     {
       "id": 3,
-      "prompt": "Show me how to do tool calling with nessi-ai only. I have a search_docs function and want the model to request it, then send the tool result back for a final answer.",
-      "expected_output": "A consumer-side tool-call loop using tools inputSchema, complete(), assistant tool_call block extraction, tool_result messages, and a follow-up complete() call. It should mention that nessi-ai does not execute tools automatically.",
+      "prompt": "Show me how to do tool calling with @valentinkolb/nessi/ai only. I have a search_docs function and want the model to request it, then send the tool result back for a final answer.",
+      "expected_output": "A consumer-side tool-call loop using tools inputSchema, complete(), assistant tool_call block extraction, tool_result messages, and a follow-up complete() call. It should mention that @valentinkolb/nessi/ai does not execute tools automatically.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Build a tiny Bun agent with @valentinkolb/nessi that stores history in memory, uses OpenRouter, defines one server-side search_docs tool with zod, and streams text to stdout.",
+      "expected_output": "A concise agent-loop example importing nessi, defineTool, and memoryStore from @valentinkolb/nessi, importing openrouter from @valentinkolb/nessi/ai, defining a zod-backed server tool, passing store: memoryStore() and tools to nessi(), and iterating loop events for text/error handling.",
       "files": []
     }
   ]

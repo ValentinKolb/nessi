@@ -6,34 +6,24 @@
 
 Minimal agent stack for provider adapters, an event-driven loop, and a browser UI.
 
-The monorepo is intentionally split into three focused packages:
+The monorepo is intentionally split into two focused packages:
 
-- `nessi-ai` for provider adapters
-- `nessi-core` for the loop, tools, and stores
+- `@valentinkolb/nessi` for the published agent loop and provider API
 - `nessi-ui` for the browser client
 
 ## Packages
 
-### `nessi-ai`
+### `@valentinkolb/nessi`
 
-Unified provider layer with `complete()` and `stream()`.
+Agent loop at the package root, provider layer under `/ai`.
 
 ```ts
-import { openrouter } from "nessi-ai";
+import { nessi, memoryStore } from "@valentinkolb/nessi";
+import { openrouter } from "@valentinkolb/nessi/ai";
 
-const provider = openrouter({
-  model: "openai/gpt-4.1-mini",
-  baseURL: "https://openrouter.ai/api/v1",
+const provider = openrouter("openai/gpt-4.1-mini", {
   apiKey: process.env.OPENROUTER_API_KEY,
 });
-```
-
-### `nessi-core`
-
-Minimal event-driven agent loop.
-
-```ts
-import { nessi, memoryStore } from "nessi-core";
 
 const loop = nessi({
   provider,
@@ -45,7 +35,7 @@ const loop = nessi({
 
 ### `nessi-ui`
 
-Browser-first reference client built on `nessi-core`.
+Browser-first reference client built on `@valentinkolb/nessi`.
 
 ```bash
 bun install
@@ -73,8 +63,7 @@ bun run build
 
 ```txt
 packages/
-  nessi-ai/    Provider adapters and provider-facing types
-  nessi-core/  Agent loop, tools, stores, compaction
+  nessi/       Published package: agent loop plus /ai provider API
   nessi-ui/    Browser UI, settings, local persistence, Docker setup
 ```
 
@@ -88,6 +77,6 @@ bunx skills add https://github.com/ValentinKolb/nessi
 
 ## Notes
 
-- `nessi-ai` and `nessi-core` are the reusable libraries.
+- `@valentinkolb/nessi` is the reusable library package.
 - `nessi-ui` is the reference application.
 - The UI Docker build lives at [`packages/nessi-ui/Dockerfile`](./packages/nessi-ui/Dockerfile).

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineTool } from "nessi-core";
+import { defineTool } from "@valentinkolb/nessi";
 
 export const surveyToolDef = defineTool({
   name: "survey",
@@ -65,5 +65,5 @@ export const parseSurveyQuestions = (raw: string): Array<{ question: string; opt
   return questions;
 };
 
-/** Client tool — nessi-core emits an action_request, ChatView renders the survey UI and pushes the result back. */
+/** Client tool — nessi emits an action_request, ChatView renders the survey UI and pushes the result back. */
 export const surveyTool = surveyToolDef.client(() => ({ result: "" }));

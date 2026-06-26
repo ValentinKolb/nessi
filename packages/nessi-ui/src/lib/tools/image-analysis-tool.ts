@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { defineTool } from "nessi-core";
-import type { Tool, Provider } from "nessi-core";
-import type { ContentPart } from "nessi-ai";
+import { defineTool } from "@valentinkolb/nessi";
+import type { Tool, Provider } from "@valentinkolb/nessi";
+import type { ContentPart } from "@valentinkolb/nessi/ai";
 import type { ChatFileService } from "../file-service.js";
 
 import imageAnalysisPromptContent from "../../assets/prompts/image-analysis-prompt.mustache?raw";

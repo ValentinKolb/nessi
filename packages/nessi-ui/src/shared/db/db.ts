@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { Message } from "nessi-core";
+import type { Message } from "@valentinkolb/nessi";
 
 export type DbPrompt = {
   id: string;

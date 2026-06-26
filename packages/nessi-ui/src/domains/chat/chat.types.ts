@@ -1,4 +1,4 @@
-import type { StoreEntry } from "nessi-core";
+import type { StoreEntry } from "@valentinkolb/nessi";
 
 export type ChatMeta = {
   id: string;

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { defineTool } from "nessi-core";
-import type { Tool } from "nessi-core";
+import { defineTool } from "@valentinkolb/nessi";
+import type { Tool } from "@valentinkolb/nessi";
 import { Bash, defineCommand } from "just-bash";
 import type { IFileSystem } from "just-bash";
 import type { ExecResult, Command, InitialFiles } from "just-bash";
@@ -413,7 +413,7 @@ export const createBashWithSkills = (
   return bash;
 };
 
-/** Create the nessi-core tool wrapper for one bash runtime. */
+/** Create the nessi tool wrapper for one bash runtime. */
 const createBashToolWithHook = (
   bash: Bash,
   helpers: CommandHelpers,
@@ -435,7 +435,7 @@ export const createMainBashRuntime = (options?: {
   initialFiles?: InitialFiles;
   afterExec?: (bash: Bash) => Promise<void> | void;
   fileService?: ChatFileService;
-  chatProvider?: import("nessi-core").Provider | null;
+  chatProvider?: import("@valentinkolb/nessi").Provider | null;
 }) => {
   const helpers = createCommandHelpers();
   if (options?.fileService) {

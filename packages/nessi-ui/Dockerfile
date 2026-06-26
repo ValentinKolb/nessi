@@ -4,16 +4,14 @@ FROM oven/bun:1 AS deps
 WORKDIR /app
 
 COPY package.json bun.lock tsconfig.json ./
-COPY packages/nessi-ai/package.json packages/nessi-ai/package.json
-COPY packages/nessi-core/package.json packages/nessi-core/package.json
+COPY packages/nessi/package.json packages/nessi/package.json
 COPY packages/nessi-ui/package.json packages/nessi-ui/package.json
 
 RUN bun install --frozen-lockfile
 
 FROM deps AS build
 
-COPY packages/nessi-ai packages/nessi-ai
-COPY packages/nessi-core packages/nessi-core
+COPY packages/nessi packages/nessi
 COPY packages/nessi-ui packages/nessi-ui
 
 RUN bun run --filter nessi-ui build

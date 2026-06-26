@@ -1,5 +1,5 @@
 import { job, type ScheduleCtx } from "@valentinkolb/sync-browser";
-import type { StoreEntry } from "nessi-core";
+import type { StoreEntry } from "@valentinkolb/nessi";
 import { chatRepo } from "../../chat/index.js";
 import { contentPartsToText } from "../../../lib/utils.js";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
