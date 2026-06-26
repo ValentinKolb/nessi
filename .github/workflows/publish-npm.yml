@@ -41,7 +41,15 @@ jobs:
         run: npm install -g npm@11.5.1
 
       - name: Set version from tag
-        run: cd packages/nessi && npm version ${GITHUB_REF#refs/tags/nessi-v} --no-git-tag-version --allow-same-version
+        run: |
+          VERSION="${GITHUB_REF_NAME#nessi-v}"
+          VERSION="$VERSION" node -e '
+            const fs = require("node:fs");
+            const path = "packages/nessi/package.json";
+            const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
+          '
 
       - name: Build npm package
         run: bun run build:nessi
