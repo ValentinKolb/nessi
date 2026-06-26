@@ -1,0 +1,23 @@
+{
+  "skill_name": "nessi",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Build a tiny Bun CLI that uses nessi-ai with OpenRouter to summarize text passed as a command-line argument. It should print streamed text as it arrives and read OPENROUTER_API_KEY from the environment.",
+      "expected_output": "A concise Bun/TypeScript CLI using openrouter(model, options), provider.stream(), text/error/usage event handling, and no browser-exposed secrets.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I want a provider switcher for my Node service: use local Ollama in development and OpenAI in production. Show the nessi-ai code and keep the rest of the app independent from the provider choice.",
+      "expected_output": "A provider factory returning the shared Provider interface, using ollama(model, options) and openai(model, options), plus an example complete() call.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Show me how to do tool calling with nessi-ai only. I have a search_docs function and want the model to request it, then send the tool result back for a final answer.",
+      "expected_output": "A consumer-side tool-call loop using tools inputSchema, complete(), assistant tool_call block extraction, tool_result messages, and a follow-up complete() call. It should mention that nessi-ai does not execute tools automatically.",
+      "files": []
+    }
+  ]
+}
