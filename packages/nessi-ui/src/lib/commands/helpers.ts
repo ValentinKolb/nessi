@@ -1,5 +1,5 @@
 import { exportPdfText, mergePdfs, splitPdf } from "../../skills/builtins/pdf/pdf-ops.js";
-import { qr } from "@valentinkolb/stdlib";
+import { qr } from "@valentinkolb/stdlib/qr";
 type QrOptions = { on?: string; off?: string };
 import { barChart, lineChart, pieChart, scatterChart } from "../../skills/builtins/chart/chart.js";
 import type { BarChartData, LineChartData, PieChartData, ScatterChartData } from "../../skills/builtins/chart/chart.js";

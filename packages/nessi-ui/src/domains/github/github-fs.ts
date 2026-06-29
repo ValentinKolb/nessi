@@ -7,7 +7,7 @@
  */
 
 import type { IFileSystem, FsStat } from "just-bash";
-import { fromBase64, createCache } from "@valentinkolb/stdlib";
+import { fromBase64Strict, createCache } from "@valentinkolb/stdlib";
 import { githubApi } from "./github.js";
 
 /* ------------------------------------------------------------------ */
@@ -88,7 +88,7 @@ export const createGitHubFs = (): IFileSystem => {
     const data = (await githubApi.fetch(contentsUrl(p))) as { content?: string; encoding?: string };
     if (Array.isArray(data)) throw new Error(`EISDIR: illegal operation on a directory, read '${p.repoPath}'`);
     if (data.encoding === "base64" && data.content) {
-      const bytes = fromBase64(data.content.replace(/\s/g, ""));
+      const bytes = fromBase64Strict(data.content.replace(/\s/g, ""));
       return { content: new TextDecoder().decode(bytes), bytes };
     }
     throw new Error(`Cannot decode file: ${p.repoPath}`);

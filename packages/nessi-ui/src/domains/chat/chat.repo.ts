@@ -1,4 +1,4 @@
-import type { Message, SessionStore } from "@valentinkolb/nessi";
+import type { DoneReason, LoopAggregate, Message, SessionStore } from "@valentinkolb/nessi";
 import { db } from "../../shared/db/db.js";
 import { dbEvents } from "../../shared/db/db-events.js";
 import { newId } from "../../lib/utils.js";
@@ -14,6 +14,8 @@ const loadEntries = async (chatId: string) => {
       kind: entry.kind,
       message: entry.message,
       createdAt: entry.createdAt,
+      loopAggregate: entry.loopAggregate,
+      loopDoneReason: entry.loopDoneReason,
     }))
     .sort((a, b) => {
       if (a.seq !== b.seq) return a.seq - b.seq;
@@ -37,6 +39,8 @@ const saveEntries = async (chatId: string, entries: PersistedStoreEntry[]) => {
         kind: entry.kind,
         message: entry.message,
         createdAt: entry.createdAt,
+        loopAggregate: entry.loopAggregate,
+        loopDoneReason: entry.loopDoneReason,
       })));
     }
 
@@ -56,6 +60,27 @@ const saveEntries = async (chatId: string, entries: PersistedStoreEntry[]) => {
 const truncateEntries = async (chatId: string, beforeSeq: number) => {
   const entries = (await loadEntries(chatId)).filter((entry) => entry.seq < beforeSeq);
   await saveEntries(chatId, entries);
+};
+
+const saveEntryLoopAggregate = async (
+  chatId: string,
+  seq: number,
+  loopAggregate: LoopAggregate,
+  loopDoneReason: DoneReason,
+) => {
+  await db.init();
+  const id = `${chatId}:${seq}:message`;
+  const entry = await db.instance.chatEntries.get(id);
+  if (!entry || entry.kind !== "message") return;
+
+  await db.instance.chatEntries.put({
+    ...entry,
+    loopAggregate,
+    loopDoneReason,
+  });
+
+  dbEvents.emit({ scope: "chats", id: chatId });
+  dbEvents.emit({ scope: `chat:${chatId}`, id: chatId });
 };
 
 const listMetas = async () => {
@@ -184,7 +209,14 @@ const createStore = (chatId: string): SessionStore => {
       const entries = await loadEntries(chatId);
       const seq = opts?.seq ?? nextSeq++;
       const kind = opts?.kind ?? "message";
-      entries.push({ seq, kind, message, createdAt: new Date().toISOString() });
+      entries.push({
+        seq,
+        kind,
+        message,
+        createdAt: new Date().toISOString(),
+        loopAggregate: undefined,
+        loopDoneReason: undefined,
+      });
       entries.sort((a, b) => {
         if (a.seq !== b.seq) return a.seq - b.seq;
         if (a.kind === "summary" && b.kind === "message") return 1;
@@ -201,6 +233,7 @@ export const chatRepo = {
   loadEntries,
   saveEntries,
   truncateEntries,
+  saveEntryLoopAggregate,
   listMetas,
   getMeta,
   ensureMeta,

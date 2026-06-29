@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { Message } from "@valentinkolb/nessi";
+import type { DoneReason, LoopAggregate, Message } from "@valentinkolb/nessi";
 
 export type DbPrompt = {
   id: string;
@@ -49,6 +49,8 @@ export type DbChatEntry = {
   kind: "message" | "summary";
   message: Message;
   createdAt?: string;
+  loopAggregate?: LoopAggregate;
+  loopDoneReason?: DoneReason;
 };
 
 export type DbChatFileMeta = {

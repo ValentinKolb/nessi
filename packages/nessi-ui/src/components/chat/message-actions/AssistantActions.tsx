@@ -55,7 +55,14 @@ export const AssistantActions = (props: { message: UIAssistantMessage }) => {
   const reportedOutputTokens = createMemo(() => reportedStat(props.message.meta?.usage?.output));
   const reportedTotalTokens = createMemo(() => reportedStat(props.message.meta?.usage?.total));
   const reportedCredits = createMemo(() => reportedStat(props.message.meta?.usage?.creditsUsed));
-  const toolCalls = createMemo(() => props.message.blocks.filter((block) => block.type === "tool_call").length);
+  const loopAggregate = createMemo(() => props.message.meta?.loopAggregate);
+  const toolCalls = createMemo(() =>
+    loopAggregate()?.toolCallCount ?? props.message.blocks.filter((block) => block.type === "tool_call").length,
+  );
+  const toolErrors = createMemo(() =>
+    loopAggregate()?.toolErrorCount ?? props.message.blocks.filter((block) => block.type === "tool_call" && block.isError).length,
+  );
+  const assistantTurns = createMemo(() => loopAggregate()?.assistantMessageCount ?? 1);
   const thinkingBlocks = createMemo(() => props.message.blocks.filter((block) => block.type === "thinking").length);
   const speed = createMemo(() => {
     const output = props.message.meta?.usage?.output || estimatedOutputTokens() || 0;
@@ -108,7 +115,7 @@ export const AssistantActions = (props: { message: UIAssistantMessage }) => {
               </div>
               <div class="ui-metric">
                 <p class="ui-metric-label">Finish</p>
-                <p class="ui-metric-value">{props.message.meta?.stopReason ?? "n/a"}</p>
+                <p class="ui-metric-value">{props.message.meta?.doneReason ?? props.message.meta?.stopReason ?? "n/a"}</p>
               </div>
               <div class="ui-metric">
                 <p class="ui-metric-label">Size</p>
@@ -121,7 +128,9 @@ export const AssistantActions = (props: { message: UIAssistantMessage }) => {
               </div>
               <div class="ui-metric">
                 <p class="ui-metric-label">Structure</p>
-                <p class="ui-metric-value">{toolCalls()} tools · {thinkingBlocks()} thinking</p>
+                <p class="ui-metric-value">
+                  {assistantTurns()} turns · {toolCalls()} tools · {toolErrors()} errors · {thinkingBlocks()} thinking
+                </p>
               </div>
               <div class="ui-metric">
                 <p class="ui-metric-label">Timing</p>

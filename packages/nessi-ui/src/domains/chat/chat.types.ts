@@ -1,4 +1,4 @@
-import type { StoreEntry } from "@valentinkolb/nessi";
+import type { DoneReason, LoopAggregate, StoreEntry } from "@valentinkolb/nessi";
 
 export type ChatMeta = {
   id: string;
@@ -18,4 +18,8 @@ export type ChatMeta = {
   summaryNextRetryAt?: string;
 };
 
-export type PersistedStoreEntry = StoreEntry & { createdAt?: string };
+export type PersistedStoreEntry = StoreEntry & {
+  createdAt?: string;
+  loopAggregate?: LoopAggregate;
+  loopDoneReason?: DoneReason;
+};

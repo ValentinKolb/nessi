@@ -7,6 +7,7 @@ import type {
   NessiLoop,
   OutboundEvent,
   InboundEvent,
+  DoneReason,
   Message,
   UserMessage,
   AssistantMessage,
@@ -17,7 +18,8 @@ import type {
   Tool,
   ToolContext,
   ProviderEvent,
-  StoreEntry,
+  LoopToolCallAggregate,
+  LoopTurnAggregate,
 } from "./types.js";
 import { toolToSpec } from "./tools.js";
 import { zeroUsage, toErrorMessage, estimateTokens, truncateToolResults } from "./utils.js";
@@ -117,6 +119,25 @@ const formatToolValidationError = (tool: Tool, args: unknown, error: { issues: u
   ].join("\n");
 }
 
+const cloneUsage = (usage: Usage | undefined): Usage | undefined =>
+  usage ? { ...usage } : undefined;
+
+const addUsage = (left: Usage | undefined, right: Usage | undefined): Usage | undefined => {
+  if (!right) return cloneUsage(left);
+  const next: Usage = {
+    input: (left?.input ?? 0) + right.input,
+    output: (left?.output ?? 0) + right.output,
+    total: (left?.total ?? 0) + right.total,
+  };
+  if (left?.cacheRead !== undefined || right.cacheRead !== undefined) {
+    next.cacheRead = (left?.cacheRead ?? 0) + (right.cacheRead ?? 0);
+  }
+  if (left?.creditsUsed !== undefined || right.creditsUsed !== undefined) {
+    next.creditsUsed = (left?.creditsUsed ?? 0) + (right.creditsUsed ?? 0);
+  }
+  return next;
+}
+
 // ----------------------------------------------------------------------------
 // nessi()
 // ----------------------------------------------------------------------------
@@ -145,6 +166,51 @@ export const nessi = (options: NessiOptions): NessiLoop => {
   const pendingInjections: OutboundEvent[] = [];
   let interrupted = false;
   let lastUsage: Usage = zeroUsage();
+  const loopTurns: LoopTurnAggregate[] = [];
+  let aggregateUsage: Usage | undefined;
+
+  const snapshotAggregate = () => {
+    const turns = loopTurns.map((loopTurn) => ({
+      ...loopTurn,
+      usage: cloneUsage(loopTurn.usage),
+      toolCalls: loopTurn.toolCalls.map((toolCall) => ({ ...toolCall })),
+    }));
+    const toolCallCount = turns.reduce((count, turn) => count + turn.toolCalls.length, 0);
+    const toolErrorCount = turns.reduce(
+      (count, turn) => count + turn.toolCalls.filter((toolCall) => toolCall.isError).length,
+      0,
+    );
+
+    return {
+      turns,
+      usage: cloneUsage(aggregateUsage),
+      toolCallCount,
+      toolErrorCount,
+      assistantMessageCount: turns.length,
+    };
+  };
+
+  const doneEvent = (reason: DoneReason): Extract<OutboundEvent, { type: "done" }> => ({
+    type: "done",
+    agentId,
+    reason,
+    aggregate: snapshotAggregate(),
+  });
+
+  const recordAssistantTurn = (
+    message: AssistantMessage,
+    usage: Usage | undefined,
+    toolCalls: LoopToolCallAggregate[],
+  ) => {
+    const turn: LoopTurnAggregate = {
+      message,
+      usage: cloneUsage(usage),
+      stopReason: message.stopReason,
+      toolCalls,
+    };
+    loopTurns.push(turn);
+    aggregateUsage = addUsage(aggregateUsage, usage);
+  };
 
   // Pull the inbound event for a specific callId/type, buffering unrelated events.
   const pullMatching = async <T extends InboundEvent>(match: (event: InboundEvent) => event is T): Promise<T> => {
@@ -195,7 +261,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
 
       while (turn < maxTurns) {
         if (signal.aborted) {
-          yield { type: "done", agentId, reason: "aborted" };
+          yield doneEvent("aborted");
           return;
         }
 
@@ -203,7 +269,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         if (creditStore) {
           const remaining = await creditStore.remaining();
           if (remaining <= 0) {
-            yield { type: "done", agentId, reason: "no_credits" };
+            yield doneEvent("no_credits");
             return;
           }
         }
@@ -265,6 +331,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       let currentText = "";
       let currentThinking = "";
       let turnUsage: Usage = zeroUsage();
+      let turnUsageReported = false;
       let stopReason: AssistantMessage["stopReason"] = "stop";
       const toolCalls: ToolCallBlock[] = [];
       const toolArgBuffers = new Map<string, string>();
@@ -329,6 +396,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
 
             case "usage":
               turnUsage = event.usage;
+              turnUsageReported = true;
               stopReason = event.finishReason ?? stopReason;
               break;
 
@@ -347,13 +415,18 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           const msg = makeInterruptedMessage();
           if (msg.content.length > 0) {
             await store.append(msg);
+            recordAssistantTurn(msg, turnUsageReported ? turnUsage : undefined, toolCalls.map((toolCall) => ({
+              callId: toolCall.id,
+              name: toolCall.name,
+              args: toolCall.args,
+            })));
             yield { type: "turn_end", agentId, message: msg };
           }
-          yield { type: "done", agentId, reason: "aborted" };
+          yield doneEvent("aborted");
           return;
         }
         yield { type: "error", agentId, error: toErrorMessage(err), retryable: false };
-        yield { type: "done", agentId, reason: "error" };
+        yield doneEvent("error");
         return;
       }
 
@@ -387,7 +460,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           contextOverflow: true,
           overflowRatio: overflowRatio ?? computeFillRatio(messages),
         };
-        yield { type: "done", agentId, reason: "context_overflow" };
+        yield doneEvent("context_overflow");
         return;
       }
 
@@ -399,7 +472,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           retryable: providerFailure.retryable,
           contextOverflow: providerFailure.contextOverflow,
         };
-        yield { type: "done", agentId, reason: "error" };
+        yield doneEvent("error");
         return;
       }
 
@@ -407,9 +480,14 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         const msg = makeInterruptedMessage();
         if (msg.content.length > 0) {
           await store.append(msg);
+          recordAssistantTurn(msg, turnUsageReported ? turnUsage : undefined, toolCalls.map((toolCall) => ({
+            callId: toolCall.id,
+            name: toolCall.name,
+            args: toolCall.args,
+          })));
           yield { type: "turn_end", agentId, message: msg };
         }
-        yield { type: "done", agentId, reason: "aborted" };
+        yield doneEvent("aborted");
         return;
       }
 
@@ -431,6 +509,14 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       await store.append(assistantMessage);
       lastUsage = turnUsage;
 
+      const aggregateToolCalls: LoopToolCallAggregate[] = toolCalls.map((toolCall) => ({
+        callId: toolCall.id,
+        name: toolCall.name,
+        args: toolCall.args,
+      }));
+      // Record immediately after persistence; tool execution patches results/errors into this same array.
+      recordAssistantTurn(assistantMessage, turnUsageReported ? turnUsage : undefined, aggregateToolCalls);
+
       // Deduct credits
       if (creditStore && turnUsage.creditsUsed && turnUsage.creditsUsed > 0) {
         await creditStore.deduct(turnUsage.creditsUsed);
@@ -439,22 +525,30 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       // No tool calls — turn is done
       if (toolCalls.length === 0) {
         yield { type: "turn_end", agentId, message: assistantMessage };
-        yield { type: "done", agentId, reason: "stop" };
+        yield doneEvent("stop");
         return;
       }
+
+      const aggregateToolCallMap = new Map(aggregateToolCalls.map((toolCall) => [toolCall.callId, toolCall]));
+      const updateAggregateToolCall = (callId: string, patch: Partial<LoopToolCallAggregate>) => {
+        const aggregateToolCall = aggregateToolCallMap.get(callId);
+        if (aggregateToolCall) Object.assign(aggregateToolCall, patch);
+      };
 
       // Execute tool calls
       for (const tc of toolCalls) {
         const tool = toolMap.get(tc.name);
         if (!tool) {
           // Unknown tool — report error to LLM
-          await appendToolResult(tc.id, tc.name, `Unknown tool: ${tc.name}`, true);
+          const errorMsg = `Unknown tool: ${tc.name}`;
+          await appendToolResult(tc.id, tc.name, errorMsg, true);
+          updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
           yield {
             type: "tool_end",
             agentId,
             callId: tc.id,
             name: tc.name,
-            result: `Unknown tool: ${tc.name}`,
+            result: errorMsg,
             isError: true,
           };
           continue;
@@ -465,6 +559,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         if (!inputResult.success) {
           const errorMsg = formatToolValidationError(tool, tc.args, inputResult.error);
           await appendToolResult(tc.id, tc.name, errorMsg, true);
+          updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
           yield {
             type: "tool_end",
             agentId,
@@ -477,6 +572,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         }
 
         const validatedInput = inputResult.data;
+        updateAggregateToolCall(tc.id, { args: validatedInput });
 
         // Emit tool_call with validated args
         yield { type: "tool_call", agentId, callId: tc.id, name: tc.name, args: validatedInput };
@@ -496,6 +592,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
               event.type === "tool_result" && event.callId === tc.id,
           );
           await appendToolResult(tc.id, tc.name, response.result);
+          updateAggregateToolCall(tc.id, { result: response.result });
           yield { type: "tool_end", agentId, callId: tc.id, name: tc.name, result: response.result };
           continue;
         }
@@ -516,6 +613,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           );
           if (!response.approved) {
             await appendToolResult(tc.id, tc.name, "User denied this action", true);
+            updateAggregateToolCall(tc.id, { result: "User denied this action", isError: true });
             yield {
               type: "tool_end",
               agentId,
@@ -626,16 +724,19 @@ export const nessi = (options: NessiOptions): NessiLoop => {
             if (!outputResult.success) {
               const errorMsg = `Output validation error: ${outputResult.error.message}`;
               await appendToolResult(tc.id, tc.name, errorMsg, true);
+              updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
               yield { type: "tool_end", agentId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
               continue;
             }
           }
 
           await appendToolResult(tc.id, tc.name, result);
+          updateAggregateToolCall(tc.id, { result });
           yield { type: "tool_end", agentId, callId: tc.id, name: tc.name, result };
         } catch (err) {
           const errorMsg = toErrorMessage(err);
           await appendToolResult(tc.id, tc.name, errorMsg, true);
+          updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
           yield { type: "tool_end", agentId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
         }
       }
@@ -647,14 +748,14 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     }
 
     // Max turns reached
-    yield { type: "done", agentId, reason: "max_turns" };
+    yield doneEvent("max_turns");
     } catch (err) {
       if (signal.aborted) {
-        yield { type: "done", agentId, reason: "aborted" };
+        yield doneEvent("aborted");
         return;
       }
       yield { type: "error", agentId, error: toErrorMessage(err), retryable: false };
-      yield { type: "done", agentId, reason: "error" };
+      yield doneEvent("error");
       return;
     }
   }

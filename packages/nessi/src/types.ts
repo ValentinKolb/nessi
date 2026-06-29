@@ -65,13 +65,36 @@ export type OutboundEvent =
   | { type: "compaction_start"; agentId: string }
   | { type: "compaction_end"; agentId: string }
   | { type: "interrupted"; agentId: string }
-  | { type: "done"; agentId: string; reason: DoneReason };
+  | { type: "done"; agentId: string; reason: DoneReason; aggregate?: LoopAggregate };
 
 export type InboundEvent =
   | { type: "approval_response"; callId: string; approved: boolean }
   | { type: "tool_result"; callId: string; result: unknown };
 
 export type DoneReason = "stop" | "no_credits" | "max_turns" | "context_overflow" | "error" | "aborted";
+
+export type LoopToolCallAggregate = {
+  callId: string;
+  name: string;
+  args: unknown;
+  result?: unknown;
+  isError?: boolean;
+};
+
+export type LoopTurnAggregate = {
+  message: AssistantMessage;
+  usage?: Usage;
+  stopReason?: AssistantMessage["stopReason"];
+  toolCalls: LoopToolCallAggregate[];
+};
+
+export type LoopAggregate = {
+  turns: LoopTurnAggregate[];
+  usage?: Usage;
+  toolCallCount: number;
+  toolErrorCount: number;
+  assistantMessageCount: number;
+};
 
 // ----------------------------------------------------------------------------
 // 3. Tools

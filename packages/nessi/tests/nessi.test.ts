@@ -95,10 +95,18 @@ describe("nessi core loop", () => {
       }),
     );
 
-    expect(events).toEqual([
-      { type: "error", agentId: "main", error: "store failed", retryable: false },
-      { type: "done", agentId: "main", reason: "error" },
-    ]);
+    expect(events[0]).toEqual({ type: "error", agentId: "main", error: "store failed", retryable: false });
+    expect(events[1]).toMatchObject({
+      type: "done",
+      agentId: "main",
+      reason: "error",
+      aggregate: {
+        turns: [],
+        toolCallCount: 0,
+        toolErrorCount: 0,
+        assistantMessageCount: 0,
+      },
+    });
   });
 
   it("handles simple text response", async () => {
@@ -128,6 +136,56 @@ describe("nessi core loop", () => {
 
     const done = events.find((e) => e.type === "done") as any;
     expect(done.reason).toBe("stop");
+  });
+
+  it("emits loop aggregate metadata on done for multi-turn tool loops", async () => {
+    const provider = mockProviderMultiTurn((request, callIndex) => {
+      if (callIndex === 0) {
+        return [
+          { type: "tool_start", callId: "c1", name: "echo" },
+          { type: "tool_call", callId: "c1", name: "echo", args: { text: "hello" } },
+          { type: "usage", usage: { input: 10, output: 5, total: 15, cacheRead: 2, creditsUsed: 1.5 } },
+        ];
+      }
+      return [
+        { type: "text", delta: "The echo said: hello" },
+        { type: "usage", usage: { input: 20, output: 10, total: 30, creditsUsed: 2.5 } },
+      ];
+    });
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store: memoryStore(),
+        tools: [echoTool],
+        input: "Echo hello",
+      }),
+    );
+
+    const done = events.find((e) => e.type === "done") as Extract<OutboundEvent, { type: "done" }>;
+
+    expect(done.reason).toBe("stop");
+    expect(done.aggregate?.assistantMessageCount).toBe(2);
+    expect(done.aggregate?.toolCallCount).toBe(1);
+    expect(done.aggregate?.toolErrorCount).toBe(0);
+    expect(done.aggregate?.usage).toEqual({
+      input: 30,
+      output: 15,
+      total: 45,
+      cacheRead: 2,
+      creditsUsed: 4,
+    });
+    expect(done.aggregate?.turns[0]?.stopReason).toBe("tool_use");
+    expect(done.aggregate?.turns[0]?.toolCalls).toEqual([
+      {
+        callId: "c1",
+        name: "echo",
+        args: { text: "hello" },
+        result: { echoed: "hello" },
+      },
+    ]);
+    expect(done.aggregate?.turns[1]?.toolCalls).toEqual([]);
   });
 
   it("stores the provider model name on assistant messages", async () => {
@@ -435,6 +493,10 @@ describe("nessi core loop", () => {
 
     const done = events.find((e) => e.type === "done") as any;
     expect(done.reason).toBe("max_turns");
+    expect(done.aggregate?.assistantMessageCount).toBe(2);
+    expect(done.aggregate?.toolCallCount).toBe(2);
+    expect(done.aggregate?.toolErrorCount).toBe(0);
+    expect(done.aggregate?.usage).toEqual({ input: 20, output: 10, total: 30 });
   });
 
   it("stops when credits run out", async () => {
@@ -492,6 +554,39 @@ describe("nessi core loop", () => {
     expect(deducted).toBe(7);
   });
 
+  it("includes persisted assistant turn in aggregate when credit deduction fails", async () => {
+    const store = memoryStore();
+    const creditStore: CreditStore = {
+      async remaining() {
+        return 100;
+      },
+      async deduct() {
+        throw new Error("credit write failed");
+      },
+    };
+
+    const events = await collectEvents(
+      nessi({
+        provider: mockProvider([
+          { type: "text", delta: "Charged answer." },
+          { type: "usage", usage: { input: 10, output: 5, total: 15, creditsUsed: 7 } },
+        ]),
+        systemPrompt: "test",
+        store,
+        creditStore,
+        input: "Hi",
+      }),
+    );
+
+    const done = events.find((e) => e.type === "done") as any;
+    expect(done.reason).toBe("error");
+    expect(done.aggregate?.assistantMessageCount).toBe(1);
+    expect(done.aggregate?.usage).toEqual({ input: 10, output: 5, total: 15, creditsUsed: 7 });
+
+    const entries = await store.load();
+    expect(entries.filter((entry) => entry.message.role === "assistant")).toHaveLength(1);
+  });
+
   it("handles abort signal", async () => {
     const controller = new AbortController();
     controller.abort(); // abort immediately
@@ -545,6 +640,13 @@ describe("nessi core loop", () => {
     // No tool_call event should be emitted for invalid args
     const toolCalls = events.filter((e) => e.type === "tool_call");
     expect(toolCalls).toHaveLength(0);
+
+    const done = events.find((e) => e.type === "done") as any;
+    expect(done.aggregate?.toolCallCount).toBe(1);
+    expect(done.aggregate?.toolErrorCount).toBe(1);
+    expect(done.aggregate?.turns[0]?.toolCalls[0]?.args).toEqual({ text: 123 });
+    expect(done.aggregate?.turns[0]?.toolCalls[0]?.isError).toBe(true);
+    expect(done.aggregate?.turns[0]?.toolCalls[0]?.result).toContain("Validation");
   });
 
   it("handles output validation error", async () => {
@@ -900,6 +1002,9 @@ describe("nessi core loop", () => {
     // Should still continue to next turn
     const done = events.find((e) => e.type === "done") as any;
     expect(done.reason).toBe("stop");
+    expect(done.aggregate?.toolErrorCount).toBe(1);
+    expect(done.aggregate?.turns[0]?.toolCalls[0]?.result).toContain("boom");
+    expect(done.aggregate?.turns[0]?.toolCalls[0]?.isError).toBe(true);
   });
 
   it("sets agentId on all events", async () => {
@@ -953,6 +1058,8 @@ describe("nessi core loop", () => {
     expect(types).toContain("error");
     const done = events.find((e) => e.type === "done") as any;
     expect(done.reason).toBe("error");
+    expect(done.aggregate?.assistantMessageCount).toBe(0);
+    expect(done.aggregate?.usage).toBeUndefined();
   });
 
   it("provider error (retryable) still terminates turn without empty assistant message", async () => {

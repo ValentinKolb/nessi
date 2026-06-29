@@ -25,7 +25,13 @@ import { createMainBashRuntime } from "../../lib/skills.js";
 import { promptRepo, promptService } from "../../domains/prompt/index.js";
 import { createProvider, getActiveProviderEntry } from "../../lib/provider.js";
 import { uiContentText, type UIUserContentPart } from "../../lib/chat-content.js";
-import { createProviderContextStore, loadPersistedEntries, persistentSessionStore, truncatePersistedEntries } from "../../lib/store.js";
+import {
+  createProviderContextStore,
+  loadPersistedEntries,
+  persistentSessionStore,
+  saveEntryLoopAggregate,
+  truncatePersistedEntries,
+} from "../../lib/store.js";
 import { settingsRepo } from "../../domains/settings/index.js";
 import { chatRepo } from "../../domains/chat/index.js";
 import { registerCommand } from "../../lib/slash-commands.js";
@@ -134,6 +140,7 @@ export const ChatView = (props: {
 
   let runtime: Runtime | null = null;
   let activeLoop: NessiLoop | null = null;
+  let activeLoopStartSeq = 0;
   let ensuredProvider: ReturnType<typeof createProvider> | null = null;
   let currentAssistantStartedAt: string | undefined;
   let pendingAutoCompactionEntriesBefore: number | null = null;
@@ -221,6 +228,7 @@ export const ChatView = (props: {
     const version = ++resetVersion;
     activeLoop?.abort();
     activeLoop = null;
+    activeLoopStartSeq = 0;
     runtime = null;
     const [messages, nextInputFiles, nextOutputFiles] = await Promise.all([
       loadMessages(chatId),
@@ -454,6 +462,11 @@ export const ChatView = (props: {
 
   const latestPersistedSeq = async () =>
     (await loadPersistedEntries(props.chatId)).reduce((max, entry) => Math.max(max, entry.seq), 0);
+
+  const latestPersistedAssistantEntry = async (afterSeq = 0) =>
+    [...(await loadPersistedEntries(props.chatId))]
+      .reverse()
+      .find((entry) => entry.seq > afterSeq && entry.kind === "message" && entry.message.role === "assistant");
 
   const addPendingFiles = async (files: FileList | File[]) => {
     const incoming = Array.from(files);
@@ -744,9 +757,7 @@ export const ChatView = (props: {
         // Update meta with latest model/usage info, but do NOT close the
         // streaming message or fire notifications — the loop may continue
         // with another turn (tool_call → execution → next provider call).
-        const persistedAssistant = [...await loadPersistedEntries(props.chatId)]
-          .reverse()
-          .find((entry) => entry.kind === "message" && entry.message.role === "assistant");
+        const persistedAssistant = await latestPersistedAssistantEntry(activeLoopStartSeq);
         const completedAt = persistedAssistant?.createdAt ?? new Date().toISOString();
         if (event.message.usage) setLastUsage(event.message.usage);
         updateAssistantMeta((meta) => ({
@@ -767,7 +778,31 @@ export const ChatView = (props: {
         // The entire agent loop has finished — close the message and notify.
         if (streamFeedbackStartedForTurn) haptics.success();
         const preview = assistantPreviewFromBlocks(getCurrentBlocks());
+        const hasAssistantAggregate = (event.aggregate?.assistantMessageCount ?? 0) > 0;
+        const persistedAssistant = hasAssistantAggregate ? await latestPersistedAssistantEntry(activeLoopStartSeq) : undefined;
+        const completedAt = persistedAssistant?.createdAt ?? new Date().toISOString();
+        if (event.aggregate?.usage) setLastUsage(event.aggregate.usage);
+        if (event.aggregate && hasAssistantAggregate) {
+          updateAssistantMeta((meta) => ({
+            ...meta,
+            entrySeq: persistedAssistant?.seq ?? meta.entrySeq,
+            timestamp: completedAt,
+            usage: event.aggregate?.usage ?? meta.usage,
+            doneReason: event.reason,
+            loopAggregate: event.aggregate,
+            durationMs: meta.startedAt
+              ? Math.max(0, new Date(completedAt).getTime() - new Date(meta.startedAt).getTime())
+              : meta.durationMs,
+          }));
+        }
         closeStreamingAssistantMessage();
+        if (event.aggregate && hasAssistantAggregate && persistedAssistant) {
+          try {
+            await saveEntryLoopAggregate(props.chatId, persistedAssistant.seq, event.aggregate, event.reason);
+          } catch (error) {
+            console.warn("Failed to persist loop aggregate", error);
+          }
+        }
         currentAssistantStartedAt = undefined;
         streamFeedbackStartedForTurn = false;
         lastStreamFeedbackAt = 0;
@@ -1069,7 +1104,8 @@ export const ChatView = (props: {
       size: file.size,
     })));
 
-    const predictedUserSeq = await latestPersistedSeq() + 1;
+    const loopStartSeq = await latestPersistedSeq();
+    const predictedUserSeq = loopStartSeq + 1;
     if (attachedFiles.length > 0) {
       await attachFilesToMessage(props.chatId, predictedUserSeq, attachedFiles.map((file) => file.id));
     }
@@ -1088,7 +1124,7 @@ export const ChatView = (props: {
     setGitHubRefs([]);
     setState("streaming", true);
 
-    const store = createProviderContextStore(ensured.runtime.store, await latestPersistedSeq());
+    const store = createProviderContextStore(ensured.runtime.store, loopStartSeq);
     const prompt = await promptService.resolve(await promptRepo.getActive(), {
       fileInfo: buildFileInfo(newFiles, await listChatFiles(props.chatId), ncRefs, githubContext),
     });
@@ -1120,6 +1156,7 @@ export const ChatView = (props: {
     });
 
     activeLoop = loop;
+    activeLoopStartSeq = loopStartSeq;
 
     // Interrupt plumbing: synchronous subscribe fires the moment abort() is called,
     // so the UI releases the streaming state even if the for-await is blocked on
@@ -1146,6 +1183,7 @@ export const ChatView = (props: {
     } finally {
       unsubInterrupt();
       activeLoop = null;
+      activeLoopStartSeq = 0;
       clearPendingCallMappings();
       closeStreamingAssistantMessage();
       currentAssistantStartedAt = undefined;
@@ -1348,6 +1386,7 @@ export const ChatView = (props: {
   onCleanup(() => {
     activeLoop?.abort();
     activeLoop = null;
+    activeLoopStartSeq = 0;
   });
 
   return (

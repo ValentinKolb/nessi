@@ -31,6 +31,12 @@ const loop = nessi({
   input: "Summarize this repo.",
   store: memoryStore(),
 });
+
+for await (const event of loop) {
+  if (event.type === "done") {
+    console.log(event.aggregate?.usage);
+  }
+}
 ```
 
 ### `nessi-ui`

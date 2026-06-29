@@ -1,4 +1,5 @@
-import type { AssistantStopReason, Usage } from "@valentinkolb/nessi/ai";
+import type { AssistantStopReason, DoneReason, LoopAggregate } from "@valentinkolb/nessi";
+import type { Usage } from "@valentinkolb/nessi/ai";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
 import type { PresentResult } from "./blocks/PresentContent.js";
 
@@ -80,6 +81,8 @@ export type UIAssistantMeta = {
   model?: string;
   usage?: Usage;
   stopReason?: AssistantStopReason;
+  doneReason?: DoneReason;
+  loopAggregate?: LoopAggregate;
   durationMs?: number;
 };
 

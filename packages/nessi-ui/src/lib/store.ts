@@ -1,10 +1,12 @@
-import type { ContentPart, Message, StoreEntry, SessionStore } from "@valentinkolb/nessi";
+import type { ContentPart, DoneReason, LoopAggregate, Message, StoreEntry, SessionStore } from "@valentinkolb/nessi";
 import { chatRepo, type ChatMeta, type PersistedStoreEntry } from "../domains/chat/index.js";
 
 export type { PersistedStoreEntry } from "../domains/chat/index.js";
 
 export const loadPersistedEntries = (chatId: string) => chatRepo.loadEntries(chatId);
 export const truncatePersistedEntries = (chatId: string, beforeSeq: number) => chatRepo.truncateEntries(chatId, beforeSeq);
+export const saveEntryLoopAggregate = (chatId: string, seq: number, aggregate: LoopAggregate, reason: DoneReason) =>
+  chatRepo.saveEntryLoopAggregate(chatId, seq, aggregate, reason);
 
 const imageOmittedText = (imageCount: number): ContentPart => ({
   type: "text",

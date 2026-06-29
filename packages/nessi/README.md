@@ -37,8 +37,15 @@ const loop = nessi({
 
 for await (const event of loop) {
   if (event.type === "text") process.stdout.write(event.delta);
+  if (event.type === "done") {
+    console.log(event.aggregate?.usage);
+  }
 }
 ```
+
+`turn_end` still reports each internal provider turn. The final `done` event includes
+`aggregate`, which groups all assistant turns, tool calls, tool results, tool
+errors, and summed usage for the complete logical loop.
 
 ## Provider-only usage
 

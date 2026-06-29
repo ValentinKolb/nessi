@@ -22,12 +22,12 @@ export default function create(api) {
   };
 
   const decodeJwt = async (token) => {
-    const { fromBase64 } = await getStdlib();
+    const { fromBase64Strict } = await getStdlib();
     const parts = token.split(".");
     if (parts.length < 2) throw new Error("Invalid JWT format.");
     const decode = (s) => {
-      const padded = s.replace(/-/g, "+").replace(/_/g, "/");
-      const bytes = fromBase64(padded);
+      const padded = s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=");
+      const bytes = fromBase64Strict(padded);
       return JSON.parse(new TextDecoder().decode(bytes));
     };
     return { header: decode(parts[0]), payload: decode(parts[1]) };
@@ -60,10 +60,10 @@ export default function create(api) {
       const action = (pos[0] || "").toLowerCase();
       const input = pos.slice(1).join(" ") || opts.get("text") || "";
       if (!input) return err('Usage: dev base64 encode "text"');
-      const { toBase64, fromBase64 } = await getStdlib();
+      const { toBase64, fromBase64Strict } = await getStdlib();
       if (action === "encode") return ok(toBase64(new TextEncoder().encode(input)) + "\n");
       if (action === "decode") {
-        try { return ok(new TextDecoder().decode(fromBase64(input)) + "\n"); }
+        try { return ok(new TextDecoder().decode(fromBase64Strict(input)) + "\n"); }
         catch { return err("Invalid Base64 input."); }
       }
       return err("Use: dev base64 encode|decode");
