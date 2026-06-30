@@ -43,29 +43,33 @@ export type Input = string | ContentPart[];
 // 2. Events – Bidirektional
 // ----------------------------------------------------------------------------
 
+type LoopEventFields = {
+  agentId: string;
+  loopId: string;
+}
+
 export type OutboundEvent =
-  | { type: "turn_start"; agentId: string }
-  | { type: "text"; agentId: string; delta: string }
-  | { type: "thinking"; agentId: string; delta: string }
-  | { type: "tool_start"; agentId: string; callId: string; name: string }
-  | { type: "tool_call"; agentId: string; callId: string; name: string; args: unknown }
-  | { type: "tool_end"; agentId: string; callId: string; name: string; result: unknown; isError?: boolean }
-  | { type: "turn_end"; agentId: string; message: AssistantMessage }
-  | {
+  | (LoopEventFields & { type: "turn_start" })
+  | (LoopEventFields & { type: "text"; delta: string })
+  | (LoopEventFields & { type: "thinking"; delta: string })
+  | (LoopEventFields & { type: "tool_start"; callId: string; name: string })
+  | (LoopEventFields & { type: "tool_call"; callId: string; name: string; args: unknown })
+  | (LoopEventFields & { type: "tool_end"; callId: string; name: string; result: unknown; isError?: boolean })
+  | (LoopEventFields & { type: "turn_end"; message: AssistantMessage })
+  | (LoopEventFields & {
       type: "action_request";
-      agentId: string;
       kind: "approval" | "client_tool" | "custom_approval";
       callId: string;
       name: string;
       args: unknown;
       message?: string;
-    }
-  | { type: "error"; agentId: string; error: string; retryable: boolean; contextOverflow?: boolean; overflowRatio?: number }
-  | { type: "steer_applied"; agentId: string; message: string }
-  | { type: "compaction_start"; agentId: string }
-  | { type: "compaction_end"; agentId: string }
-  | { type: "interrupted"; agentId: string }
-  | { type: "done"; agentId: string; reason: DoneReason; aggregate?: LoopAggregate };
+    })
+  | (LoopEventFields & { type: "error"; error: string; retryable: boolean; contextOverflow?: boolean; overflowRatio?: number })
+  | (LoopEventFields & { type: "steer_applied"; message: string })
+  | (LoopEventFields & { type: "compaction_start" })
+  | (LoopEventFields & { type: "compaction_end" })
+  | (LoopEventFields & { type: "interrupted" })
+  | (LoopEventFields & { type: "done"; reason: DoneReason; aggregate?: LoopAggregate });
 
 export type InboundEvent =
   | { type: "approval_response"; callId: string; approved: boolean }
@@ -142,6 +146,8 @@ export type ToolContext = {
 
 export type NessiOptions = {
   agentId?: string;
+  /** Correlates every outbound event emitted by one logical nessi() loop. Generated when omitted. */
+  loopId?: string;
   input: Input;
   provider: Provider;
   systemPrompt: string;

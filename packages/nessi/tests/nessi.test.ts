@@ -95,7 +95,7 @@ describe("nessi core loop", () => {
       }),
     );
 
-    expect(events[0]).toEqual({ type: "error", agentId: "main", error: "store failed", retryable: false });
+    expect(events[0]).toMatchObject({ type: "error", agentId: "main", error: "store failed", retryable: false });
     expect(events[1]).toMatchObject({
       type: "done",
       agentId: "main",
@@ -107,6 +107,7 @@ describe("nessi core loop", () => {
         assistantMessageCount: 0,
       },
     });
+    expect(events[0]?.loopId).toBe(events[1]?.loopId);
   });
 
   it("handles simple text response", async () => {
@@ -138,6 +139,26 @@ describe("nessi core loop", () => {
     expect(done.reason).toBe("stop");
   });
 
+  it("adds a generated loopId to every outbound event", async () => {
+    const events = await collectEvents(
+      nessi({
+        provider: mockProvider([
+          { type: "text", delta: "Hello" },
+          { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+        ]),
+        systemPrompt: "test",
+        store: memoryStore(),
+        input: "Hi",
+      }),
+    );
+
+    const loopIds = new Set(events.map((event) => event.loopId));
+    const loopId = [...loopIds][0];
+    expect(loopIds.size).toBe(1);
+    expect(typeof loopId).toBe("string");
+    expect(loopId.length).toBeGreaterThan(0);
+  });
+
   it("emits loop aggregate metadata on done for multi-turn tool loops", async () => {
     const provider = mockProviderMultiTurn((request, callIndex) => {
       if (callIndex === 0) {
@@ -155,6 +176,7 @@ describe("nessi core loop", () => {
 
     const events = await collectEvents(
       nessi({
+        loopId: "test-loop-aggregate",
         provider,
         systemPrompt: "test",
         store: memoryStore(),
@@ -165,6 +187,8 @@ describe("nessi core loop", () => {
 
     const done = events.find((e) => e.type === "done") as Extract<OutboundEvent, { type: "done" }>;
 
+    expect(events.every((event) => event.loopId === "test-loop-aggregate")).toBe(true);
+    expect(done.loopId).toBe("test-loop-aggregate");
     expect(done.reason).toBe("stop");
     expect(done.aggregate?.assistantMessageCount).toBe(2);
     expect(done.aggregate?.toolCallCount).toBe(1);
@@ -606,6 +630,30 @@ describe("nessi core loop", () => {
 
     const done = events.find((e) => e.type === "done") as any;
     expect(done.reason).toBe("aborted");
+  });
+
+  it("includes loopId on abort() injected events", async () => {
+    const loop = nessi({
+      loopId: "abort-loop",
+      provider: mockProvider([
+        { type: "text", delta: "hello" },
+        { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+      ]),
+      systemPrompt: "test",
+      store: memoryStore(),
+      input: "Hi",
+    });
+    const subscribedEvents: OutboundEvent[] = [];
+    loop.subscribe((event) => subscribedEvents.push(event));
+
+    loop.abort();
+    const events = await collectEvents(loop);
+
+    const interrupted = events.find((e) => e.type === "interrupted");
+    const done = events.find((e) => e.type === "done");
+    expect(interrupted?.loopId).toBe("abort-loop");
+    expect(done?.loopId).toBe("abort-loop");
+    expect(subscribedEvents.find((e) => e.type === "interrupted")?.loopId).toBe("abort-loop");
   });
 
   it("handles input validation error", async () => {

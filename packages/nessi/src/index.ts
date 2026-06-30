@@ -7,6 +7,7 @@ export { compact } from "./compact.js";
 export { defineTool, toolToJsonSchema, toolToSpec } from "./tools.js";
 export { memoryStore } from "./stores.js";
 export { estimateTokens, truncateMiddle, truncateToolResults } from "./utils.js";
+export { cloneLoopAggregate, cloneUsage, mergeLoopAggregates, mergeUsage } from "./aggregates.js";
 
 export type {
   // Core

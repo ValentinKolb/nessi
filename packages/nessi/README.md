@@ -26,6 +26,7 @@ const weather = defineTool({
 });
 
 const loop = nessi({
+  loopId: crypto.randomUUID(),
   provider: ollama("llama3.1", {
     baseURL: "http://localhost:11434",
   }),
@@ -38,14 +39,22 @@ const loop = nessi({
 for await (const event of loop) {
   if (event.type === "text") process.stdout.write(event.delta);
   if (event.type === "done") {
+    console.log(event.loopId);
     console.log(event.aggregate?.usage);
   }
 }
 ```
 
-`turn_end` still reports each internal provider turn. The final `done` event includes
-`aggregate`, which groups all assistant turns, tool calls, tool results, tool
-errors, and summed usage for the complete logical loop.
+Every outbound event from one `nessi()` run carries the same `loopId`. Pass your
+own `loopId` to align events with a persisted request or UI response group, or
+let Nessi generate one when omitted.
+
+`turn_end` still reports each internal provider turn. The final `done` event
+includes `aggregate`, which groups all assistant turns, tool calls, tool results,
+tool errors, and summed usage for the complete logical loop. Helper exports such
+as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are
+available from `@valentinkolb/nessi` when applications need to combine stored
+loop metadata.
 
 ## Provider-only usage
 
@@ -79,6 +88,7 @@ import { openai } from "@valentinkolb/nessi/ai/providers/openai";
 ## Features
 
 - Turn-based agent loop with streaming events
+- Stable `loopId` correlation across all events from one agent loop
 - Server tools and client tools
 - Tool approval flow
 - Pluggable session store
