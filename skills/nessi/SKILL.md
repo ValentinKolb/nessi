@@ -1,6 +1,6 @@
 ---
 name: nessi
-description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about @valentinkolb/nessi/ai complete(), stream(), provider setup, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, streaming events, tool calls, usage accounting, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root agent loop."
+description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about @valentinkolb/nessi/ai complete(), stream(), provider setup, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, streaming events, loopId correlation, done.aggregate loop metadata, loop-level stats, tool calls, usage accounting, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root agent loop."
 ---
 
 # @valentinkolb/nessi Consumer Skill
@@ -35,6 +35,8 @@ Read only the references needed for the task:
 - Keep provider configuration explicit: model string first, options second.
 - Use environment variables for API keys and avoid hardcoding secrets.
 - Stream by iterating events and switching on `event.type`.
+- For root `nessi()` loops, pass an application-level `loopId` when the app already has a request/response group id; otherwise use the generated `event.loopId` that appears on every outbound event.
+- For root `nessi()` loops, use `event.type === "done"` plus `event.aggregate` for one logical response group, aggregate usage, loop-level stats, assistant turn count, tool calls, and tool errors across multi-turn tool loops.
 - Treat tool calls as data the application must handle; `@valentinkolb/nessi/ai` does not execute tools.
 - Surface unsupported file input and provider error behavior instead of hiding it.
 - If the user asks for browser code, keep API keys server-side and expose a backend route.
@@ -45,6 +47,12 @@ Root agent APIs:
 
 ```ts
 import { nessi, defineTool, memoryStore } from "@valentinkolb/nessi";
+```
+
+Loop aggregate helpers:
+
+```ts
+import { mergeUsage, cloneLoopAggregate, mergeLoopAggregates } from "@valentinkolb/nessi";
 ```
 
 Provider constructors:
@@ -86,6 +94,29 @@ Common stream shape:
 ```ts
 for await (const event of provider.stream({ messages })) {
   if (event.type === "text") process.stdout.write(event.delta);
+}
+```
+
+Common root-loop done handling:
+
+```ts
+const loop = nessi({
+  loopId: requestId,
+  provider,
+  systemPrompt,
+  input,
+  store,
+  tools,
+});
+
+for await (const event of loop) {
+  if (event.type === "text") process.stdout.write(event.delta);
+  if (event.type === "done") {
+    console.log(event.loopId);
+    console.log(event.reason);
+    console.log(event.aggregate?.usage);
+    console.log(event.aggregate?.toolErrorCount);
+  }
 }
 ```
 

@@ -31,6 +31,12 @@ Import agent-loop helpers from the package root:
 import { nessi, defineTool, memoryStore } from "@valentinkolb/nessi";
 ```
 
+Loop aggregate helpers are also available from the root package:
+
+```ts
+import { mergeUsage, cloneLoopAggregate, mergeLoopAggregates } from "@valentinkolb/nessi";
+```
+
 Provider constructors use this shape:
 
 ```ts
@@ -55,6 +61,7 @@ const searchDocs = defineTool({
 });
 
 const loop = nessi({
+  loopId: crypto.randomUUID(),
   provider: openrouter("openai/gpt-4.1-mini", {
     apiKey: process.env.OPENROUTER_API_KEY,
   }),
@@ -67,8 +74,35 @@ const loop = nessi({
 for await (const event of loop) {
   if (event.type === "text") process.stdout.write(event.delta);
   if (event.type === "error") throw new Error(event.error);
+  if (event.type === "done") {
+    console.error("loop id", event.loopId);
+    console.error("finish", event.reason);
+    console.error("loop usage", event.aggregate?.usage);
+  }
 }
 ```
+
+Every outbound event from one root `nessi()` run carries the same `loopId`.
+Pass an application request or response-group id when you have one, or use the
+generated `event.loopId` if omitted.
+
+`turn_end` is emitted for each internal provider turn. A single user request
+with tools can have multiple internal turns. Use the final `done.aggregate`
+for one logical response group, aggregate usage, assistant-turn count,
+tool-call count, and tool-error count:
+
+```ts
+if (event.type === "done") {
+  const aggregate = event.aggregate;
+  console.log(aggregate?.assistantMessageCount);
+  console.log(aggregate?.toolCallCount, aggregate?.toolErrorCount);
+  console.log(aggregate?.usage);
+}
+```
+
+If your app persists chat UI state, persist the `done.aggregate` payload with
+`event.loopId` on your response group. Nessi owns the generic loop semantics;
+your app still owns database IDs and storage schema.
 
 ## One-shot completion
 

@@ -4,6 +4,42 @@
 
 Use `@valentinkolb/nessi` if the user wants a ready-made agent loop with tool execution, approvals, store handling, and compaction.
 
+For the root `nessi()` agent loop, keep using streaming events for live UI and
+debug output:
+
+- `loopId` is present on every outbound event from one logical loop.
+- `turn_end` reports each internal provider turn.
+- `tool_call` / `tool_end` report live tool execution.
+- `done.aggregate` reports the complete logical loop after all internal turns.
+
+Use `done.aggregate` when the app needs one user-visible response group,
+aggregate usage, loop-level tool counts, or persisted tool error metadata:
+
+```ts
+const loop = nessi({
+  loopId: responseGroupId,
+  provider,
+  systemPrompt,
+  input,
+  store,
+  tools,
+});
+
+for await (const event of loop) {
+  if (event.type === "done") {
+    const { aggregate } = event;
+    saveResponseGroup({
+      loopId: event.loopId,
+      reason: event.reason,
+      usage: aggregate?.usage,
+      turns: aggregate?.turns,
+      toolCallCount: aggregate?.toolCallCount ?? 0,
+      toolErrorCount: aggregate?.toolErrorCount ?? 0,
+    });
+  }
+}
+```
+
 ## Define tool specs
 
 Tool specs are provider-facing JSON schemas:

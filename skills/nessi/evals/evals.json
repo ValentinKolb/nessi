@@ -22,7 +22,7 @@
     {
       "id": 4,
       "prompt": "Build a tiny Bun agent with @valentinkolb/nessi that stores history in memory, uses OpenRouter, defines one server-side search_docs tool with zod, and streams text to stdout.",
-      "expected_output": "A concise agent-loop example importing nessi, defineTool, and memoryStore from @valentinkolb/nessi, importing openrouter from @valentinkolb/nessi/ai, defining a zod-backed server tool, passing store: memoryStore() and tools to nessi(), and iterating loop events for text/error handling.",
+      "expected_output": "A concise agent-loop example importing nessi, defineTool, and memoryStore from @valentinkolb/nessi, importing openrouter from @valentinkolb/nessi/ai, defining a zod-backed server tool, passing store: memoryStore() and tools to nessi(), and iterating loop events for text/error handling plus done.aggregate/loopId handling.",
       "files": []
     }
   ]
