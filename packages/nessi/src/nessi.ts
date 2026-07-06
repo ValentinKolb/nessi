@@ -23,6 +23,7 @@ import type {
   LoopTurnAggregate,
 } from "./types.js";
 import { aggregateFromTurns, cloneUsage } from "./aggregates.js";
+import { appendAssistantContentBlock, buildAssistantMessageFromContent } from "./ai/shared/messages.js";
 import { normalizeToolStream } from "./ai/shared/tool-stream-normalizer.js";
 import { toolToSpec } from "./tools.js";
 import { zeroUsage, toErrorMessage, estimateTokens, truncateToolResults } from "./utils.js";
@@ -302,11 +303,10 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       yield { type: "turn_start", agentId, loopId };
 
       // Stream from provider
-      let currentText = "";
-      let currentThinking = "";
       let turnUsage: Usage = zeroUsage();
       let turnUsageReported = false;
       let stopReason: AssistantMessage["stopReason"] = "stop";
+      const assistantBlocks: AssistantContentBlock[] = [];
       const toolCalls: ToolCallBlock[] = [];
       const toolArgBuffers = new Map<string, { name: string; argsText: string }>();
       const toolIssues: LoopToolIssueAggregate[] = [];
@@ -315,17 +315,8 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       let providerFailure: Extract<ProviderEvent, { type: "error" }> | null = null;
 
       /** Build a partial assistant message for commit when the turn is interrupted mid-stream. */
-      const makeInterruptedMessage = (): AssistantMessage => ({
-        role: "assistant",
-        content: [
-          ...(currentText ? [{ type: "text" as const, text: currentText }] : []),
-          ...(currentThinking ? [{ type: "thinking" as const, thinking: currentThinking }] : []),
-          ...toolCalls,
-        ],
-        model: provider.model,
-        usage: turnUsage,
-        stopReason: "interrupted",
-      });
+      const makeInterruptedMessage = (): AssistantMessage =>
+        buildAssistantMessageFromContent(provider.model, assistantBlocks, turnUsage, "interrupted");
 
       try {
         const normalizedStream = normalizeToolStream(
@@ -346,12 +337,12 @@ export const nessi = (options: NessiOptions): NessiLoop => {
 
           switch (event.type) {
             case "text":
-              currentText += event.delta;
+              appendAssistantContentBlock(assistantBlocks, { type: "text", text: event.delta });
               yield { type: "text", agentId, loopId, delta: event.delta };
               break;
 
             case "thinking":
-              currentThinking += event.delta;
+              appendAssistantContentBlock(assistantBlocks, { type: "thinking", thinking: event.delta });
               yield { type: "thinking", agentId, loopId, delta: event.delta };
               break;
 
@@ -375,6 +366,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
                 args: event.args,
               };
               toolCalls.push(block);
+              appendAssistantContentBlock(assistantBlocks, block);
               stopReason = "tool_use";
               break;
             }
@@ -514,20 +506,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         return;
       }
 
-      // Build assistant message (fix D: declarative blocks)
-      const assistantBlocks: AssistantContentBlock[] = [
-        ...(currentText ? [{ type: "text" as const, text: currentText }] : []),
-        ...(currentThinking ? [{ type: "thinking" as const, thinking: currentThinking }] : []),
-        ...toolCalls,
-      ];
-
-      const assistantMessage: AssistantMessage = {
-        role: "assistant",
-        content: assistantBlocks,
-        model: provider.model,
-        usage: turnUsage,
-        stopReason,
-      };
+      const assistantMessage = buildAssistantMessageFromContent(provider.model, assistantBlocks, turnUsage, stopReason);
 
       await store.append(assistantMessage);
       lastUsage = turnUsage;

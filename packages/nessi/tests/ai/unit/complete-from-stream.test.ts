@@ -26,7 +26,7 @@ describe("completeFromStream", () => {
     const result = await completeFromStream(provider, { messages: [] });
     expect(result.finishReason).toBe("tool_use");
     expect(result.usage?.total).toBe(3);
-    expect(result.message.content.map((block) => block.type)).toEqual(["text", "thinking", "tool_call"]);
+    expect(result.message.content.map((block) => block.type)).toEqual(["thinking", "text", "tool_call"]);
   });
 
   it("prefers the provider-reported finish reason when available", async () => {
@@ -51,5 +51,26 @@ describe("completeFromStream", () => {
 
     const result = await completeFromStream(provider, { messages: [] });
     expect(result.finishReason).toBe("max_tokens");
+  });
+
+  it("ignores empty text and thinking deltas", async () => {
+    const provider: Provider = {
+      name: "mock",
+      family: "openai-compatible",
+      model: "mock",
+      contextWindow: 1000,
+      capabilities: { streaming: true, tools: true, images: true, thinking: true, usage: true },
+      async *stream() {
+        yield { type: "thinking", delta: "" } as const;
+        yield { type: "text", delta: "" } as const;
+        yield { type: "usage", usage: { input: 1, output: 0, total: 1 } } as const;
+      },
+      complete(request: GenerateRequest) {
+        return completeFromStream(provider, request);
+      },
+    };
+
+    const result = await completeFromStream(provider, { messages: [] });
+    expect(result.message.content).toEqual([]);
   });
 });

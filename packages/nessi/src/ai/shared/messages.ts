@@ -1,5 +1,6 @@
 import type {
   AssistantMessage,
+  AssistantContentBlock,
   ContentPart,
   InputFilePart,
   Message,
@@ -16,6 +17,27 @@ export const thinkingBlock = (thinking: string): ThinkingBlock => ({ type: "thin
 
 export const toolCallBlock = (id: string, name: string, args: Record<string, unknown>): ToolCallBlock =>
   ({ type: "tool_call", id, name, args });
+
+export const appendAssistantContentBlock = (
+  content: AssistantContentBlock[],
+  block: AssistantContentBlock,
+) => {
+  if (block.type === "text" && block.text.length === 0) return;
+  if (block.type === "thinking" && block.thinking.length === 0) return;
+
+  const last = content.at(-1);
+  if (block.type === "text" && last?.type === "text") {
+    last.text += block.text;
+    return;
+  }
+  if (block.type === "thinking" && last?.type === "thinking") {
+    last.thinking += block.thinking;
+    return;
+  }
+  content.push(block);
+};
+
+const cloneAssistantContentBlock = (block: AssistantContentBlock): AssistantContentBlock => ({ ...block });
 
 export const contentPartToText = (part: ContentPart) => {
   if (typeof part === "string") return part;
@@ -51,7 +73,17 @@ export const buildAssistantMessage = (
     ...(thinking ? [thinkingBlock(thinking)] : []),
     ...toolCalls,
   ];
-  return { role: "assistant", content, model, usage, stopReason };
+  return buildAssistantMessageFromContent(model, content, usage, stopReason);
+};
+
+export const buildAssistantMessageFromContent = (
+  model: string,
+  content: AssistantContentBlock[],
+  usage?: AssistantMessage["usage"],
+  stopReason?: AssistantMessage["stopReason"],
+): AssistantMessage => {
+  const clonedContent = content.map(cloneAssistantContentBlock);
+  return { role: "assistant", content: clonedContent, model, usage, stopReason };
 };
 
 export const extractAssistantText = (message: Message) => {

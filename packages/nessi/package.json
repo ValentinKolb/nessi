@@ -1,6 +1,6 @@
 {
   "name": "@valentinkolb/nessi",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Minimal agent loop and provider adapters for nessi.",
   "type": "module",
   "main": "./src/index.ts",

@@ -337,6 +337,7 @@ describe("nessi core loop", () => {
   });
 
   it("handles thinking events", async () => {
+    const store = memoryStore();
     const events = await collectEvents(
       nessi({
         provider: mockProvider([
@@ -345,7 +346,7 @@ describe("nessi core loop", () => {
           { type: "usage", usage: { input: 10, output: 5, total: 15 } },
         ]),
         systemPrompt: "test",
-        store: memoryStore(),
+        store,
         input: "Think about this",
       }),
     );
@@ -353,6 +354,15 @@ describe("nessi core loop", () => {
     const thinkingEvents = events.filter((e) => e.type === "thinking");
     expect(thinkingEvents).toHaveLength(1);
     expect((thinkingEvents[0] as any).delta).toBe("Let me think...");
+
+    const turnEnd = events.find((event) => event.type === "turn_end") as Extract<OutboundEvent, { type: "turn_end" }>;
+    expect(turnEnd.message.content.map((block) => block.type)).toEqual(["thinking", "text"]);
+
+    const assistantMessage = (await store.load()).find((entry) => entry.message.role === "assistant")?.message;
+    expect(assistantMessage?.role).toBe("assistant");
+    if (assistantMessage?.role === "assistant") {
+      expect(assistantMessage.content.map((block) => block.type)).toEqual(["thinking", "text"]);
+    }
   });
 
   it("executes server tool and continues", async () => {
@@ -756,6 +766,64 @@ describe("nessi core loop", () => {
     expect(interrupted?.loopId).toBe("abort-loop");
     expect(done?.loopId).toBe("abort-loop");
     expect(subscribedEvents.find((e) => e.type === "interrupted")?.loopId).toBe("abort-loop");
+  });
+
+  it("preserves stream block order for interrupted assistant messages", async () => {
+    const store = memoryStore();
+    const loop = nessi({
+      provider: mockProvider([
+        { type: "thinking", delta: "Reason first." },
+        { type: "text", delta: "Partial answer." },
+        { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+      ]),
+      systemPrompt: "test",
+      store,
+      input: "Think then answer",
+    });
+
+    loop.subscribe((event) => {
+      if (event.type === "text") loop.abort();
+    });
+
+    const events = await collectEvents(loop);
+
+    const turnEnd = events.find((event) => event.type === "turn_end") as Extract<OutboundEvent, { type: "turn_end" }>;
+    expect(turnEnd.message.stopReason).toBe("interrupted");
+    expect(turnEnd.message.content.map((block) => block.type)).toEqual(["thinking", "text"]);
+
+    const assistantMessage = (await store.load()).find((entry) => entry.message.role === "assistant")?.message;
+    expect(assistantMessage?.role).toBe("assistant");
+    if (assistantMessage?.role === "assistant") {
+      expect(assistantMessage.stopReason).toBe("interrupted");
+      expect(assistantMessage.content.map((block) => block.type)).toEqual(["thinking", "text"]);
+    }
+  });
+
+  it("does not persist empty interrupted assistant messages from empty deltas", async () => {
+    const store = memoryStore();
+    const loop = nessi({
+      provider: mockProvider([
+        { type: "thinking", delta: "" },
+        { type: "text", delta: "" },
+        { type: "usage", usage: { input: 10, output: 0, total: 10 } },
+      ]),
+      systemPrompt: "test",
+      store,
+      input: "Empty stream",
+    });
+
+    loop.subscribe((event) => {
+      if (event.type === "text") loop.abort();
+    });
+
+    const events = await collectEvents(loop);
+
+    expect(events.some((event) => event.type === "turn_end")).toBe(false);
+    const done = events.find((event) => event.type === "done") as Extract<OutboundEvent, { type: "done" }>;
+    expect(done.reason).toBe("aborted");
+
+    const entries = await store.load();
+    expect(entries.filter((entry) => entry.message.role === "assistant")).toHaveLength(0);
   });
 
   it("handles input validation error", async () => {
