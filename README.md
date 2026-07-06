@@ -35,6 +35,7 @@ const loop = nessi({
 for await (const event of loop) {
   if (event.type === "done") {
     console.log(event.aggregate?.usage);
+    console.log(event.aggregate?.toolIssues);
   }
 }
 ```

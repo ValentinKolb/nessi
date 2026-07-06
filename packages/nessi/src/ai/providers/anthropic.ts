@@ -2,6 +2,7 @@ import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
 import { openSSEStream } from "../shared/stream-helpers.js";
+import { normalizeToolStream } from "../shared/tool-stream-normalizer.js";
 import { toAnthropicTools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
 import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock } from "../types.js";
@@ -229,7 +230,8 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
       };
     },
 
-    async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
+    stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
+      const raw = async function* (): AsyncIterable<StreamEvent> {
       const body: Record<string, unknown> = {
         model,
         system: request.systemPrompt,
@@ -275,10 +277,12 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
 
         if (event.event === "content_block_start" && payload.content_block?.type === "tool_use") {
           const index = typeof payload.index === "number" ? payload.index : syntheticIndex++;
+          const startInput = payload.content_block.input;
+          const argsBuffer = startInput && Object.keys(startInput).length > 0 ? JSON.stringify(startInput) : "";
           toolBuffers.set(index, {
             callId: payload.content_block.id ?? `anthropic-${index}`,
             name: payload.content_block.name ?? "",
-            argsBuffer: payload.content_block.input ? JSON.stringify(payload.content_block.input) : "",
+            argsBuffer,
           });
           sawToolCall = true;
           yield {
@@ -286,6 +290,13 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
             callId: payload.content_block.id ?? `anthropic-${index}`,
             name: payload.content_block.name ?? "",
           };
+          if (argsBuffer) {
+            yield {
+              type: "tool_delta",
+              callId: payload.content_block.id ?? `anthropic-${index}`,
+              argsDelta: argsBuffer,
+            };
+          }
         }
 
         if (event.event === "content_block_delta") {
@@ -325,20 +336,11 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         }
       }
 
-      if (toolBuffers.size > 0) {
-        for (const [, buffer] of toolBuffers) {
-          yield {
-            type: "tool_call",
-            callId: buffer.callId,
-            name: buffer.name,
-            args: ensureRecord(safeJsonParse(buffer.argsBuffer || "{}")),
-          };
-        }
-      }
-
       if (latestUsage.total > 0 || latestFinishReason) {
         yield { type: "usage", usage: latestUsage, finishReason: latestFinishReason };
       }
+      };
+      return normalizeToolStream(raw(), { suppressTextAfterMalformedTool: true });
     },
   };
 };

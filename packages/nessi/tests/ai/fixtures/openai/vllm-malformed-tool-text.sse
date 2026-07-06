@@ -1,0 +1,7 @@
+data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_card","function":{"name":"card","arguments":"{\"title\":\"Hi\""}}]},"finish_reason":null}]}
+
+data: {"choices":[{"index":0,"delta":{"content":"</invoke>"},"finish_reason":null}]}
+
+data: {"choices":[{"index":0,"delta":{"content":"</think> repeated assistant text"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}
+
+data: [DONE]

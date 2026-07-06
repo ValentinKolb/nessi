@@ -23,6 +23,7 @@ export type {
   LoopAggregate,
   LoopTurnAggregate,
   LoopToolCallAggregate,
+  LoopToolIssueAggregate,
   // Messages
   Message,
   UserMessage,
@@ -33,6 +34,9 @@ export type {
   TextBlock,
   ThinkingBlock,
   ToolCallBlock,
+  ToolStreamIssue,
+  ToolStreamIssueKind,
+  ToolStreamIssueReason,
   Usage,
   // Tools
   ToolDefinition,

@@ -34,6 +34,8 @@ const loop = nessi({
   input: "How is the weather in Berlin?",
   store: memoryStore(),
   tools: [weather],
+  temperature: 0,
+  maxOutputTokens: 512,
 });
 
 for await (const event of loop) {
@@ -51,10 +53,13 @@ let Nessi generate one when omitted.
 
 `turn_end` still reports each internal provider turn. The final `done` event
 includes `aggregate`, which groups all assistant turns, tool calls, tool results,
-tool errors, and summed usage for the complete logical loop. Helper exports such
-as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are
-available from `@valentinkolb/nessi` when applications need to combine stored
-loop metadata.
+tool execution errors, malformed/cancelled tool-stream issues, and summed usage
+for the complete logical loop. Use `aggregate.toolIssues`,
+`aggregate.toolMalformedCount`, and `aggregate.toolCancelledCount` to persist
+provider-stream problems such as half-open tool calls that never became
+executable. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and
+`mergeLoopAggregates()` are available from `@valentinkolb/nessi` when
+applications need to combine stored loop metadata.
 
 ## Provider-only usage
 

@@ -53,6 +53,27 @@ export type Usage = {
   creditsUsed?: number;
 };
 
+export type ToolStreamIssueKind = "malformed" | "cancelled";
+
+export type ToolStreamIssueReason =
+  | "text_during_tool_call"
+  | "thinking_during_tool_call"
+  | "tool_delta_without_start"
+  | "missing_tool_name"
+  | "invalid_tool_arguments"
+  | "stream_ended_before_tool_call"
+  | "provider_error_before_tool_call";
+
+export type ToolStreamIssue = {
+  kind: ToolStreamIssueKind;
+  reason: ToolStreamIssueReason;
+  message: string;
+  callId?: string;
+  name?: string;
+  argsText?: string;
+  textDelta?: string;
+};
+
 export type ToolSpec = {
   name: string;
   description: string;
@@ -108,6 +129,8 @@ export type StreamEvent =
   | { type: "tool_start"; callId: string; name: string }
   | { type: "tool_delta"; callId: string; argsDelta: string }
   | { type: "tool_call"; callId: string; name: string; args: Record<string, unknown> }
+  | ({ type: "tool_error" } & Omit<ToolStreamIssue, "kind">)
+  | ({ type: "tool_cancel" } & Omit<ToolStreamIssue, "kind">)
   | { type: "usage"; usage: Usage; finishReason?: AssistantStopReason }
   | { type: "error"; error: string; retryable: boolean; contextOverflow?: boolean; overflowRatio?: number };
 

@@ -69,6 +69,8 @@ const loop = nessi({
   input: "Find the docs for streaming events.",
   store: memoryStore(),
   tools: [searchDocs],
+  temperature: 0,
+  maxOutputTokens: 512,
 });
 
 for await (const event of loop) {
@@ -96,6 +98,8 @@ if (event.type === "done") {
   const aggregate = event.aggregate;
   console.log(aggregate?.assistantMessageCount);
   console.log(aggregate?.toolCallCount, aggregate?.toolErrorCount);
+  console.log(aggregate?.toolMalformedCount, aggregate?.toolCancelledCount);
+  console.log(aggregate?.toolIssues);
   console.log(aggregate?.usage);
 }
 ```

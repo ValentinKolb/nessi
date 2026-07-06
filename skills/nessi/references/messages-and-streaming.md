@@ -90,6 +90,12 @@ for await (const event of provider.stream({ messages })) {
     case "tool_call":
       await handleToolCall(event);
       break;
+    case "tool_error":
+      console.error("malformed tool stream", event.reason, event.callId);
+      break;
+    case "tool_cancel":
+      console.error("cancelled tool stream", event.reason, event.callId);
+      break;
     case "usage":
       console.error("usage", event.usage, event.finishReason);
       break;
@@ -103,11 +109,25 @@ Event meanings:
 
 - `text`: user-visible text delta.
 - `thinking`: provider-exposed reasoning delta when available.
-- `tool_start`: a streamed tool call has begun.
+- `tool_start`: a streamed tool call has begun. In root `nessi()` loops this is emitted only once the call has validated executable input.
 - `tool_delta`: partial tool argument text for providers that stream tool input.
 - `tool_call`: final parsed tool call with `callId`, `name`, and structured `args`.
+- `tool_error`: malformed pre-execution tool stream, such as text arriving while a tool call is half-open or invalid streamed JSON arguments. Do not execute a tool for this event.
+- `tool_cancel`: a pending tool start was cancelled before it became executable, usually because the stream ended or the provider failed.
 - `usage`: token usage, sometimes with final `finishReason`.
 - `error`: normalized provider or connection error.
+
+## Tool-stream invariants
+
+Apps should execute tools only from final `tool_call` events. Provider adapters
+can still expose `tool_start` / `tool_delta` for live diagnostics, but malformed
+or cancelled pending starts are closed with `tool_error` or `tool_cancel`.
+
+For root `nessi()` loops, `tool_start` is durable/user-visible only after Nessi
+has validated the tool input against the app's tool schema. If a provider emits
+plain text while a tool call is half-open, Nessi emits `tool_error`, suppresses
+the malformed text from assistant persistence, and reports the issue in
+`done.aggregate.toolIssues`.
 
 ## Usage accounting
 
@@ -139,4 +159,16 @@ const result = await provider.complete({
 });
 ```
 
-Use `disableReasoning: true` for simple calls where reasoning-capable models would otherwise spend too much output budget.
+Use `disableReasoning: true` for simple calls where reasoning-capable models would otherwise spend too much output budget. Root `nessi()` accepts the same generation controls:
+
+```ts
+const loop = nessi({
+  provider,
+  systemPrompt,
+  input,
+  store,
+  temperature: 0,
+  maxOutputTokens: 512,
+  disableReasoning: true,
+});
+```

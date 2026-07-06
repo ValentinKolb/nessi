@@ -63,6 +63,35 @@ describe("openAICompatible provider", () => {
     expect(/^[A-Za-z0-9]{9}$/.test(assistantMessage.tool_calls[0].id)).toBe(true);
   });
 
+  it("classifies vLLM-style text during partial tool calls as malformed", async () => {
+    const provider = openAICompatible({
+      name: "vllm",
+      model: "qwen-test",
+      baseURL: "https://example.com/v1",
+      compat: {
+        supportsUsageInStreaming: true,
+        thinkingFormat: "none",
+        maxTokensField: "max_tokens",
+      },
+    });
+
+    globalThis.fetch = (async () =>
+      textResponse(await fixtureText("../fixtures/openai/vllm-malformed-tool-text.sse"), "text/event-stream")) as typeof fetch;
+
+    const events = [];
+    for await (const event of provider.stream({ messages: [] })) events.push(event);
+
+    expect(events.some((event) => event.type === "tool_start")).toBe(false);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "text")).toBe(false);
+
+    const issue = events.find((event) => event.type === "tool_error") as any;
+    expect(issue.reason).toBe("text_during_tool_call");
+    expect(issue.callId).toBe("call_card");
+    expect(issue.name).toBe("card");
+    expect(issue.textDelta).toBe("</invoke>");
+  });
+
   it("maps openrouter reasoning details to thinking events", async () => {
     const provider = openrouter("openai/gpt-4.1-mini", { apiKey: "x", baseURL: "https://openrouter.ai/api/v1" });
     globalThis.fetch = (async () =>

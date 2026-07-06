@@ -139,6 +139,108 @@ describe("nessi core loop", () => {
     expect(done.reason).toBe("stop");
   });
 
+  it("passes root generation options to the provider", async () => {
+    let capturedRequest: any;
+    const events = await collectEvents(
+      nessi({
+        provider: mockProvider(
+          [
+            { type: "text", delta: "ok" },
+            { type: "usage", usage: { input: 1, output: 1, total: 2 } },
+          ],
+          { onRequest: (request) => { capturedRequest = request; } },
+        ),
+        systemPrompt: "test",
+        store: memoryStore(),
+        input: "Hi",
+        temperature: 0,
+        maxOutputTokens: 64,
+        disableReasoning: true,
+      }),
+    );
+
+    expect(events.some((event) => event.type === "done")).toBe(true);
+    expect(capturedRequest.temperature).toBe(0);
+    expect(capturedRequest.maxOutputTokens).toBe(64);
+    expect(capturedRequest.disableReasoning).toBe(true);
+  });
+
+  it("classifies malformed half-open tool streams without durable tool UI events", async () => {
+    const store = memoryStore();
+    const provider = mockProvider([
+      { type: "tool_start", callId: "c1", name: "card" },
+      { type: "tool_delta", callId: "c1", argsDelta: "{\"title\":\"Hi\"" },
+      { type: "text", delta: "</invoke>" },
+      { type: "text", delta: "</think>" },
+      { type: "tool_call", callId: "c1", name: "card", args: {} },
+      { type: "usage", usage: { input: 10, output: 3, total: 13 }, finishReason: "tool_use" },
+    ]);
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store,
+        tools: [echoTool],
+        input: "Create card",
+      }),
+    );
+
+    expect(events.some((event) => event.type === "tool_start")).toBe(false);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "text")).toBe(false);
+
+    const issue = events.find((event) => event.type === "tool_error") as Extract<OutboundEvent, { type: "tool_error" }>;
+    expect(issue.reason).toBe("text_during_tool_call");
+    expect(issue.textDelta).toBe("</invoke>");
+
+    const done = events.find((event) => event.type === "done") as Extract<OutboundEvent, { type: "done" }>;
+    expect(done.aggregate?.toolIssueCount).toBe(1);
+    expect(done.aggregate?.toolMalformedCount).toBe(1);
+    expect(done.aggregate?.toolCancelledCount).toBe(0);
+    expect(done.aggregate?.toolIssues[0]?.reason).toBe("text_during_tool_call");
+    expect(done.aggregate?.turns[0]?.stopReason).toBe("stop");
+
+    const assistantMessages = (await store.load()).filter((entry) => entry.message.role === "assistant");
+    const persistedText = assistantMessages
+      .flatMap((entry) => entry.message.role === "assistant" ? entry.message.content : [])
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("");
+    expect(persistedText).not.toContain("</invoke>");
+    expect(persistedText).not.toContain("</think>");
+  });
+
+  it("aggregates cancelled pending tool streams", async () => {
+    const provider = mockProvider([
+      { type: "tool_start", callId: "c1", name: "card" },
+      { type: "tool_delta", callId: "c1", argsDelta: "{\"title\":\"Hi\"}" },
+      { type: "usage", usage: { input: 10, output: 3, total: 13 }, finishReason: "stop" },
+    ]);
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store: memoryStore(),
+        tools: [echoTool],
+        input: "Create card",
+      }),
+    );
+
+    expect(events.some((event) => event.type === "tool_start")).toBe(false);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+
+    const cancel = events.find((event) => event.type === "tool_cancel") as Extract<OutboundEvent, { type: "tool_cancel" }>;
+    expect(cancel.reason).toBe("stream_ended_before_tool_call");
+
+    const done = events.find((event) => event.type === "done") as Extract<OutboundEvent, { type: "done" }>;
+    expect(done.aggregate?.toolIssueCount).toBe(1);
+    expect(done.aggregate?.toolMalformedCount).toBe(0);
+    expect(done.aggregate?.toolCancelledCount).toBe(1);
+    expect(done.aggregate?.toolIssues[0]?.reason).toBe("stream_ended_before_tool_call");
+  });
+
   it("adds a generated loopId to every outbound event", async () => {
     const events = await collectEvents(
       nessi({

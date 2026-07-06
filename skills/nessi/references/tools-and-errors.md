@@ -10,10 +10,12 @@ debug output:
 - `loopId` is present on every outbound event from one logical loop.
 - `turn_end` reports each internal provider turn.
 - `tool_call` / `tool_end` report live tool execution.
+- `tool_error` / `tool_cancel` report malformed or cancelled pre-execution tool starts.
 - `done.aggregate` reports the complete logical loop after all internal turns.
 
 Use `done.aggregate` when the app needs one user-visible response group,
-aggregate usage, loop-level tool counts, or persisted tool error metadata:
+aggregate usage, loop-level tool counts, persisted tool execution errors, or
+malformed/cancelled tool-stream metadata:
 
 ```ts
 const loop = nessi({
@@ -35,6 +37,10 @@ for await (const event of loop) {
       turns: aggregate?.turns,
       toolCallCount: aggregate?.toolCallCount ?? 0,
       toolErrorCount: aggregate?.toolErrorCount ?? 0,
+      toolIssueCount: aggregate?.toolIssueCount ?? 0,
+      toolMalformedCount: aggregate?.toolMalformedCount ?? 0,
+      toolCancelledCount: aggregate?.toolCancelledCount ?? 0,
+      toolIssues: aggregate?.toolIssues ?? [],
     });
   }
 }
@@ -98,17 +104,28 @@ If there can be multiple tool calls, append the assistant message once, then app
 
 ## Streaming tool-call flow
 
-During streaming, collect final `tool_call` events. Use `tool_delta` only for live UI display or debugging; execute tools from the final structured event.
+During provider-only streaming, collect final `tool_call` events. Use
+`tool_start` / `tool_delta` only for live UI display or debugging; execute tools
+from the final structured event. If `tool_error` or `tool_cancel` appears, the
+pending start never became executable.
 
 ```ts
 const toolCalls = [];
+const toolIssues = [];
 
 for await (const event of provider.stream({ messages, tools })) {
   if (event.type === "tool_call") {
     toolCalls.push(event);
   }
+  if (event.type === "tool_error" || event.type === "tool_cancel") {
+    toolIssues.push(event);
+  }
 }
 ```
+
+For root `nessi()` loops, wait for `tool_call` before showing a frontend tool as
+executable. Nessi emits root `tool_start` only after the tool input passes the
+app's schema validation.
 
 ## Error handling
 
@@ -125,6 +142,15 @@ for await (const event of provider.stream({ messages })) {
     }
     throw new Error(event.error);
   }
+}
+```
+
+Malformed tool streams are not provider connection errors. Handle them separately
+if the UI wants to show model/tool-call diagnostics:
+
+```ts
+if (event.type === "tool_error" || event.type === "tool_cancel") {
+  console.warn(event.reason, event.callId, event.message);
 }
 ```
 

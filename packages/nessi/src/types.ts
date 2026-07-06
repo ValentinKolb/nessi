@@ -11,6 +11,7 @@ import type {
   Provider,
   StreamEvent,
   ToolResultMessage,
+  ToolStreamIssue,
   Usage,
   UserMessage,
 } from "./ai/index.js";
@@ -25,6 +26,9 @@ export type {
   ThinkingBlock,
   ToolCallBlock,
   ToolResultMessage,
+  ToolStreamIssue,
+  ToolStreamIssueKind,
+  ToolStreamIssueReason,
   ToolSpec,
   Usage,
   UserMessage,
@@ -54,6 +58,8 @@ export type OutboundEvent =
   | (LoopEventFields & { type: "thinking"; delta: string })
   | (LoopEventFields & { type: "tool_start"; callId: string; name: string })
   | (LoopEventFields & { type: "tool_call"; callId: string; name: string; args: unknown })
+  | (LoopEventFields & { type: "tool_error" } & Omit<ToolStreamIssue, "kind">)
+  | (LoopEventFields & { type: "tool_cancel" } & Omit<ToolStreamIssue, "kind">)
   | (LoopEventFields & { type: "tool_end"; callId: string; name: string; result: unknown; isError?: boolean })
   | (LoopEventFields & { type: "turn_end"; message: AssistantMessage })
   | (LoopEventFields & {
@@ -85,11 +91,14 @@ export type LoopToolCallAggregate = {
   isError?: boolean;
 };
 
+export type LoopToolIssueAggregate = ToolStreamIssue;
+
 export type LoopTurnAggregate = {
   message: AssistantMessage;
   usage?: Usage;
   stopReason?: AssistantMessage["stopReason"];
   toolCalls: LoopToolCallAggregate[];
+  toolIssues?: LoopToolIssueAggregate[];
 };
 
 export type LoopAggregate = {
@@ -97,6 +106,10 @@ export type LoopAggregate = {
   usage?: Usage;
   toolCallCount: number;
   toolErrorCount: number;
+  toolIssueCount: number;
+  toolMalformedCount: number;
+  toolCancelledCount: number;
+  toolIssues: LoopToolIssueAggregate[];
   assistantMessageCount: number;
 };
 
@@ -156,6 +169,9 @@ export type NessiOptions = {
   creditStore?: CreditStore;
   compact?: CompactFn;
   maxTurns?: number;
+  temperature?: number;
+  maxOutputTokens?: number;
+  disableReasoning?: boolean;
   /** Max chars for tool results in the context sent to the provider. Longer results are truncated. */
   maxToolResultChars?: number;
   signal?: AbortSignal;

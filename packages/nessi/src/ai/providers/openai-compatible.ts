@@ -2,6 +2,7 @@ import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
 import { openSSEStream } from "../shared/stream-helpers.js";
+import { normalizeToolStream } from "../shared/tool-stream-normalizer.js";
 import { createStrictToolCallIdFactory } from "../shared/tool-call-ids.js";
 import { toOpenAITools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
@@ -258,7 +259,8 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
       return parseCompletionResponse(response, config);
     },
 
-    async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
+    stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
+      const raw = async function* (): AsyncIterable<StreamEvent> {
       const messages = convertMessages(request.messages, request.systemPrompt, config);
       const tools = request.tools?.length ? toOpenAITools(request.tools) : undefined;
 
@@ -298,11 +300,18 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         return;
       }
 
-      const toolBuffers = new Map<number, { callId: string; name: string; argsBuffer: string }>();
+      const toolBuffers = new Map<number, { callId: string; name: string; argsBuffer: string; started: boolean }>();
       let latestUsage: Usage | undefined;
       let latestFinishReason: AssistantStopReason | undefined;
+      const startToolCall = function* (buffer: { callId: string; name: string; argsBuffer: string; started: boolean }) {
+        if (buffer.started || !buffer.name.trim()) return;
+        buffer.started = true;
+        yield { type: "tool_start" as const, callId: buffer.callId, name: buffer.name };
+        if (buffer.argsBuffer) yield { type: "tool_delta" as const, callId: buffer.callId, argsDelta: buffer.argsBuffer };
+      };
       const flushToolCalls = function* (): Generator<StreamEvent> {
         for (const [, buffer] of toolBuffers) {
+          yield* startToolCall(buffer);
           yield {
             type: "tool_call",
             callId: buffer.callId,
@@ -318,15 +327,15 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         const chunk = safeJsonParse<SSEChunk>(event.data);
         if (!chunk) continue;
 
-        const usage = usageFromChunk(chunk, config);
-        if (usage) {
-          latestUsage = usage;
-          yield { type: "usage", usage };
-        }
-
         const choice = chunk.choices?.[0];
-        if (!choice) continue;
-        latestFinishReason = mapFinishReason(choice.finish_reason, toolBuffers.size > 0);
+        const usage = usageFromChunk(chunk, config);
+        if (!choice) {
+          if (usage) {
+            latestUsage = usage;
+            yield { type: "usage", usage };
+          }
+          continue;
+        }
         const delta = choice.delta;
 
         if (delta.content) yield { type: "text", delta: delta.content };
@@ -339,25 +348,38 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
             if (!existing) {
               const callId = toolCall.id ?? `${config.name}-${toolCall.index}`;
               const name = toolCall.function?.name ?? "";
-              toolBuffers.set(toolCall.index, {
+              const argsDelta = toolCall.function?.arguments ?? "";
+              const buffer = {
                 callId,
                 name,
-                argsBuffer: toolCall.function?.arguments ?? "",
-              });
-              yield { type: "tool_start", callId, name };
-            } else if (toolCall.function?.arguments) {
-              existing.argsBuffer += toolCall.function.arguments;
-              yield { type: "tool_delta", callId: existing.callId, argsDelta: toolCall.function.arguments };
+                argsBuffer: argsDelta,
+                started: false,
+              };
+              toolBuffers.set(toolCall.index, buffer);
+              yield* startToolCall(buffer);
+            } else {
+              if (toolCall.function?.name) existing.name = toolCall.function.name;
+              const argsDelta = toolCall.function?.arguments ?? "";
+              if (argsDelta) existing.argsBuffer += argsDelta;
+              const wasStarted = existing.started;
+              yield* startToolCall(existing);
+              if (wasStarted && argsDelta) {
+                yield { type: "tool_delta", callId: existing.callId, argsDelta };
+              }
             }
           }
         }
 
-        if (choice.finish_reason === "tool_calls" || choice.finish_reason === "stop") {
+        if (choice.finish_reason === "tool_calls") {
           yield* flushToolCalls();
+        }
+        latestFinishReason = mapFinishReason(choice.finish_reason, false);
+        if (usage) {
+          latestUsage = usage;
+          yield { type: "usage", usage };
         }
       }
 
-      if (toolBuffers.size > 0) yield* flushToolCalls();
       if (latestFinishReason) {
         yield {
           type: "usage",
@@ -365,6 +387,8 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
           finishReason: latestFinishReason,
         };
       }
+      };
+      return normalizeToolStream(raw(), { suppressTextAfterMalformedTool: true });
     },
   };
 

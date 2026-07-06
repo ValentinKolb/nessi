@@ -28,6 +28,9 @@ export const completeFromStream = async (
       case "tool_call":
         toolCalls.push({ type: "tool_call", id: event.callId, name: event.name, args: event.args });
         break;
+      case "tool_error":
+      case "tool_cancel":
+        break;
       case "usage":
         usage = event.usage;
         finishReason = event.finishReason ?? finishReason;
