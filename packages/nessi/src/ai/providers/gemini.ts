@@ -2,9 +2,19 @@ import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse } from "../shared/json.js";
 import { openSSEStream } from "../shared/stream-helpers.js";
+import { normalizeProviderStream } from "../shared/tool-stream-normalizer.js";
 import { toGeminiTools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
-import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock } from "../types.js";
+import type {
+  GenerateRequest,
+  GenerateResult,
+  Message,
+  Provider,
+  ProviderTimeouts,
+  RawStreamEvent,
+  StreamEvent,
+  ToolCallBlock,
+} from "../types.js";
 
 type GeminiPart = {
   text?: string;
@@ -38,6 +48,7 @@ export type GeminiOptions = {
   maxOutputTokens?: number;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
+  timeouts?: ProviderTimeouts;
 };
 
 const convertMessages = (messages: Message[]) => {
@@ -181,13 +192,16 @@ export const gemini = (model: string, options?: GeminiOptions): Provider => {
       };
     },
 
-    async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
+    stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
+      const raw = async function* (): AsyncIterable<RawStreamEvent> {
       const result = await openSSEStream(
         urlFor("streamGenerateContent"),
         { "Content-Type": "application/json" },
         buildBody(request),
         "gemini",
         request.signal,
+        undefined,
+        options?.timeouts,
       );
 
       if (!result.ok) {
@@ -230,6 +244,8 @@ export const gemini = (model: string, options?: GeminiOptions): Provider => {
           finishReason: latestFinishReason,
         };
       }
+      };
+      return normalizeProviderStream(raw(), { suppressTextAfterMalformedTool: true });
     },
   };
 };

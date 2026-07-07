@@ -1,61 +1,102 @@
 // ============================================================================
-// nessi – Core Loop
+// nessi - Core Loop
 // ============================================================================
 
 import type {
-  NessiOptions,
-  NessiLoop,
-  OutboundEvent,
-  InboundEvent,
-  DoneReason,
-  Message,
-  UserMessage,
-  AssistantMessage,
-  ToolResultMessage,
   AssistantContentBlock,
-  ToolCallBlock,
-  Usage,
-  Tool,
-  ToolContext,
-  ProviderEvent,
+  AssistantMessage,
+  CoalesceOptions,
+  DoneReason,
+  InboundEvent,
+  LoopIssueAggregate,
   LoopToolCallAggregate,
   LoopToolIssueAggregate,
   LoopTurnAggregate,
+  Message,
+  NessiIssue,
+  NessiLoop,
+  NessiOptions,
+  OutboundEvent,
+  StoreEntry,
+  Tool,
+  ToolCallBlock,
+  ToolContext,
+  ToolExecutionIssue,
+  ToolResultMessage,
+  Usage,
+  UserMessage,
 } from "./types.js";
 import { aggregateFromTurns, cloneUsage } from "./aggregates.js";
 import { appendAssistantContentBlock, buildAssistantMessageFromContent } from "./ai/shared/messages.js";
-import { normalizeToolStream } from "./ai/shared/tool-stream-normalizer.js";
 import { toolToSpec } from "./tools.js";
-import { zeroUsage, toErrorMessage, estimateTokens, truncateToolResults } from "./utils.js";
+import { createLoopId, estimateTokens, toErrorMessage, truncateToolResults, zeroUsage } from "./utils.js";
 
 // ----------------------------------------------------------------------------
-// Inbound event channel — lets the consumer push() events that the loop awaits
+// Inbound event channel
 // ----------------------------------------------------------------------------
 
 type Channel<T> = {
   push(value: T): void;
-  pull(): Promise<T>;
-  /** Synchronously empty the queued (not yet pulled) values. */
+  pull(signal?: AbortSignal): Promise<T>;
   drain(): T[];
+}
+
+class PullCancelledError extends Error {
+  constructor() {
+    super("channel pull cancelled");
+    this.name = "PullCancelledError";
+  }
+}
+
+class ToolExecutionFailure extends Error {
+  readonly issue: ToolExecutionIssue;
+
+  constructor(issue: ToolExecutionIssue) {
+    super(issue.message);
+    this.name = "ToolExecutionFailure";
+    this.issue = issue;
+  }
 }
 
 const createChannel = <T>(): Channel<T> => {
   const queue: T[] = [];
-  const waiters: Array<(value: T) => void> = [];
+  const waiters: Array<{
+    resolve(value: T): void;
+    reject(error: unknown): void;
+    cleanup?: () => void;
+  }> = [];
 
   return {
     push(value: T) {
       const waiter = waiters.shift();
       if (waiter) {
-        waiter(value);
-      } else {
-        queue.push(value);
+        waiter.cleanup?.();
+        waiter.resolve(value);
       }
+      else queue.push(value);
     },
-    pull() {
+    pull(signal?: AbortSignal) {
       const queued = queue.shift();
       if (queued !== undefined) return Promise.resolve(queued);
-      return new Promise((resolve) => waiters.push(resolve));
+      if (signal?.aborted) return Promise.reject(new PullCancelledError());
+      return new Promise((resolve, reject) => {
+        const waiter = { resolve, reject } as {
+          resolve(value: T): void;
+          reject(error: unknown): void;
+          cleanup?: () => void;
+        };
+        const cancel = () => {
+          const index = waiters.indexOf(waiter);
+          if (index >= 0) waiters.splice(index, 1);
+          waiter.cleanup?.();
+          reject(new PullCancelledError());
+        };
+        if (signal) {
+          waiter.cleanup = () => signal.removeEventListener("abort", cancel);
+          signal.addEventListener("abort", cancel, { once: true });
+        }
+        waiters.push(waiter);
+      });
     },
     drain() {
       return queue.splice(0, queue.length);
@@ -68,9 +109,7 @@ const createChannel = <T>(): Channel<T> => {
 // ----------------------------------------------------------------------------
 
 const normalizeInput = (input: NonNullable<NessiOptions["input"]>): UserMessage => {
-  if (typeof input === "string") {
-    return { role: "user", content: [{ type: "text", text: input }] };
-  }
+  if (typeof input === "string") return { role: "user", content: [{ type: "text", text: input }] };
   return {
     role: "user",
     content: input.map((part) => (typeof part === "string" ? { type: "text" as const, text: part } : part)),
@@ -78,7 +117,7 @@ const normalizeInput = (input: NonNullable<NessiOptions["input"]>): UserMessage 
 }
 
 // ----------------------------------------------------------------------------
-// Debug helpers
+// Debug and issue helpers
 // ----------------------------------------------------------------------------
 
 const formatDebugJson = (value: unknown, maxLength = 2400) => {
@@ -128,10 +167,71 @@ const formatToolValidationError = (tool: Tool, args: unknown, error: { issues: u
   ].join("\n");
 }
 
-const createLoopId = () =>
-  globalThis.crypto?.randomUUID?.() ?? `loop-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+const createTurnId = (loopId: string, turnIndex: number, suffix = "turn") => `${loopId}:${suffix}:${turnIndex}`;
 
-/** Thrown when the loop is aborted while waiting for an inbound event. */
+const isToolStreamIssue = (issue: NessiIssue): issue is LoopToolIssueAggregate =>
+  issue.kind === "malformed_tool_call" || issue.kind === "cancelled_tool_call";
+
+const toolExecutionIssue = (
+  reason: ToolExecutionIssue["reason"],
+  message: string,
+  call: { id: string; name: string },
+): ToolExecutionIssue => ({
+  kind: "tool_execution_error",
+  reason,
+  message,
+  retryable: false,
+  callId: call.id,
+  name: call.name,
+});
+
+const toolTimeoutIssue = (call: { id: string; name: string }, timeoutMs: number): NessiIssue => ({
+  kind: "timeout",
+  scope: "tool",
+  message: `Tool "${call.name}" timed out after ${timeoutMs}ms.`,
+  retryable: false,
+  callId: call.id,
+  name: call.name,
+});
+
+const runtimeIssue = (error: unknown): NessiIssue => ({
+  kind: "runtime_error",
+  message: toErrorMessage(error),
+  retryable: false,
+});
+
+const issueToToolResult = (issue: NessiIssue) => issue.message;
+
+const timeoutMsFor = (tool: Tool) => {
+  const timeoutMs = tool.def.timeoutMs;
+  return typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : undefined;
+}
+
+const withTimeout = async <T>(
+  run: (signal?: AbortSignal) => Promise<T>,
+  timeoutMs: number | undefined,
+  onTimeout: () => void,
+): Promise<{ ok: true; value: T } | { ok: false }> => {
+  if (!timeoutMs) return { ok: true, value: await run() };
+  const timeoutController = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  try {
+    timeout = setTimeout(() => {
+      timedOut = true;
+      onTimeout();
+      timeoutController.abort();
+    }, timeoutMs);
+    return { ok: true, value: await run(timeoutController.signal) };
+  } catch (error) {
+    if (timedOut && error instanceof PullCancelledError) return { ok: false };
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    timeoutController.abort();
+  }
+}
+
 class LoopAbortedError extends Error {
   constructor() {
     super("nessi loop aborted");
@@ -139,7 +239,171 @@ class LoopAbortedError extends Error {
   }
 }
 
-const ABORTED_PULL: unique symbol = Symbol("nessi.aborted-pull");
+const linkedAbortSignal = (signals: Array<AbortSignal | undefined>) => {
+  const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
+  const controller = new AbortController();
+  const listeners: Array<() => void> = [];
+  for (const signal of activeSignals) {
+    const abort = () => controller.abort(signal.reason);
+    if (signal.aborted) {
+      abort();
+      continue;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    listeners.push(() => signal.removeEventListener("abort", abort));
+  }
+  return {
+    signal: controller.signal,
+    cleanup() {
+      for (const remove of listeners) remove();
+    },
+  };
+};
+
+// ----------------------------------------------------------------------------
+// Aggregate reconstruction
+// ----------------------------------------------------------------------------
+
+const aggregateTurnsFromEntries = (entries: StoreEntry[]): LoopTurnAggregate[] => {
+  const messages = entries.filter((entry) => entry.kind === "message").map((entry) => entry.message);
+  const lastAssistantIdx = messages.findLastIndex((message) => message.role === "assistant");
+  if (lastAssistantIdx < 0) return [];
+
+  let start = 0;
+  for (let i = lastAssistantIdx - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") {
+      start = i + 1;
+      break;
+    }
+  }
+
+  const turns: LoopTurnAggregate[] = [];
+  for (let i = start; i < messages.length; i++) {
+    const message = messages[i];
+    if (message?.role !== "assistant") continue;
+
+    const toolCalls = message.content
+      .filter((block): block is ToolCallBlock => block.type === "tool_call")
+      .map((block): LoopToolCallAggregate => ({
+        callId: block.id,
+        name: block.name,
+        args: block.args,
+      }));
+    const byId = new Map(toolCalls.map((toolCall) => [toolCall.callId, toolCall]));
+
+    for (let j = i + 1; j < messages.length; j++) {
+      const next = messages[j];
+      if (!next || next.role === "assistant" || next.role === "user") break;
+      const toolCall = byId.get(next.callId);
+      if (toolCall) {
+        toolCall.result = next.result;
+        toolCall.isError = next.isError;
+      }
+    }
+
+    turns.push({
+      message,
+      usage: cloneUsage(message.usage),
+      stopReason: message.stopReason,
+      toolCalls,
+    });
+  }
+
+  return turns;
+}
+
+// ----------------------------------------------------------------------------
+// Delta coalescing
+// ----------------------------------------------------------------------------
+
+type BlockDeltaOutbound = Extract<OutboundEvent, { type: "block_delta" }>;
+
+const canMergeDelta = (left: BlockDeltaOutbound, right: BlockDeltaOutbound) =>
+  left.agentId === right.agentId
+  && left.loopId === right.loopId
+  && left.turnId === right.turnId
+  && left.blockId === right.blockId;
+
+const coalesceOutboundEvents = async function* (
+  source: AsyncIterable<OutboundEvent>,
+  options: CoalesceOptions,
+): AsyncGenerator<OutboundEvent> {
+  const maxChars = typeof options.maxChars === "number" && options.maxChars > 0 ? options.maxChars : undefined;
+  const ms = typeof options.ms === "number" && options.ms > 0 ? options.ms : undefined;
+  if (!maxChars && !ms) {
+    yield* source;
+    return;
+  }
+
+  const iterator = source[Symbol.asyncIterator]();
+  let next = iterator.next();
+  let buffer: BlockDeltaOutbound | undefined;
+  let timer: Promise<{ type: "timer"; seq: number }> | undefined;
+  let timerSeq = 0;
+
+  const clearTimer = () => {
+    timer = undefined;
+    timerSeq++;
+  };
+
+  const startTimer = () => {
+    if (!ms || timer) return;
+    const seq = ++timerSeq;
+    timer = new Promise((resolve) => setTimeout(() => resolve({ type: "timer", seq }), ms));
+  };
+
+  const flush = function* (): Generator<OutboundEvent> {
+    if (!buffer) return;
+    const event = buffer;
+    buffer = undefined;
+    clearTimer();
+    yield event;
+  };
+
+  while (true) {
+    const raced = await (timer
+      ? Promise.race([
+          next.then((result) => ({ type: "event" as const, result })),
+          timer,
+        ])
+      : next.then((result) => ({ type: "event" as const, result })));
+
+    if (raced.type === "timer") {
+      if (raced.seq !== timerSeq) continue;
+      yield* flush();
+      continue;
+    }
+
+    const { result } = raced;
+    if (result.done) {
+      yield* flush();
+      return;
+    }
+    next = iterator.next();
+    const event = result.value;
+
+    if (event.type !== "block_delta") {
+      yield* flush();
+      yield event;
+      continue;
+    }
+
+    if (!buffer) {
+      buffer = event;
+      startTimer();
+    } else if (canMergeDelta(buffer, event)) {
+      buffer = { ...buffer, delta: buffer.delta + event.delta };
+    } else {
+      yield* flush();
+      buffer = event;
+      startTimer();
+    }
+
+    if (maxChars && buffer.delta.length >= maxChars) {
+      yield* flush();
+    }
+  }
+}
 
 // ----------------------------------------------------------------------------
 // nessi()
@@ -160,6 +424,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     temperature,
     maxOutputTokens,
     disableReasoning,
+    coalesce,
     maxToolResultChars,
     signal: externalSignal,
   } = options;
@@ -169,27 +434,47 @@ export const nessi = (options: NessiOptions): NessiLoop => {
   const steerQueue: string[] = [];
   const subscribers: Array<(event: OutboundEvent) => void> = [];
   const abortController = new AbortController();
-  /** Events injected synchronously from abort() — drained by iterator.next() before polling the generator. */
-  const pendingInjections: OutboundEvent[] = [];
-  let interrupted = false;
   let lastUsage: Usage = zeroUsage();
   const loopTurns: LoopTurnAggregate[] = [];
-  const loopToolIssues: LoopToolIssueAggregate[] = [];
+  const loopIssues: LoopIssueAggregate[] = [];
   const loopId = requestedLoopId?.trim() ? requestedLoopId : createLoopId();
-  const snapshotAggregate = () => aggregateFromTurns(loopTurns, loopToolIssues);
+  const snapshotAggregate = () => aggregateFromTurns(loopTurns, loopIssues);
 
-  const doneEvent = (reason: DoneReason): Extract<OutboundEvent, { type: "done" }> => ({
-    type: "done",
+  const loopEndEvent = (reason: DoneReason): Extract<OutboundEvent, { type: "loop_end" }> => ({
+    type: "loop_end",
     agentId,
     loopId,
     reason,
     aggregate: snapshotAggregate(),
   });
 
+  const recordIssue = (
+    issue: NessiIssue,
+    turn?: { issues: LoopIssueAggregate[]; toolIssues: LoopToolIssueAggregate[] },
+  ) => {
+    loopIssues.push({ ...issue });
+    if (turn) {
+      turn.issues.push({ ...issue });
+      if (isToolStreamIssue(issue)) turn.toolIssues.push({ ...issue });
+    }
+  };
+
+  const issueEvent = (
+    issue: NessiIssue,
+    turn?: { turnId: string; turnIndex: number },
+  ): Extract<OutboundEvent, { type: "issue" }> => ({
+    type: "issue",
+    agentId,
+    loopId,
+    issue,
+    ...(turn ? { turnId: turn.turnId, turnIndex: turn.turnIndex } : {}),
+  });
+
   const recordAssistantTurn = (
     message: AssistantMessage,
     usage: Usage | undefined,
     toolCalls: LoopToolCallAggregate[],
+    issues: LoopIssueAggregate[] = [],
     toolIssues: LoopToolIssueAggregate[] = [],
   ) => {
     const turn: LoopTurnAggregate = {
@@ -197,190 +482,236 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       usage: cloneUsage(usage),
       stopReason: message.stopReason,
       toolCalls,
+      ...(issues.length > 0 ? { issues: issues.map((issue) => ({ ...issue })) } : {}),
       ...(toolIssues.length > 0 ? { toolIssues: toolIssues.map((issue) => ({ ...issue })) } : {}),
     };
     loopTurns.push(turn);
   };
 
-  // Resolves once the loop is aborted — lets pullMatching stop waiting instead of hanging forever.
-  let notifyAbortedPull!: () => void;
-  const abortedPull = new Promise<typeof ABORTED_PULL>((resolve) => {
-    notifyAbortedPull = () => resolve(ABORTED_PULL);
-  });
-  if (abortController.signal.aborted) notifyAbortedPull();
-  else abortController.signal.addEventListener("abort", () => notifyAbortedPull(), { once: true });
-
-  // True when a matching inbound event was already pushed (e.g. seeded before a resume).
-  // Used to skip emitting action_request events that are already answered.
   const hasBufferedInbound = (match: (event: InboundEvent) => boolean): boolean => {
     deferredInbound.push(...channel.drain());
     return deferredInbound.some(match);
   };
 
-  // Pull the inbound event for a specific callId/type, buffering unrelated events.
-  // Throws LoopAbortedError when the loop is aborted while waiting.
-  const pullMatching = async <T extends InboundEvent>(match: (event: InboundEvent) => event is T): Promise<T> => {
+  const pullMatching = async <T extends InboundEvent>(
+    match: (event: InboundEvent) => event is T,
+    localSignal?: AbortSignal,
+  ): Promise<T> => {
     while (true) {
       const bufferedIdx = deferredInbound.findIndex(match);
-      if (bufferedIdx >= 0) {
-        return deferredInbound.splice(bufferedIdx, 1)[0] as T;
-      }
+      if (bufferedIdx >= 0) return deferredInbound.splice(bufferedIdx, 1)[0] as T;
       if (abortController.signal.aborted) throw new LoopAbortedError();
-      const inbound = await Promise.race([channel.pull(), abortedPull]);
-      if (inbound === ABORTED_PULL) throw new LoopAbortedError();
+      const linked = linkedAbortSignal([abortController.signal, localSignal]);
+      let inbound: InboundEvent;
+      try {
+        inbound = await channel.pull(linked.signal);
+      } catch (error) {
+        if (error instanceof PullCancelledError && abortController.signal.aborted) {
+          throw new LoopAbortedError();
+        }
+        throw error;
+      } finally {
+        linked.cleanup();
+      }
       if (match(inbound)) return inbound;
       deferredInbound.push(inbound);
     }
-  }
+  };
 
-  // Link external signal
   if (externalSignal) {
-    if (externalSignal.aborted) {
-      abortController.abort();
-    } else {
-      externalSignal.addEventListener("abort", () => abortController.abort(), { once: true });
-    }
+    if (externalSignal.aborted) abortController.abort();
+    else externalSignal.addEventListener("abort", () => abortController.abort(), { once: true });
   }
 
   const signal = abortController.signal;
 
-  // Tool lookup (fix F: build functionally)
-  const names = tools.map(t => t.def.name);
+  const names = tools.map((tool) => tool.def.name);
   if (new Set(names).size !== names.length) {
-    const dup = names.find((n, i) => names.indexOf(n) !== i);
+    const dup = names.find((name, index) => names.indexOf(name) !== index);
     throw new Error(`Duplicate tool name: ${dup}`);
   }
-  const toolMap = new Map(tools.map(t => [t.def.name, t]));
+  const toolMap = new Map(tools.map((tool) => [tool.def.name, tool]));
 
-  // Helper: create and store a tool result message (fix C)
   const appendToolResult = async (callId: string, name: string, result: unknown, isError = false) => {
     const msg: ToolResultMessage = { role: "tool_result", callId, name, result, isError };
     await store.append(msg);
     return msg;
-  }
+  };
 
+  type TurnContext = { turnId: string; turnIndex: number };
   type UpdateAggregateToolCall = (callId: string, patch: Partial<LoopToolCallAggregate>) => void;
 
-  // Execute a single tool call: validation, approval/client-tool round-trips, execution,
-  // result persistence. Shared by the live turn loop and history resume.
-  async function* executeToolCall(tc: ToolCallBlock, updateAggregateToolCall: UpdateAggregateToolCall): AsyncGenerator<OutboundEvent> {
+  async function* failToolCall(
+    tc: ToolCallBlock,
+    turnCtx: TurnContext,
+    updateAggregateToolCall: UpdateAggregateToolCall,
+    issue: NessiIssue,
+    turnIssues?: { issues: LoopIssueAggregate[]; toolIssues: LoopToolIssueAggregate[] },
+  ): AsyncGenerator<OutboundEvent> {
+    const result = issueToToolResult(issue);
+    await appendToolResult(tc.id, tc.name, result, true);
+    updateAggregateToolCall(tc.id, { result, isError: true });
+    recordIssue(issue, turnIssues);
+    yield issueEvent(issue, turnCtx);
+    yield {
+      type: "tool_execution_end",
+      agentId,
+      loopId,
+      ...turnCtx,
+      callId: tc.id,
+      name: tc.name,
+      result,
+      isError: true,
+    };
+  }
+
+  async function* executeToolCall(
+    tc: ToolCallBlock,
+    turnCtx: TurnContext,
+    updateAggregateToolCall: UpdateAggregateToolCall,
+    turnIssues?: { issues: LoopIssueAggregate[]; toolIssues: LoopToolIssueAggregate[] },
+  ): AsyncGenerator<OutboundEvent> {
+    const eventFields = { agentId, loopId, ...turnCtx };
+    yield { type: "tool_execution_start", ...eventFields, callId: tc.id, name: tc.name, args: tc.args };
+
     const tool = toolMap.get(tc.name);
     if (!tool) {
-      // Unknown tool — report error to LLM
-      const errorMsg = `Unknown tool: ${tc.name}`;
-      await appendToolResult(tc.id, tc.name, errorMsg, true);
-      updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
-      yield {
-        type: "tool_end",
-        agentId,
-        loopId,
-        callId: tc.id,
-        name: tc.name,
-        result: errorMsg,
-        isError: true,
-      };
+      yield* failToolCall(
+        tc,
+        turnCtx,
+        updateAggregateToolCall,
+        toolExecutionIssue("unknown_tool", `Unknown tool: ${tc.name}`, tc),
+        turnIssues,
+      );
       return;
     }
 
-    // Validate input
     const inputResult = tool.def.inputSchema.safeParse(tc.args);
     if (!inputResult.success) {
-      const errorMsg = formatToolValidationError(tool, tc.args, inputResult.error);
-      await appendToolResult(tc.id, tc.name, errorMsg, true);
-      updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
-      yield {
-        type: "tool_end",
-        agentId,
-        loopId,
-        callId: tc.id,
-        name: tc.name,
-        result: errorMsg,
-        isError: true,
-      };
+      yield* failToolCall(
+        tc,
+        turnCtx,
+        updateAggregateToolCall,
+        toolExecutionIssue("input_validation_failed", formatToolValidationError(tool, tc.args, inputResult.error), tc),
+        turnIssues,
+      );
       return;
     }
 
     const validatedInput = inputResult.data;
     updateAggregateToolCall(tc.id, { args: validatedInput });
 
-    // Only expose a durable tool start once the call has executable input.
-    yield { type: "tool_start", agentId, loopId, callId: tc.id, name: tc.name };
-    yield { type: "tool_call", agentId, loopId, callId: tc.id, name: tc.name, args: validatedInput };
+    const timeoutMs = timeoutMsFor(tool);
+    const timeoutIssue = () => toolTimeoutIssue(tc, timeoutMs ?? 0);
 
-    // Client tool — pause and wait for consumer
     if (tool.kind === "client") {
       const matchesToolResult = (event: InboundEvent): event is Extract<InboundEvent, { type: "tool_result" }> =>
         event.type === "tool_result" && event.callId === tc.id;
       if (!hasBufferedInbound(matchesToolResult)) {
         yield {
-          type: "action_request",
-          agentId,
-          loopId,
+          type: "tool_action_request",
+          ...eventFields,
           kind: "client_tool",
           callId: tc.id,
           name: tc.name,
           args: validatedInput,
         };
       }
-      const response = await pullMatching(matchesToolResult);
-      await appendToolResult(tc.id, tc.name, response.result);
-      updateAggregateToolCall(tc.id, { result: response.result });
-      yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: response.result };
+
+      const pulled = await withTimeout((signal) => pullMatching(matchesToolResult, signal), timeoutMs, () => {});
+      if (!pulled.ok) {
+        const issue = timeoutIssue();
+        const result = issueToToolResult(issue);
+        await appendToolResult(tc.id, tc.name, result, true);
+        updateAggregateToolCall(tc.id, { result, isError: true });
+        recordIssue(issue, turnIssues);
+        yield issueEvent(issue, turnCtx);
+        yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result, isError: true };
+        return;
+      }
+
+      const output = pulled.value.result;
+      if (tool.def.outputSchema) {
+        const outputResult = tool.def.outputSchema.safeParse(output);
+        if (!outputResult.success) {
+          const issue = toolExecutionIssue(
+            "output_validation_failed",
+            `Output validation error for tool "${tc.name}": ${outputResult.error.message}`,
+            tc,
+          );
+          const result = issueToToolResult(issue);
+          await appendToolResult(tc.id, tc.name, result, true);
+          updateAggregateToolCall(tc.id, { result, isError: true });
+          recordIssue(issue, turnIssues);
+          yield issueEvent(issue, turnCtx);
+          yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result, isError: true };
+          return;
+        }
+      }
+
+      await appendToolResult(tc.id, tc.name, output);
+      updateAggregateToolCall(tc.id, { result: output });
+      yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: output };
       return;
     }
 
-    // Server tool with approval
     if (tool.def.needsApproval) {
       const matchesApproval = (event: InboundEvent): event is Extract<InboundEvent, { type: "approval_response" }> =>
         event.type === "approval_response" && event.callId === tc.id;
       if (!hasBufferedInbound(matchesApproval)) {
         yield {
-          type: "action_request",
-          agentId,
-          loopId,
+          type: "tool_action_request",
+          ...eventFields,
           kind: "approval",
           callId: tc.id,
           name: tc.name,
           args: validatedInput,
         };
       }
-      const response = await pullMatching(matchesApproval);
-      if (!response.approved) {
-        await appendToolResult(tc.id, tc.name, "User denied this action", true);
-        updateAggregateToolCall(tc.id, { result: "User denied this action", isError: true });
-        yield {
-          type: "tool_end",
-          agentId,
-          loopId,
-          callId: tc.id,
-          name: tc.name,
-          result: "User denied this action",
-          isError: true,
-        };
+      const pulled = await withTimeout((signal) => pullMatching(matchesApproval, signal), timeoutMs, () => {});
+      if (!pulled.ok) {
+        const issue = timeoutIssue();
+        const result = issueToToolResult(issue);
+        await appendToolResult(tc.id, tc.name, result, true);
+        updateAggregateToolCall(tc.id, { result, isError: true });
+        recordIssue(issue, turnIssues);
+        yield issueEvent(issue, turnCtx);
+        yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result, isError: true };
+        return;
+      }
+      if (!pulled.value.approved) {
+        const issue = toolExecutionIssue("approval_denied", "User denied this action", tc);
+        const result = issueToToolResult(issue);
+        await appendToolResult(tc.id, tc.name, result, true);
+        updateAggregateToolCall(tc.id, { result, isError: true });
+        recordIssue(issue, turnIssues);
+        yield issueEvent(issue, turnCtx);
+        yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result, isError: true };
         return;
       }
     }
 
-    // Execute server tool with custom approval support
+    const toolAbort = new AbortController();
+    const abortTool = () => toolAbort.abort();
+    if (signal.aborted) abortTool();
+    else signal.addEventListener("abort", abortTool, { once: true });
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
     try {
-      // Approval infrastructure — lets tool handlers call ctx.requestApproval()
-      const approvalQueue: Array<{
-        id: string;
-        message: string;
-        resolve: (approved: boolean) => void;
-      }> = [];
+      const approvalQueue: Array<{ id: string; message: string; resolve: (approved: boolean) => void }> = [];
       const clientToolQueue: Array<{
         id: string;
         name: string;
         args: unknown;
         resolve: (result: unknown) => void;
+        reject: (error: unknown) => void;
       }> = [];
       let queueNotify: (() => void) | null = null;
       let approvalCounter = 0;
       let clientToolCounter = 0;
 
       const ctx: ToolContext = {
-        signal,
+        signal: toolAbort.signal,
         requestApproval(message: string) {
           return new Promise((resolve) => {
             const id = `${tc.id}-approval-${approvalCounter++}`;
@@ -389,110 +720,222 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           });
         },
         requestClientTool<T = unknown>(name: string, args: unknown) {
-          return new Promise<T>((resolve) => {
+          return new Promise<T>((resolve, reject) => {
             const id = `${tc.id}-client-${clientToolCounter++}`;
-            clientToolQueue.push({ id, name, args, resolve: resolve as (result: unknown) => void });
+            clientToolQueue.push({
+              id,
+              name,
+              args,
+              resolve: resolve as (result: unknown) => void,
+              reject,
+            });
             queueNotify?.();
           });
         },
       };
 
       const resultPromise = tool.execute(validatedInput, ctx);
+      let timeout: Promise<{ kind: "timeout" }> | undefined;
+      if (timeoutMs) {
+        timeout = new Promise((resolve) => {
+          timeoutHandle = setTimeout(() => {
+            toolAbort.abort();
+            resolve({ kind: "timeout" });
+          }, timeoutMs);
+        });
+      }
 
-      // Supervise: race between tool completion and queued sub-requests
       let result: unknown;
       let done = false;
       while (!done) {
+        const waitForQueue = new Promise<{ kind: "queue" }>((resolve) => {
+          if (approvalQueue.length > 0 || clientToolQueue.length > 0) resolve({ kind: "queue" });
+          else queueNotify = () => resolve({ kind: "queue" });
+        });
         const settled = await Promise.race([
-          resultPromise.then((r) => ({ kind: "done" as const, result: r })),
-          new Promise<{ kind: "queue" }>((resolve) => {
-            if (approvalQueue.length > 0 || clientToolQueue.length > 0) resolve({ kind: "queue" });
-            else queueNotify = () => resolve({ kind: "queue" });
-          }),
+          resultPromise.then((value) => ({ kind: "done" as const, result: value })),
+          waitForQueue,
+          ...(timeout ? [timeout] : []),
         ]);
+
+        if (settled.kind === "timeout") {
+          const issue = timeoutIssue();
+          const timeoutResult = issueToToolResult(issue);
+          await appendToolResult(tc.id, tc.name, timeoutResult, true);
+          updateAggregateToolCall(tc.id, { result: timeoutResult, isError: true });
+          recordIssue(issue, turnIssues);
+          yield issueEvent(issue, turnCtx);
+          yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: timeoutResult, isError: true };
+          return;
+        }
 
         if (settled.kind === "done") {
           result = settled.result;
           done = true;
-        } else {
-          // Drain pending approval requests
-          while (approvalQueue.length > 0) {
-            const req = approvalQueue.shift()!;
-            const matchesCustomApproval = (event: InboundEvent): event is Extract<InboundEvent, { type: "approval_response" }> =>
-              event.type === "approval_response" && event.callId === req.id;
-            if (!hasBufferedInbound(matchesCustomApproval)) {
-              yield {
-                type: "action_request",
-                agentId,
-                loopId,
-                kind: "custom_approval" as const,
-                callId: req.id,
-                name: tc.name,
-                args: validatedInput,
-                message: req.message,
-              };
-            }
-            const response = await pullMatching(matchesCustomApproval);
-            req.resolve(response.approved);
-          }
-          while (clientToolQueue.length > 0) {
-            const req = clientToolQueue.shift()!;
-            const matchesClientResult = (event: InboundEvent): event is Extract<InboundEvent, { type: "tool_result" }> =>
-              event.type === "tool_result" && event.callId === req.id;
-            if (!hasBufferedInbound(matchesClientResult)) {
-              yield {
-                type: "action_request",
-                agentId,
-                loopId,
-                kind: "client_tool" as const,
-                callId: req.id,
-                name: req.name,
-                args: req.args,
-              };
-            }
-            const response = await pullMatching(matchesClientResult);
-            req.resolve(response.result);
-          }
-          queueNotify = null;
+          continue;
         }
+
+        while (approvalQueue.length > 0) {
+          const req = approvalQueue.shift()!;
+          const matchesCustomApproval = (event: InboundEvent): event is Extract<InboundEvent, { type: "approval_response" }> =>
+            event.type === "approval_response" && event.callId === req.id;
+          if (!hasBufferedInbound(matchesCustomApproval)) {
+            yield {
+              type: "tool_action_request",
+              ...eventFields,
+              kind: "custom_approval",
+              callId: req.id,
+              name: tc.name,
+              args: validatedInput,
+              message: req.message,
+            };
+          }
+          const response = await withTimeout(
+            (signal) => pullMatching(matchesCustomApproval, signal),
+            timeoutMs,
+            () => toolAbort.abort(),
+          );
+          if (!response.ok) {
+            const issue = timeoutIssue();
+            const timeoutResult = issueToToolResult(issue);
+            await appendToolResult(tc.id, tc.name, timeoutResult, true);
+            updateAggregateToolCall(tc.id, { result: timeoutResult, isError: true });
+            recordIssue(issue, turnIssues);
+            yield issueEvent(issue, turnCtx);
+            yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: timeoutResult, isError: true };
+            return;
+          }
+          req.resolve(response.value.approved);
+        }
+
+        while (clientToolQueue.length > 0) {
+          const req = clientToolQueue.shift()!;
+          const bridgeTool = toolMap.get(req.name);
+          let requestArgs = req.args;
+          if (bridgeTool) {
+            if (bridgeTool.kind !== "client") {
+              req.reject(new ToolExecutionFailure(toolExecutionIssue(
+                "unknown_tool",
+                `Client tool "${req.name}" is not registered as a client tool.`,
+                { id: req.id, name: req.name },
+              )));
+              continue;
+            }
+            const inputResult = bridgeTool.def.inputSchema.safeParse(req.args);
+            if (!inputResult.success) {
+              req.reject(new ToolExecutionFailure(toolExecutionIssue(
+                "input_validation_failed",
+                formatToolValidationError(bridgeTool, req.args, inputResult.error),
+                { id: req.id, name: req.name },
+              )));
+              continue;
+            }
+            requestArgs = inputResult.data;
+          }
+
+          const matchesClientResult = (event: InboundEvent): event is Extract<InboundEvent, { type: "tool_result" }> =>
+            event.type === "tool_result" && event.callId === req.id;
+          if (!hasBufferedInbound(matchesClientResult)) {
+            yield {
+              type: "tool_action_request",
+              ...eventFields,
+              kind: "client_tool",
+              callId: req.id,
+              name: req.name,
+              args: requestArgs,
+            };
+          }
+          const response = await withTimeout(
+            (signal) => pullMatching(matchesClientResult, signal),
+            timeoutMs,
+            () => toolAbort.abort(),
+          );
+          if (!response.ok) {
+            const issue = timeoutIssue();
+            const timeoutResult = issueToToolResult(issue);
+            await appendToolResult(tc.id, tc.name, timeoutResult, true);
+            updateAggregateToolCall(tc.id, { result: timeoutResult, isError: true });
+            recordIssue(issue, turnIssues);
+            yield issueEvent(issue, turnCtx);
+            yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: timeoutResult, isError: true };
+            return;
+          }
+          let output = response.value.result;
+          if (bridgeTool?.kind === "client" && bridgeTool.def.outputSchema) {
+            const outputResult = bridgeTool.def.outputSchema.safeParse(output);
+            if (!outputResult.success) {
+              req.reject(new ToolExecutionFailure(toolExecutionIssue(
+                "output_validation_failed",
+                `Output validation error for client tool "${req.name}": ${outputResult.error.message}`,
+                { id: req.id, name: req.name },
+              )));
+              continue;
+            }
+            output = outputResult.data;
+          }
+          req.resolve(output);
+        }
+        queueNotify = null;
       }
 
-      // Validate output
       if (tool.def.outputSchema) {
         const outputResult = tool.def.outputSchema.safeParse(result);
         if (!outputResult.success) {
-          const errorMsg = `Output validation error: ${outputResult.error.message}`;
-          await appendToolResult(tc.id, tc.name, errorMsg, true);
-          updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
-          yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
+          const issue = toolExecutionIssue(
+            "output_validation_failed",
+            `Output validation error for tool "${tc.name}": ${outputResult.error.message}`,
+            tc,
+          );
+          const output = issueToToolResult(issue);
+          await appendToolResult(tc.id, tc.name, output, true);
+          updateAggregateToolCall(tc.id, { result: output, isError: true });
+          recordIssue(issue, turnIssues);
+          yield issueEvent(issue, turnCtx);
+          yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: output, isError: true };
           return;
         }
       }
 
       await appendToolResult(tc.id, tc.name, result);
       updateAggregateToolCall(tc.id, { result });
-      yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result };
-    } catch (err) {
-      // Aborts (including suspension by the consumer) must not be recorded as tool failures.
-      if (err instanceof LoopAbortedError || signal.aborted) throw err;
-      const errorMsg = toErrorMessage(err);
-      await appendToolResult(tc.id, tc.name, errorMsg, true);
-      updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
-      yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
+      yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result };
+    } catch (error) {
+      if (error instanceof LoopAbortedError || signal.aborted) throw error;
+      const issue = error instanceof ToolExecutionFailure
+        ? error.issue
+        : toolExecutionIssue("execution_failed", toErrorMessage(error), tc);
+      const result = issueToToolResult(issue);
+      await appendToolResult(tc.id, tc.name, result, true);
+      updateAggregateToolCall(tc.id, { result, isError: true });
+      recordIssue(issue, turnIssues);
+      yield issueEvent(issue, turnCtx);
+      yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result, isError: true };
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      signal.removeEventListener("abort", abortTool);
     }
   }
 
   const noopAggregateUpdate: UpdateAggregateToolCall = () => {};
 
-  // Resume mode (input omitted): execute tool_call blocks of the trailing assistant
-  // message that have no tool_result yet, then close the round with turn_end.
-  async function* resumePendingToolCalls(): AsyncGenerator<OutboundEvent> {
+  async function* runCompaction(operation: Promise<void>): AsyncGenerator<OutboundEvent> {
+    yield { type: "compaction_start", agentId, loopId };
+    try {
+      await operation;
+    } finally {
+      yield { type: "compaction_end", agentId, loopId };
+    }
+  }
+
+  async function* resumePendingToolCalls(turnCtx: TurnContext): AsyncGenerator<OutboundEvent> {
     const entries = await store.load();
+    const seeded = aggregateTurnsFromEntries(entries);
+    loopTurns.splice(0, loopTurns.length, ...seeded);
 
     let lastAssistantIdx = -1;
     for (let i = entries.length - 1; i >= 0; i--) {
       const role = entries[i]!.message.role;
-      if (role === "user") return; // trailing user input — nothing to resume
+      if (role === "user") return;
       if (role === "assistant") {
         lastAssistantIdx = i;
         break;
@@ -515,117 +958,139 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     const pending = toolCallBlocks.filter((block) => !resolvedCallIds.has(block.id));
     if (pending.length === 0) return;
 
+    const aggregateTurn = loopTurns.findLast((turn) => turn.message === assistantMessage);
+    const aggregateToolCallMap = new Map((aggregateTurn?.toolCalls ?? []).map((toolCall) => [toolCall.callId, toolCall]));
+    const updateAggregateToolCall = aggregateTurn
+      ? (callId: string, patch: Partial<LoopToolCallAggregate>) => {
+          const aggregateToolCall = aggregateToolCallMap.get(callId);
+          if (aggregateToolCall) Object.assign(aggregateToolCall, patch);
+        }
+      : noopAggregateUpdate;
+
+    const turnIssues = { issues: [] as LoopIssueAggregate[], toolIssues: [] as LoopToolIssueAggregate[] };
+    yield { type: "turn_start", agentId, loopId, ...turnCtx, resumed: true };
     for (const tc of pending) {
       if (signal.aborted) return;
-      yield* executeToolCall(tc, noopAggregateUpdate);
+      yield* executeToolCall(tc, turnCtx, updateAggregateToolCall, turnIssues);
     }
-    yield { type: "turn_end", agentId, loopId, message: assistantMessage };
+    if (aggregateTurn && turnIssues.issues.length > 0) {
+      aggregateTurn.issues = [...(aggregateTurn.issues ?? []), ...turnIssues.issues.map((issue) => ({ ...issue }))];
+      aggregateTurn.toolIssues = [
+        ...(aggregateTurn.toolIssues ?? []),
+        ...turnIssues.toolIssues.map((issue) => ({ ...issue })),
+      ];
+    }
+    yield { type: "turn_end", agentId, loopId, ...turnCtx, message: assistantMessage };
   }
 
-  // The generator that drives the loop
   async function* run(): AsyncGenerator<OutboundEvent> {
-    let turn = 0;
+    let providerTurn = 0;
+    let eventTurnIndex = 0;
     let compactionRetried = false;
+
+    yield { type: "loop_start", agentId, loopId };
+
     try {
       if (input !== undefined) {
         await store.append(normalizeInput(input));
       } else {
-        // Run from history: resume unresolved tool calls of the trailing assistant
-        // message (if any), then continue with regular provider turns.
-        yield* resumePendingToolCalls();
+        const resumeCtx = { turnId: createTurnId(loopId, eventTurnIndex, "resume"), turnIndex: eventTurnIndex };
+        let emittedResumeTurn = false;
+        for await (const event of resumePendingToolCalls(resumeCtx)) {
+          emittedResumeTurn = true;
+          yield event;
+        }
+        if (emittedResumeTurn) eventTurnIndex++;
         if (signal.aborted) {
-          yield doneEvent("aborted");
+          yield loopEndEvent("aborted");
           return;
         }
       }
 
-      while (turn < maxTurns) {
+      while (providerTurn < maxTurns) {
         if (signal.aborted) {
-          yield doneEvent("aborted");
+          yield loopEndEvent("aborted");
           return;
         }
 
-        // Credit check
         if (creditStore) {
           const remaining = await creditStore.remaining();
           if (remaining <= 0) {
-            yield doneEvent("no_credits");
+            yield loopEndEvent("no_credits");
             return;
           }
         }
 
-        // Drain queued steer messages (non-blocking)
         while (steerQueue.length > 0) {
           const text = steerQueue.shift()!;
-          const steerMessage: UserMessage = {
-            role: "user",
-            content: [{ type: "text", text }],
-          };
+          const steerMessage: UserMessage = { role: "user", content: [{ type: "text", text }] };
           await store.append(steerMessage);
-          turn = 0;
+          providerTurn = 0;
           compactionRetried = false;
           yield { type: "steer_applied", agentId, loopId, message: text };
         }
 
-        // Load entries from store
         let entries = await store.load();
+        const contextWindow = provider.contextWindow;
+        const computeFillRatio = (messages: Message[]) => {
+          if (typeof contextWindow !== "number" || contextWindow <= 0) return undefined;
+          const tokens = lastUsage.total > 0 ? lastUsage.total : estimateTokens(messages);
+          return tokens / contextWindow;
+        };
 
-      // Compute fill ratio for compaction decisions.
-      // Prefer real provider usage from last turn; fall back to char-based estimate (first turn only).
-      const contextWindow = provider.contextWindow;
-      const computeFillRatio = (msgs: Message[]) => {
-        if (typeof contextWindow !== "number" || contextWindow <= 0) return undefined;
-        const tokens = lastUsage.total > 0 ? lastUsage.total : estimateTokens(msgs);
-        return tokens / contextWindow;
-      };
-
-      // Compaction (before provider call) — skip if we just did a force-retry
-      if (compact && !compactionRetried) {
-        const fillRatio = computeFillRatio(entries.map((e) => e.message));
-        const shouldForce = typeof fillRatio === "number" && fillRatio >= 0.85;
-        const compaction = compact({
-          entries,
-          store,
-          provider,
-          usage: lastUsage,
-          force: shouldForce,
-          fillRatio,
-        });
-        if (compaction) {
-          yield { type: "compaction_start", agentId, loopId };
-          await compaction;
-          yield { type: "compaction_end", agentId, loopId };
-          entries = await store.load();
+        if (compact && !compactionRetried) {
+          const fillRatio = computeFillRatio(entries.map((entry) => entry.message));
+          const shouldForce = typeof fillRatio === "number" && fillRatio >= 0.85;
+          const compaction = compact({
+            entries,
+            store,
+            provider,
+            usage: lastUsage,
+            force: shouldForce,
+            fillRatio,
+          });
+          if (compaction) {
+            yield* runCompaction(compaction);
+            entries = await store.load();
+          }
         }
-      }
 
-      // Build messages from entries, optionally truncate tool results
-      const rawMessages = entries.map((e) => e.message);
-      const messages: Message[] = typeof maxToolResultChars === "number"
-        ? truncateToolResults(rawMessages, maxToolResultChars)
-        : rawMessages;
+        const rawMessages = entries.map((entry) => entry.message);
+        const messages: Message[] = typeof maxToolResultChars === "number"
+          ? truncateToolResults(rawMessages, maxToolResultChars)
+          : rawMessages;
 
-      yield { type: "turn_start", agentId, loopId };
+        const turnCtx = { turnId: createTurnId(loopId, eventTurnIndex), turnIndex: eventTurnIndex };
+        eventTurnIndex++;
+        yield { type: "turn_start", agentId, loopId, ...turnCtx };
 
-      // Stream from provider
-      let turnUsage: Usage = zeroUsage();
-      let turnUsageReported = false;
-      let stopReason: AssistantMessage["stopReason"] = "stop";
-      const assistantBlocks: AssistantContentBlock[] = [];
-      const toolCalls: ToolCallBlock[] = [];
-      const toolArgBuffers = new Map<string, { name: string; argsText: string }>();
-      const toolIssues: LoopToolIssueAggregate[] = [];
-      let hadContextOverflow = false;
-      let overflowRatio: number | undefined;
-      let providerFailure: Extract<ProviderEvent, { type: "error" }> | null = null;
+        let turnUsage: Usage = zeroUsage();
+        let turnUsageReported = false;
+        let stopReason: AssistantMessage["stopReason"] = "stop";
+        const assistantBlocks: AssistantContentBlock[] = [];
+        const openBlocks = new Map<string, { index: number; kind: "text" | "thinking"; text: string }>();
+        const toolCalls: ToolCallBlock[] = [];
+        const turnIssues = { issues: [] as LoopIssueAggregate[], toolIssues: [] as LoopToolIssueAggregate[] };
+        let hadContextOverflow = false;
+        let overflowRatio: number | undefined;
+        let providerFailure: NessiIssue | undefined;
 
-      /** Build a partial assistant message for commit when the turn is interrupted mid-stream. */
-      const makeInterruptedMessage = (): AssistantMessage =>
-        buildAssistantMessageFromContent(provider.model, assistantBlocks, turnUsage, "interrupted");
+        const eventFields = { agentId, loopId, ...turnCtx };
+        const makePartialMessage = (reason: AssistantMessage["stopReason"]): AssistantMessage => {
+          const content = [...assistantBlocks];
+          const pendingBlocks = [...openBlocks.entries()]
+            .sort((left, right) => left[1].index - right[1].index)
+            .map(([, block]): AssistantContentBlock =>
+              block.kind === "thinking"
+                ? { type: "thinking", thinking: block.text }
+                : { type: "text", text: block.text },
+            );
+          for (const block of pendingBlocks) appendAssistantContentBlock(content, block);
+          return buildAssistantMessageFromContent(provider.model, content, turnUsage, reason);
+        };
 
-      try {
-        const normalizedStream = normalizeToolStream(
-          provider.stream({
+        try {
+          streamLoop: for await (const event of provider.stream({
             systemPrompt,
             messages,
             tools: tools.map(toolToSpec),
@@ -633,264 +1098,219 @@ export const nessi = (options: NessiOptions): NessiLoop => {
             maxOutputTokens,
             disableReasoning,
             signal,
-          }),
-          { suppressTextAfterMalformedTool: true },
-        );
+          })) {
+            if (signal.aborted) break;
 
-        streamLoop: for await (const event of normalizedStream) {
-          if (signal.aborted) break;
+            switch (event.type) {
+              case "block_start":
+                if (event.kind === "text" || event.kind === "thinking") {
+                  openBlocks.set(event.blockId, { index: event.index, kind: event.kind, text: "" });
+                }
+                yield { ...event, ...eventFields };
+                break;
 
-          switch (event.type) {
-            case "text":
-              appendAssistantContentBlock(assistantBlocks, { type: "text", text: event.delta });
-              yield { type: "text", agentId, loopId, delta: event.delta };
-              break;
-
-            case "thinking":
-              appendAssistantContentBlock(assistantBlocks, { type: "thinking", thinking: event.delta });
-              yield { type: "thinking", agentId, loopId, delta: event.delta };
-              break;
-
-            case "tool_start":
-              toolArgBuffers.set(event.callId, { name: event.name, argsText: "" });
-              break;
-
-            case "tool_delta":
-              toolArgBuffers.set(event.callId, {
-                name: toolArgBuffers.get(event.callId)?.name ?? "",
-                argsText: (toolArgBuffers.get(event.callId)?.argsText ?? "") + event.argsDelta,
-              });
-              break;
-
-            case "tool_call": {
-              toolArgBuffers.delete(event.callId);
-              const block: ToolCallBlock = {
-                type: "tool_call",
-                id: event.callId,
-                name: event.name,
-                args: event.args,
-              };
-              toolCalls.push(block);
-              appendAssistantContentBlock(assistantBlocks, block);
-              stopReason = "tool_use";
-              break;
-            }
-
-            case "tool_error": {
-              if (event.callId) toolArgBuffers.delete(event.callId);
-              const issue: LoopToolIssueAggregate = {
-                kind: "malformed",
-                reason: event.reason,
-                message: event.message,
-                callId: event.callId,
-                name: event.name,
-                argsText: event.argsText,
-                textDelta: event.textDelta,
-              };
-              toolIssues.push(issue);
-              loopToolIssues.push(issue);
-              const { type: _type, ...eventFields } = event;
-              yield { type: "tool_error", agentId, loopId, ...eventFields };
-              break;
-            }
-
-            case "tool_cancel": {
-              if (event.callId) toolArgBuffers.delete(event.callId);
-              const issue: LoopToolIssueAggregate = {
-                kind: "cancelled",
-                reason: event.reason,
-                message: event.message,
-                callId: event.callId,
-                name: event.name,
-                argsText: event.argsText,
-                textDelta: event.textDelta,
-              };
-              toolIssues.push(issue);
-              loopToolIssues.push(issue);
-              const { type: _type, ...eventFields } = event;
-              yield { type: "tool_cancel", agentId, loopId, ...eventFields };
-              break;
-            }
-
-            case "usage":
-              turnUsage = event.usage;
-              turnUsageReported = true;
-              stopReason = event.finishReason ?? stopReason;
-              break;
-
-            case "error":
-              if (event.contextOverflow) {
-                hadContextOverflow = true;
-                overflowRatio = event.overflowRatio;
+              case "block_delta": {
+                const open = openBlocks.get(event.blockId);
+                if (open) open.text += event.delta;
+                yield { ...event, ...eventFields };
                 break;
               }
-              providerFailure = event;
-              break streamLoop;
+
+              case "block_end":
+                openBlocks.delete(event.blockId);
+                appendAssistantContentBlock(assistantBlocks, event.block);
+                if (event.block.type === "tool_call") {
+                  toolCalls.push(event.block);
+                  stopReason = "tool_use";
+                }
+                yield { ...event, ...eventFields };
+                break;
+
+              case "usage":
+                turnUsage = event.usage;
+                turnUsageReported = true;
+                stopReason = event.finishReason ?? stopReason;
+                yield { ...event, ...eventFields };
+                break;
+
+              case "issue":
+                recordIssue(event.issue, turnIssues);
+                yield issueEvent(event.issue, turnCtx);
+                if (event.issue.kind === "provider_error" && event.issue.contextOverflow) {
+                  hadContextOverflow = true;
+                  overflowRatio = event.issue.overflowRatio;
+                  break;
+                }
+                if (
+                  event.issue.kind === "provider_error"
+                  || (event.issue.kind === "timeout" && event.issue.scope !== "tool")
+                  || event.issue.kind === "runtime_error"
+                ) {
+                  providerFailure = event.issue;
+                  break streamLoop;
+                }
+                break;
+
+              default: {
+                const unsupported = event as { type?: unknown };
+                const issue: NessiIssue = {
+                  kind: "runtime_error",
+                  message: `Unsupported provider event type: ${String(unsupported.type)}`,
+                  retryable: false,
+                };
+                recordIssue(issue, turnIssues);
+                yield issueEvent(issue, turnCtx);
+                providerFailure = issue;
+                break streamLoop;
+              }
+            }
           }
-        }
-      } catch (err) {
-        if (signal.aborted) {
-          const msg = makeInterruptedMessage();
-          if (msg.content.length > 0) {
-            await store.append(msg);
-            recordAssistantTurn(msg, turnUsageReported ? turnUsage : undefined, toolCalls.map((toolCall) => ({
-              callId: toolCall.id,
-              name: toolCall.name,
-              args: toolCall.args,
-            })), toolIssues);
-            yield { type: "turn_end", agentId, loopId, message: msg };
+        } catch (error) {
+          if (signal.aborted) {
+            const msg = makePartialMessage("interrupted");
+            if (msg.content.length > 0) {
+              await store.append(msg);
+              recordAssistantTurn(
+                msg,
+                turnUsageReported ? turnUsage : undefined,
+                toolCalls.map((toolCall) => ({ callId: toolCall.id, name: toolCall.name, args: toolCall.args })),
+                turnIssues.issues,
+                turnIssues.toolIssues,
+              );
+              yield { type: "turn_end", agentId, loopId, ...turnCtx, message: msg };
+            }
+            yield loopEndEvent("aborted");
+            return;
           }
-          yield doneEvent("aborted");
+          const issue = runtimeIssue(error);
+          recordIssue(issue, turnIssues);
+          yield issueEvent(issue, turnCtx);
+          yield loopEndEvent("error");
           return;
         }
-        yield { type: "error", agentId, loopId, error: toErrorMessage(err), retryable: false };
-        yield doneEvent("error");
-        return;
-      }
 
-      // Handle context overflow — max 1 compaction retry per turn
-      if (hadContextOverflow) {
-        if (compact && !compactionRetried) {
-          const fillRatio = computeFillRatio(messages) ?? overflowRatio;
-          const compaction = compact({
-            entries,
-            store,
-            provider,
-            usage: lastUsage,
-            force: true,
-            fillRatio,
-          });
-          if (compaction) {
-            yield { type: "compaction_start", agentId, loopId };
-            await compaction;
-            yield { type: "compaction_end", agentId, loopId };
-            compactionRetried = true;
-            // Retry this turn (don't increment turn counter)
-            continue;
+        if (hadContextOverflow) {
+          if (compact && !compactionRetried) {
+            const fillRatio = computeFillRatio(messages) ?? overflowRatio;
+            const compaction = compact({
+              entries,
+              store,
+              provider,
+              usage: lastUsage,
+              force: true,
+              fillRatio,
+            });
+            if (compaction) {
+              yield* runCompaction(compaction);
+              compactionRetried = true;
+              continue;
+            }
           }
+          yield loopEndEvent("context_overflow");
+          return;
         }
-        // No compact function or compact returned null on force — give up
-        yield {
-          type: "error",
-          agentId,
-          loopId,
-          error: "Context window exceeded",
-          retryable: false,
-          contextOverflow: true,
-          overflowRatio: overflowRatio ?? computeFillRatio(messages),
-        };
-        yield doneEvent("context_overflow");
-        return;
-      }
 
-      if (providerFailure) {
-        yield {
-          type: "error",
-          agentId,
-          loopId,
-          error: providerFailure.error,
-          retryable: providerFailure.retryable,
-          contextOverflow: providerFailure.contextOverflow,
-        };
-        yield doneEvent("error");
-        return;
-      }
-
-      if (signal.aborted) {
-        const msg = makeInterruptedMessage();
-        if (msg.content.length > 0) {
-          await store.append(msg);
-          recordAssistantTurn(msg, turnUsageReported ? turnUsage : undefined, toolCalls.map((toolCall) => ({
-            callId: toolCall.id,
-            name: toolCall.name,
-            args: toolCall.args,
-          })), toolIssues);
-          yield { type: "turn_end", agentId, loopId, message: msg };
+        if (providerFailure) {
+          yield loopEndEvent("error");
+          return;
         }
-        yield doneEvent("aborted");
-        return;
+
+        if (signal.aborted) {
+          const msg = makePartialMessage("interrupted");
+          if (msg.content.length > 0) {
+            await store.append(msg);
+            recordAssistantTurn(
+              msg,
+              turnUsageReported ? turnUsage : undefined,
+              toolCalls.map((toolCall) => ({ callId: toolCall.id, name: toolCall.name, args: toolCall.args })),
+              turnIssues.issues,
+              turnIssues.toolIssues,
+            );
+            yield { type: "turn_end", agentId, loopId, ...turnCtx, message: msg };
+          }
+          yield loopEndEvent("aborted");
+          return;
+        }
+
+        const assistantMessage = buildAssistantMessageFromContent(provider.model, assistantBlocks, turnUsage, stopReason);
+        await store.append(assistantMessage);
+        lastUsage = turnUsage;
+
+        const aggregateToolCalls: LoopToolCallAggregate[] = toolCalls.map((toolCall) => ({
+          callId: toolCall.id,
+          name: toolCall.name,
+          args: toolCall.args,
+        }));
+        recordAssistantTurn(
+          assistantMessage,
+          turnUsageReported ? turnUsage : undefined,
+          aggregateToolCalls,
+          turnIssues.issues,
+          turnIssues.toolIssues,
+        );
+
+        if (creditStore && turnUsage.creditsUsed && turnUsage.creditsUsed > 0) {
+          await creditStore.deduct(turnUsage.creditsUsed);
+        }
+
+        if (toolCalls.length === 0) {
+          yield { type: "turn_end", agentId, loopId, ...turnCtx, message: assistantMessage };
+          yield loopEndEvent("stop");
+          return;
+        }
+
+        const aggregateToolCallMap = new Map(aggregateToolCalls.map((toolCall) => [toolCall.callId, toolCall]));
+        const updateAggregateToolCall = (callId: string, patch: Partial<LoopToolCallAggregate>) => {
+          const aggregateToolCall = aggregateToolCallMap.get(callId);
+          if (aggregateToolCall) Object.assign(aggregateToolCall, patch);
+        };
+
+        for (const tc of toolCalls) {
+          yield* executeToolCall(tc, turnCtx, updateAggregateToolCall, turnIssues);
+        }
+
+        const recordedTurn = loopTurns[loopTurns.length - 1];
+        if (recordedTurn?.message === assistantMessage) {
+          recordedTurn.issues = turnIssues.issues.map((issue) => ({ ...issue }));
+          recordedTurn.toolIssues = turnIssues.toolIssues.map((issue) => ({ ...issue }));
+        }
+
+        yield { type: "turn_end", agentId, loopId, ...turnCtx, message: assistantMessage };
+        providerTurn++;
+        compactionRetried = false;
       }
 
-      const assistantMessage = buildAssistantMessageFromContent(provider.model, assistantBlocks, turnUsage, stopReason);
-
-      await store.append(assistantMessage);
-      lastUsage = turnUsage;
-
-      const aggregateToolCalls: LoopToolCallAggregate[] = toolCalls.map((toolCall) => ({
-        callId: toolCall.id,
-        name: toolCall.name,
-        args: toolCall.args,
-      }));
-      // Record immediately after persistence; tool execution patches results/errors into this same array.
-      recordAssistantTurn(assistantMessage, turnUsageReported ? turnUsage : undefined, aggregateToolCalls, toolIssues);
-
-      // Deduct credits
-      if (creditStore && turnUsage.creditsUsed && turnUsage.creditsUsed > 0) {
-        await creditStore.deduct(turnUsage.creditsUsed);
-      }
-
-      // No tool calls — turn is done
-      if (toolCalls.length === 0) {
-        yield { type: "turn_end", agentId, loopId, message: assistantMessage };
-        yield doneEvent("stop");
-        return;
-      }
-
-      const aggregateToolCallMap = new Map(aggregateToolCalls.map((toolCall) => [toolCall.callId, toolCall]));
-      const updateAggregateToolCall = (callId: string, patch: Partial<LoopToolCallAggregate>) => {
-        const aggregateToolCall = aggregateToolCallMap.get(callId);
-        if (aggregateToolCall) Object.assign(aggregateToolCall, patch);
-      };
-
-      // Execute tool calls
-      for (const tc of toolCalls) {
-        yield* executeToolCall(tc, updateAggregateToolCall);
-      }
-
-      yield { type: "turn_end", agentId, loopId, message: assistantMessage };
-
-      turn++;
-      compactionRetried = false;
-    }
-
-    // Max turns reached
-    yield doneEvent("max_turns");
-    } catch (err) {
+      yield loopEndEvent("max_turns");
+    } catch (error) {
       if (signal.aborted) {
-        yield doneEvent("aborted");
+        yield loopEndEvent("aborted");
         return;
       }
-      yield { type: "error", agentId, loopId, error: toErrorMessage(err), retryable: false };
-      yield doneEvent("error");
-      return;
+      const issue = runtimeIssue(error);
+      recordIssue(issue);
+      yield issueEvent(issue);
+      yield loopEndEvent("error");
     }
   }
 
-  // Wrap the generator to support subscribe()
-  const generator = run();
+  const eventSource = coalesce ? coalesceOutboundEvents(run(), coalesce) : run();
+  const generator = eventSource[Symbol.asyncIterator]();
 
   const loop: NessiLoop = {
     [Symbol.asyncIterator]() {
       return {
         async next() {
-          // Drain synchronously-injected events first (e.g. from abort()).
-          // Subscribers were already notified at injection time — don't re-fire.
-          if (pendingInjections.length > 0) {
-            return { value: pendingInjections.shift()!, done: false };
-          }
           const result = await generator.next();
           if (!result.done && result.value) {
-            for (const listener of subscribers) {
-              listener(result.value);
-            }
+            for (const listener of subscribers) listener(result.value);
           }
           return result;
         },
         async return(value?: OutboundEvent) {
           return generator.return(value as OutboundEvent);
         },
-        async throw(err?: unknown) {
-          return generator.throw(err);
+        async throw(error?: unknown) {
+          return generator.throw(error);
         },
       };
     },
@@ -905,21 +1325,10 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       channel.push(event);
     },
     steer(message: string) {
-      if (message.trim()) {
-        steerQueue.push(message);
-      }
+      if (message.trim()) steerQueue.push(message);
     },
     abort() {
-      if (interrupted) return;
-      interrupted = true;
       abortController.abort();
-      const event: OutboundEvent = { type: "interrupted", agentId, loopId };
-      // Synchronous notification — UI can react without waiting for the generator to drain.
-      for (const listener of subscribers) {
-        try { listener(event); } catch { /* isolate listener errors */ }
-      }
-      // Also buffer for for-await consumers.
-      pendingInjections.push(event);
     },
   };
 

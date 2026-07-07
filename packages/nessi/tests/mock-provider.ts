@@ -3,14 +3,42 @@
 // ============================================================================
 
 import { completeFromStream } from "../src/ai/index.js";
+import { normalizeProviderStream } from "../src/ai/shared/tool-stream-normalizer.js";
+import type { RawStreamEvent } from "../src/ai/types.js";
 import type { Provider, ProviderEvent, ProviderRequest } from "../src/types.js";
+
+type MockProviderEvent = ProviderEvent | RawStreamEvent;
+
+const rawTypes = new Set([
+  "text",
+  "thinking",
+  "tool_start",
+  "tool_delta",
+  "tool_call",
+  "tool_error",
+  "tool_cancel",
+  "error",
+]);
+
+const isRawEvent = (event: MockProviderEvent): event is RawStreamEvent => rawTypes.has(event.type);
+
+async function* source<T>(events: T[]): AsyncIterable<T> {
+  for (const event of events) yield event;
+}
+
+const streamMockEvents = (events: MockProviderEvent[]): AsyncIterable<ProviderEvent> => {
+  if (events.some(isRawEvent)) return normalizeProviderStream(source(events as RawStreamEvent[]), {
+    suppressTextAfterMalformedTool: true,
+  });
+  return source(events as ProviderEvent[]);
+}
 
 /**
  * Creates a provider that yields a predetermined sequence of events.
  * Optionally accepts a callback to inspect the request.
  */
 export function mockProvider(
-  events: ProviderEvent[],
+  events: MockProviderEvent[],
   options?: {
     contextWindow?: number;
     name?: string;
@@ -31,9 +59,7 @@ export function mockProvider(
     contextWindow: options?.contextWindow ?? 100_000,
     async *stream(request: ProviderRequest) {
       options?.onRequest?.(request);
-      for (const event of events) {
-        yield event;
-      }
+      yield* streamMockEvents(events);
     },
     complete(request: ProviderRequest) {
       return completeFromStream(provider, request);
@@ -47,7 +73,7 @@ export function mockProvider(
  * Useful for multi-turn tests where different turns need different responses.
  */
 export function mockProviderMultiTurn(
-  factory: (request: ProviderRequest, callIndex: number) => ProviderEvent[],
+  factory: (request: ProviderRequest, callIndex: number) => MockProviderEvent[],
   options?: { contextWindow?: number; name?: string },
 ): Provider {
   let callIndex = 0;
@@ -65,9 +91,7 @@ export function mockProviderMultiTurn(
     contextWindow: options?.contextWindow ?? 100_000,
     async *stream(request: ProviderRequest) {
       const events = factory(request, callIndex++);
-      for (const event of events) {
-        yield event;
-      }
+      yield* streamMockEvents(events);
     },
     complete(request: ProviderRequest) {
       return completeFromStream(provider, request);

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { completeFromStream } from "../../../src/ai/complete-from-stream.js";
-import type { GenerateRequest, Provider } from "../../../src/ai/types.js";
+import { normalizeProviderStream } from "../../../src/ai/shared/tool-stream-normalizer.js";
+import type { GenerateRequest, Provider, RawStreamEvent } from "../../../src/ai/types.js";
+
+async function* rawSource(events: RawStreamEvent[]) {
+  for (const event of events) yield event;
+}
 
 describe("completeFromStream", () => {
   it("aggregates text, thinking, tool calls and usage", async () => {
@@ -10,13 +15,15 @@ describe("completeFromStream", () => {
       model: "mock",
       contextWindow: 1000,
       capabilities: { streaming: true, tools: true, images: true, thinking: true, usage: true },
-      async *stream() {
-        yield { type: "thinking", delta: "hmm" } as const;
-        yield { type: "text", delta: "hello" } as const;
-        yield { type: "tool_start", callId: "c1", name: "search" } as const;
-        yield { type: "tool_delta", callId: "c1", argsDelta: "{\"q\"" } as const;
-        yield { type: "tool_call", callId: "c1", name: "search", args: { q: "x" } } as const;
-        yield { type: "usage", usage: { input: 1, output: 2, total: 3 } } as const;
+      stream() {
+        return normalizeProviderStream(rawSource([
+          { type: "thinking", delta: "hmm" },
+          { type: "text", delta: "hello" },
+          { type: "tool_start", callId: "c1", name: "search" },
+          { type: "tool_delta", callId: "c1", argsDelta: "{\"q\":\"x\"}" },
+          { type: "tool_call", callId: "c1", name: "search", args: { q: "x" } },
+          { type: "usage", usage: { input: 1, output: 2, total: 3 } },
+        ]));
       },
       complete(request: GenerateRequest) {
         return completeFromStream(provider, request);
@@ -36,13 +43,15 @@ describe("completeFromStream", () => {
       model: "mock",
       contextWindow: 1000,
       capabilities: { streaming: true, tools: true, images: true, thinking: true, usage: true },
-      async *stream() {
-        yield { type: "text", delta: "partial" } as const;
-        yield {
-          type: "usage",
-          usage: { input: 1, output: 2, total: 3 },
-          finishReason: "max_tokens",
-        } as const;
+      stream() {
+        return normalizeProviderStream(rawSource([
+          { type: "text", delta: "partial" },
+          {
+            type: "usage",
+            usage: { input: 1, output: 2, total: 3 },
+            finishReason: "max_tokens",
+          },
+        ]));
       },
       complete(request: GenerateRequest) {
         return completeFromStream(provider, request);
@@ -60,10 +69,12 @@ describe("completeFromStream", () => {
       model: "mock",
       contextWindow: 1000,
       capabilities: { streaming: true, tools: true, images: true, thinking: true, usage: true },
-      async *stream() {
-        yield { type: "thinking", delta: "" } as const;
-        yield { type: "text", delta: "" } as const;
-        yield { type: "usage", usage: { input: 1, output: 0, total: 1 } } as const;
+      stream() {
+        return normalizeProviderStream(rawSource([
+          { type: "thinking", delta: "" },
+          { type: "text", delta: "" },
+          { type: "usage", usage: { input: 1, output: 0, total: 1 } },
+        ]));
       },
       complete(request: GenerateRequest) {
         return completeFromStream(provider, request);

@@ -62,8 +62,8 @@ describe("nessi run-from-history (input omitted)", () => {
 
     const events = await collectEvents(nessi({ provider, store, systemPrompt: "sys" }));
 
-    expect(events.some((event) => event.type === "text")).toBe(true);
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" });
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "text")).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
     // Provider saw exactly the historical user message — nothing was appended.
     expect(seenMessages).toHaveLength(1);
     const entries = await store.load();
@@ -78,7 +78,7 @@ describe("nessi run-from-history (input omitted)", () => {
       { type: "usage", usage: { input: 0, output: 1, total: 1 }, finishReason: "stop" },
     ]);
     const events = await collectEvents(nessi({ provider, store, systemPrompt: "sys" }));
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" });
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
   });
 });
 
@@ -109,11 +109,11 @@ describe("nessi resume of unresolved tool calls", () => {
     const events = await collectEvents(loop);
     const types = events.map((event) => event.type);
 
-    expect(types).toContain("tool_start");
-    expect(types).toContain("tool_end");
-    // No action_request should surface — the seeded approval resolved it.
-    expect(types).not.toContain("action_request");
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" });
+    expect(types).toContain("tool_execution_start");
+    expect(types).toContain("tool_execution_end");
+    // No tool_action_request should surface because the seeded approval resolved it.
+    expect(types).not.toContain("tool_action_request");
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
 
     const entries = await store.load();
     const toolResult = entries.find((entry) => entry.message.role === "tool_result");
@@ -133,9 +133,9 @@ describe("nessi resume of unresolved tool calls", () => {
     loop.push({ type: "approval_response", callId: "call-1", approved: false });
 
     const events = await collectEvents(loop);
-    const toolEnd = events.find((event) => event.type === "tool_end");
+    const toolEnd = events.find((event) => event.type === "tool_execution_end");
     expect(toolEnd).toMatchObject({ isError: true, result: "User denied this action" });
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" });
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
   });
 
   it("resumes a pending client tool with a seeded result", async () => {
@@ -156,9 +156,9 @@ describe("nessi resume of unresolved tool calls", () => {
     loop.push({ type: "tool_result", callId: "call-9", result: { shown: true } });
 
     const events = await collectEvents(loop);
-    const toolEnd = events.find((event) => event.type === "tool_end");
+    const toolEnd = events.find((event) => event.type === "tool_execution_end");
     expect(toolEnd).toMatchObject({ callId: "call-9", result: { shown: true } });
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" });
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
   });
 
   it("skips already-resolved calls and resumes only unresolved ones", async () => {
@@ -180,7 +180,7 @@ describe("nessi resume of unresolved tool calls", () => {
     ]);
 
     const events = await collectEvents(nessi({ provider, store, systemPrompt: "sys", tools: [echoTool] }));
-    const toolEnds = events.filter((event) => event.type === "tool_end");
+    const toolEnds = events.filter((event) => event.type === "tool_execution_end");
     expect(toolEnds).toHaveLength(1);
     expect(toolEnds[0]).toMatchObject({ callId: "call-b" });
 
@@ -189,7 +189,7 @@ describe("nessi resume of unresolved tool calls", () => {
     expect(results).toHaveLength(2);
   });
 
-  it("emits a fresh action_request when the resume has no seeded response", async () => {
+  it("emits a fresh tool_action_request when the resume has no seeded response", async () => {
     const store = await storeWithHistory(historyWithPendingCall());
     const provider = mockProvider([
       { type: "text", delta: "done" },
@@ -200,13 +200,13 @@ describe("nessi resume of unresolved tool calls", () => {
     const events: OutboundEvent[] = [];
     for await (const event of loop) {
       events.push(event);
-      if (event.type === "action_request") {
+      if (event.type === "tool_action_request") {
         loop.push({ type: "approval_response", callId: event.callId, approved: true });
       }
     }
 
-    expect(events.some((event) => event.type === "action_request")).toBe(true);
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" });
+    expect(events.some((event) => event.type === "tool_action_request")).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
   });
 
   it("continues into further tool turns after a resume", async () => {
@@ -229,14 +229,14 @@ describe("nessi resume of unresolved tool calls", () => {
     loop.push({ type: "approval_response", callId: "call-1", approved: true });
 
     const events = await collectEvents(loop);
-    const toolEnds = events.filter((event) => event.type === "tool_end");
-    expect(toolEnds.map((event) => event.type === "tool_end" && event.callId)).toEqual(["call-1", "call-2"]);
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" });
+    const toolEnds = events.filter((event) => event.type === "tool_execution_end");
+    expect(toolEnds.map((event) => event.type === "tool_execution_end" && event.callId)).toEqual(["call-1", "call-2"]);
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
   });
 });
 
 describe("nessi abort while waiting for inbound events", () => {
-  it("ends with done(aborted) when aborted while awaiting an approval", async () => {
+  it("ends with loop_end(aborted) when aborted while awaiting an approval", async () => {
     const store = memoryStore();
     const provider = mockProvider([
       { type: "tool_start", callId: "call-1", name: "danger" },
@@ -248,18 +248,18 @@ describe("nessi abort while waiting for inbound events", () => {
     const events: OutboundEvent[] = [];
     for await (const event of loop) {
       events.push(event);
-      if (event.type === "action_request") {
+      if (event.type === "tool_action_request") {
         loop.abort();
       }
     }
 
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "aborted" });
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "aborted" });
     // The pending tool must NOT be recorded as failed — no tool_result may exist.
     const entries = await store.load();
     expect(entries.some((entry) => entry.message.role === "tool_result")).toBe(false);
   });
 
-  it("ends with done(aborted) when aborted while awaiting a client tool result", async () => {
+  it("ends with loop_end(aborted) when aborted while awaiting a client tool result", async () => {
     const store = memoryStore();
     const provider = mockProvider([
       { type: "tool_start", callId: "call-1", name: "toast" },
@@ -271,12 +271,12 @@ describe("nessi abort while waiting for inbound events", () => {
     const events: OutboundEvent[] = [];
     for await (const event of loop) {
       events.push(event);
-      if (event.type === "action_request") {
+      if (event.type === "tool_action_request") {
         loop.abort();
       }
     }
 
-    expect(events.at(-1)).toMatchObject({ type: "done", reason: "aborted" });
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "aborted" });
     const entries = await store.load();
     expect(entries.some((entry) => entry.message.role === "tool_result")).toBe(false);
   });

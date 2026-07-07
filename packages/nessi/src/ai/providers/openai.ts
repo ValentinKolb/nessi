@@ -1,5 +1,5 @@
 import { openAICompatible } from "./openai-compatible.js";
-import type { OpenAICompatibleConfig, Provider } from "../types.js";
+import type { OpenAICompatibleConfig, Provider, ProviderTimeouts } from "../types.js";
 
 export type OpenAIOptions = {
   apiKey?: string;
@@ -9,6 +9,7 @@ export type OpenAIOptions = {
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
   normalizeToolCallIds?: "auto" | "never" | "strict9";
+  timeouts?: ProviderTimeouts;
 };
 
 export const openai = (model: string, options?: OpenAIOptions): Provider => {
@@ -21,6 +22,7 @@ export const openai = (model: string, options?: OpenAIOptions): Provider => {
     temperature: options?.temperature,
     creditsPerInputToken: options?.creditsPerInputToken,
     creditsPerOutputToken: options?.creditsPerOutputToken,
+    timeouts: options?.timeouts,
     compat: {
       toolCallIdPolicy: options?.normalizeToolCallIds === "strict9" ? "strict9" : "passthrough",
       supportsUsageInStreaming: true,

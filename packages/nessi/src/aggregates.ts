@@ -4,6 +4,7 @@
 
 import type {
   LoopAggregate,
+  LoopIssueAggregate,
   LoopToolCallAggregate,
   LoopToolIssueAggregate,
   LoopTurnAggregate,
@@ -33,35 +34,47 @@ const cloneToolCall = (toolCall: LoopToolCallAggregate): LoopToolCallAggregate =
 
 const cloneToolIssue = (toolIssue: LoopToolIssueAggregate): LoopToolIssueAggregate => ({ ...toolIssue });
 
+const cloneIssue = (issue: LoopIssueAggregate): LoopIssueAggregate => ({ ...issue });
+
 const toolIssuesFromAggregate = (aggregate: LoopAggregate): LoopToolIssueAggregate[] =>
   (aggregate.toolIssues ?? aggregate.turns.flatMap((turn) => turn.toolIssues ?? [])).map(cloneToolIssue);
+
+const issuesFromAggregate = (aggregate: LoopAggregate): LoopIssueAggregate[] =>
+  (aggregate.issues ?? aggregate.toolIssues ?? aggregate.turns.flatMap((turn) => turn.issues ?? turn.toolIssues ?? []))
+    .map(cloneIssue);
 
 const cloneTurn = (turn: LoopTurnAggregate): LoopTurnAggregate => ({
   ...turn,
   usage: cloneUsage(turn.usage),
   toolCalls: turn.toolCalls.map(cloneToolCall),
   ...(turn.toolIssues ? { toolIssues: turn.toolIssues.map(cloneToolIssue) } : {}),
+  ...(turn.issues ? { issues: turn.issues.map(cloneIssue) } : {}),
 });
 
 export const aggregateFromTurns = (
   turns: LoopTurnAggregate[],
-  loopToolIssues: LoopToolIssueAggregate[] = [],
+  loopIssues: LoopIssueAggregate[] = [],
 ): LoopAggregate => {
   const clonedTurns = turns.map(cloneTurn);
-  const toolIssues = loopToolIssues.length > 0
-    ? loopToolIssues.map(cloneToolIssue)
-    : clonedTurns.flatMap((turn) => turn.toolIssues ?? []);
+  const issues = loopIssues.length > 0
+    ? loopIssues.map(cloneIssue)
+    : clonedTurns.flatMap((turn) => turn.issues ?? turn.toolIssues ?? []);
+  const toolIssues = issues.filter((issue): issue is LoopToolIssueAggregate =>
+    issue.kind === "malformed_tool_call" || issue.kind === "cancelled_tool_call",
+  );
   return {
     turns: clonedTurns,
     usage: clonedTurns.reduce((usage, turn) => mergeUsage(usage, turn.usage), undefined as Usage | undefined),
+    issueCount: issues.length,
+    issues: issues.map(cloneIssue),
     toolCallCount: clonedTurns.reduce((count, turn) => count + turn.toolCalls.length, 0),
     toolErrorCount: clonedTurns.reduce(
       (count, turn) => count + turn.toolCalls.filter((toolCall) => toolCall.isError).length,
       0,
     ),
     toolIssueCount: toolIssues.length,
-    toolMalformedCount: toolIssues.filter((issue) => issue.kind === "malformed").length,
-    toolCancelledCount: toolIssues.filter((issue) => issue.kind === "cancelled").length,
+    toolMalformedCount: toolIssues.filter((issue) => issue.kind === "malformed_tool_call").length,
+    toolCancelledCount: toolIssues.filter((issue) => issue.kind === "cancelled_tool_call").length,
     toolIssues: toolIssues.map(cloneToolIssue),
     assistantMessageCount: clonedTurns.length,
   };
@@ -69,15 +82,18 @@ export const aggregateFromTurns = (
 
 export const cloneLoopAggregate = (aggregate: LoopAggregate): LoopAggregate => {
   const turns = aggregate.turns.map(cloneTurn);
+  const issues = issuesFromAggregate(aggregate);
   const toolIssues = toolIssuesFromAggregate(aggregate);
   return {
     turns,
     usage: cloneUsage(aggregate.usage),
+    issueCount: aggregate.issueCount ?? issues.length,
+    issues,
     toolCallCount: aggregate.toolCallCount,
     toolErrorCount: aggregate.toolErrorCount,
     toolIssueCount: aggregate.toolIssueCount ?? toolIssues.length,
-    toolMalformedCount: aggregate.toolMalformedCount ?? toolIssues.filter((issue) => issue.kind === "malformed").length,
-    toolCancelledCount: aggregate.toolCancelledCount ?? toolIssues.filter((issue) => issue.kind === "cancelled").length,
+    toolMalformedCount: aggregate.toolMalformedCount ?? toolIssues.filter((issue) => issue.kind === "malformed_tool_call").length,
+    toolCancelledCount: aggregate.toolCancelledCount ?? toolIssues.filter((issue) => issue.kind === "cancelled_tool_call").length,
     toolIssues,
     assistantMessageCount: aggregate.assistantMessageCount,
   };
@@ -91,6 +107,6 @@ export const mergeLoopAggregates = (
   if (!right) return cloneLoopAggregate(left);
   return aggregateFromTurns(
     [...left.turns, ...right.turns],
-    [...toolIssuesFromAggregate(left), ...toolIssuesFromAggregate(right)],
+    [...issuesFromAggregate(left), ...issuesFromAggregate(right)],
   );
 }

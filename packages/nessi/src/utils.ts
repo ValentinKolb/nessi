@@ -9,6 +9,9 @@ export const zeroUsage = (): Usage => ({ input: 0, output: 0, total: 0 })
 export const toErrorMessage = (err: unknown) =>
   err instanceof Error ? err.message : String(err)
 
+export const createLoopId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `loop-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 /** Rough token estimate: ~4 chars per token. Slightly overestimates due to JSON syntax — that's safer. */
 export const estimateTokens = (messages: Message[]): number =>
   Math.ceil(JSON.stringify(messages).length / 4)

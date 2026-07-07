@@ -65,16 +65,16 @@ describe("openai provider tool_call id compatibility", () => {
         toolResult("call_26a25b3a49064a3e81dc38d8"),
       ];
 
-      const events: Array<{ type: string }> = [];
+      const events = [];
       for await (const event of provider.stream({
         systemPrompt: "test",
         messages,
         tools: [],
       })) {
-        events.push({ type: event.type });
+        events.push(event);
       }
 
-      expect(events.some((e) => e.type === "text")).toBe(true);
+      expect(events.some((e) => e.type === "block_end" && e.block.type === "text")).toBe(true);
       const assistantMsg = capturedBody.messages.find((m: any) => m.role === "assistant");
       const toolMsg = capturedBody.messages.find((m: any) => m.role === "tool");
       const normalizedId = assistantMsg.tool_calls[0].id;
@@ -191,13 +191,14 @@ describe("openai provider tool_call id compatibility", () => {
         events.push(event);
       }
 
-      const error = events.find((event) => event.type === "error");
+      const error = events.find((event) => event.type === "issue");
       expect(error).toBeDefined();
-      expect(error?.type).toBe("error");
-      if (error?.type === "error") {
-        expect(error.retryable).toBe(true);
-        expect(error.error).toContain("Service tier capacity exceeded for this model.");
-        expect(error.error).toContain("3505");
+      expect(error?.type).toBe("issue");
+      if (error?.type === "issue") {
+        expect(error.issue.kind).toBe("provider_error");
+        expect(error.issue.retryable).toBe(true);
+        expect(error.issue.message).toContain("Service tier capacity exceeded for this model.");
+        expect(error.issue.message).toContain("3505");
       }
     } finally {
       globalThis.fetch = originalFetch;

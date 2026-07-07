@@ -2,11 +2,21 @@ import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
 import { openSSEStream } from "../shared/stream-helpers.js";
-import { normalizeToolStream } from "../shared/tool-stream-normalizer.js";
+import { normalizeProviderStream } from "../shared/tool-stream-normalizer.js";
 import { createStrictToolCallIdFactory } from "../shared/tool-call-ids.js";
 import { toOpenAITools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
-import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock, Usage } from "../types.js";
+import type {
+  GenerateRequest,
+  GenerateResult,
+  Message,
+  Provider,
+  ProviderTimeouts,
+  RawStreamEvent,
+  StreamEvent,
+  ToolCallBlock,
+  Usage,
+} from "../types.js";
 
 type MistralMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -130,6 +140,7 @@ export type MistralOptions = {
   normalizeToolCallIds?: "strict9" | "never";
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
+  timeouts?: ProviderTimeouts;
 };
 
 export const mistral = (model: string, options?: MistralOptions): Provider => {
@@ -201,7 +212,7 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
     },
 
     stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
-      const raw = async function* (): AsyncIterable<StreamEvent> {
+      const raw = async function* (): AsyncIterable<RawStreamEvent> {
       const body: Record<string, unknown> = {
         model,
         messages: convertMessages(request.messages, request.systemPrompt, options),
@@ -224,6 +235,8 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
         body,
         "mistral",
         request.signal,
+        undefined,
+        options?.timeouts,
       );
 
       if (!result.ok) {
@@ -240,7 +253,7 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
         yield { type: "tool_start" as const, callId: buffer.callId, name: buffer.name };
         if (buffer.argsBuffer) yield { type: "tool_delta" as const, callId: buffer.callId, argsDelta: buffer.argsBuffer };
       };
-      const flush = function* () {
+      const flush = function* (): Generator<RawStreamEvent> {
         for (const [, buffer] of buffers) {
           yield* startToolCall(buffer);
           yield {
@@ -304,6 +317,11 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
         }
       }
 
+      if (buffers.size > 0) {
+        latestFinishReason = "tool_use";
+        yield* flush();
+      }
+
       if (latestFinishReason) {
         yield {
           type: "usage",
@@ -312,7 +330,7 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
         };
       }
       };
-      return normalizeToolStream(raw(), { suppressTextAfterMalformedTool: true });
+      return normalizeProviderStream(raw(), { suppressTextAfterMalformedTool: true });
     },
   };
 };

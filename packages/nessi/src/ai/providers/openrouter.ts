@@ -1,5 +1,5 @@
 import { openAICompatible } from "./openai-compatible.js";
-import type { OpenAICompatibleConfig, Provider } from "../types.js";
+import type { OpenAICompatibleConfig, Provider, ProviderTimeouts } from "../types.js";
 
 export type OpenRouterOptions = {
   apiKey?: string;
@@ -10,6 +10,7 @@ export type OpenRouterOptions = {
   title?: string;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
+  timeouts?: ProviderTimeouts;
 };
 
 export const openrouter = (model: string, options?: OpenRouterOptions): Provider => {
@@ -26,6 +27,7 @@ export const openrouter = (model: string, options?: OpenRouterOptions): Provider
     temperature: options?.temperature,
     creditsPerInputToken: options?.creditsPerInputToken,
     creditsPerOutputToken: options?.creditsPerOutputToken,
+    timeouts: options?.timeouts,
     headers,
     compat: {
       toolCallIdPolicy: "passthrough",

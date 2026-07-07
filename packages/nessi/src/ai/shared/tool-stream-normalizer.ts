@@ -1,5 +1,14 @@
-import { safeJsonParse } from "./json.js";
-import type { StreamEvent, ToolStreamIssueReason } from "../types.js";
+import { safeJsonParse, stringifyJson } from "./json.js";
+import type {
+  AssistantBlockKind,
+  AssistantContentBlock,
+  NessiIssue,
+  RawStreamEvent,
+  StreamEvent,
+  ToolCallBlock,
+  ToolStreamIssue,
+  ToolStreamIssueReason,
+} from "../types.js";
 
 type PendingToolCall = {
   callId: string;
@@ -10,6 +19,13 @@ type PendingToolCall = {
 
 type NormalizerOptions = {
   suppressTextAfterMalformedTool?: boolean;
+};
+
+type OpenBlock = {
+  blockId: string;
+  index: number;
+  kind: "text" | "thinking";
+  text: string;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -43,13 +59,14 @@ const issueMessage = (reason: ToolStreamIssueReason, tool: PendingToolCall | und
   }
 };
 
-function toolError(
+function toolIssue(
+  kind: ToolStreamIssue["kind"],
   pending: PendingToolCall | undefined,
   reason: ToolStreamIssueReason,
   extra?: { textDelta?: string },
-): StreamEvent {
+): ToolStreamIssue {
   return {
-    type: "tool_error",
+    kind,
     callId: pending?.callId,
     name: pending?.name,
     reason,
@@ -59,161 +76,259 @@ function toolError(
   };
 }
 
-function toolCancel(pending: PendingToolCall, reason: ToolStreamIssueReason): StreamEvent {
-  return {
-    type: "tool_cancel",
-    callId: pending.callId,
-    name: pending.name,
-    reason,
-    message: issueMessage(reason, pending),
-    argsText: pending.argsText,
-  };
-}
+const blockFromOpen = (block: OpenBlock): AssistantContentBlock =>
+  block.kind === "thinking"
+    ? { type: "thinking", thinking: block.text }
+    : { type: "text", text: block.text };
 
-export async function* normalizeToolStream(
-  events: AsyncIterable<StreamEvent>,
+const isProviderTimeoutError = (error: unknown): error is { scope: "provider_first_byte" | "provider_idle"; message: string } =>
+  Boolean(error)
+  && typeof error === "object"
+  && ((error as { scope?: unknown }).scope === "provider_first_byte" || (error as { scope?: unknown }).scope === "provider_idle")
+  && typeof (error as { message?: unknown }).message === "string";
+
+export async function* normalizeProviderStream(
+  events: AsyncIterable<RawStreamEvent>,
   options: NormalizerOptions = {},
 ): AsyncIterable<StreamEvent> {
   const pending = new Map<string, PendingToolCall>();
   const malformedCallIds = new Set<string>();
+  let openBlock: OpenBlock | undefined;
+  let nextBlockIndex = 0;
   let emittedToolCallCount = 0;
-  let toolIssueCount = 0;
+  let issueCount = 0;
   let suppressMalformedTextSpan = false;
+
+  const emitIssue = function* (value: NessiIssue): Generator<StreamEvent> {
+    issueCount++;
+    yield { type: "issue", issue: value };
+  };
+
+  const closeOpenBlock = function* (): Generator<StreamEvent> {
+    if (!openBlock) return;
+    const closing = openBlock;
+    openBlock = undefined;
+    yield {
+      type: "block_end",
+      blockId: closing.blockId,
+      index: closing.index,
+      block: blockFromOpen(closing),
+    };
+  };
+
+  const appendTextBlock = function* (
+    kind: "text" | "thinking",
+    delta: string,
+  ): Generator<StreamEvent> {
+    if (delta.length === 0) return;
+    if (!openBlock && delta.trim().length === 0) return;
+
+    if (openBlock?.kind !== kind) {
+      yield* closeOpenBlock();
+      if (delta.trim().length === 0) return;
+      const index = nextBlockIndex++;
+      openBlock = { blockId: `block-${index}`, index, kind, text: "" };
+      yield { type: "block_start", blockId: openBlock.blockId, index, kind };
+    }
+
+    openBlock.text += delta;
+    yield { type: "block_delta", blockId: openBlock.blockId, delta };
+  };
+
+  const emitToolCallBlock = function* (toolCall: ToolCallBlock): Generator<StreamEvent> {
+    yield* closeOpenBlock();
+    const index = nextBlockIndex++;
+    const blockId = `block-${index}`;
+    yield {
+      type: "block_start",
+      blockId,
+      index,
+      kind: "tool_call" as AssistantBlockKind,
+      callId: toolCall.id,
+      name: toolCall.name,
+    };
+    yield { type: "block_delta", blockId, delta: stringifyJson(toolCall.args) };
+    yield { type: "block_end", blockId, index, block: toolCall };
+  };
 
   const malformedPending = function* (
     reason: "text_during_tool_call" | "thinking_during_tool_call",
     textDelta: string,
   ): Generator<StreamEvent> {
+    yield* closeOpenBlock();
     for (const tool of pending.values()) {
       malformedCallIds.add(tool.callId);
-      toolIssueCount++;
-      yield toolError(tool, reason, { textDelta });
+      yield* emitIssue(toolIssue("malformed_tool_call", tool, reason, { textDelta }));
     }
     pending.clear();
     if (options.suppressTextAfterMalformedTool) suppressMalformedTextSpan = true;
   };
 
-  for await (const event of events) {
-    switch (event.type) {
-      case "text":
-        if (pending.size > 0) {
-          yield* malformedPending("text_during_tool_call", event.delta);
-          if (options.suppressTextAfterMalformedTool) break;
-        }
-        if (suppressMalformedTextSpan) break;
-        yield event;
-        break;
-
-      case "thinking":
-        if (pending.size > 0) {
-          yield* malformedPending("thinking_during_tool_call", event.delta);
-          if (options.suppressTextAfterMalformedTool) break;
-        }
-        if (suppressMalformedTextSpan) break;
-        yield event;
-        break;
-
-      case "tool_start":
-        suppressMalformedTextSpan = false;
-        pending.set(event.callId, { callId: event.callId, name: event.name, argsText: "", argsDeltas: [] });
-        break;
-
-      case "tool_delta": {
-        if (malformedCallIds.has(event.callId)) break;
-        const tool = pending.get(event.callId);
-        if (!tool) {
-          toolIssueCount++;
-          yield toolError(undefined, "tool_delta_without_start", { textDelta: event.argsDelta });
-          break;
-        }
-        tool.argsText += event.argsDelta;
-        tool.argsDeltas.push(event.argsDelta);
-        break;
-      }
-
-      case "tool_call": {
-        suppressMalformedTextSpan = false;
-        const tool = pending.get(event.callId);
-        if (malformedCallIds.has(event.callId)) {
-          malformedCallIds.delete(event.callId);
-          pending.delete(event.callId);
-          break;
-        }
-
-        if (!event.name.trim()) {
-          malformedCallIds.add(event.callId);
-          pending.delete(event.callId);
-          toolIssueCount++;
-          yield toolError(
-            tool ?? { callId: event.callId, name: event.name, argsText: "", argsDeltas: [] },
-            "missing_tool_name",
-          );
-          break;
-        }
-
-        if (tool && !parseArgsText(tool.argsText).ok) {
-          malformedCallIds.add(event.callId);
-          pending.delete(event.callId);
-          toolIssueCount++;
-          yield toolError(tool, "invalid_tool_arguments");
-          break;
-        }
-
-        pending.delete(event.callId);
-        if (tool) {
-          const name = event.name || tool.name;
-          yield { type: "tool_start", callId: event.callId, name };
-          for (const argsDelta of tool.argsDeltas) {
-            yield { type: "tool_delta", callId: event.callId, argsDelta };
-          }
-        }
-        emittedToolCallCount++;
-        yield event;
-        break;
-      }
-
-      case "tool_error":
-      case "tool_cancel":
-        suppressMalformedTextSpan = false;
-        if (event.callId) pending.delete(event.callId);
-        toolIssueCount++;
-        yield event;
-        break;
-
-      case "usage":
-        suppressMalformedTextSpan = false;
-        if (event.finishReason && pending.size > 0) {
-          for (const tool of pending.values()) {
-            toolIssueCount++;
-            yield toolCancel(tool, "stream_ended_before_tool_call");
-          }
-          pending.clear();
-        }
-        yield {
-          ...event,
-          finishReason: event.finishReason === "tool_use" && emittedToolCallCount === 0 && toolIssueCount > 0
-            ? "stop"
-            : event.finishReason,
-        };
-        break;
-
-      case "error":
-        suppressMalformedTextSpan = false;
-        if (pending.size > 0) {
-          for (const tool of pending.values()) {
-            toolIssueCount++;
-            yield toolCancel(tool, "provider_error_before_tool_call");
-          }
-          pending.clear();
-        }
-        yield event;
-        break;
-    }
-  }
-
-  if (pending.size > 0) {
+  const cancelPending = function* (reason: "stream_ended_before_tool_call" | "provider_error_before_tool_call") {
+    if (pending.size === 0) return;
+    yield* closeOpenBlock();
     for (const tool of pending.values()) {
-      yield toolCancel(tool, "stream_ended_before_tool_call");
+      yield* emitIssue(toolIssue("cancelled_tool_call", tool, reason));
     }
+    pending.clear();
+  };
+
+  try {
+    for await (const event of events) {
+      switch (event.type) {
+        case "text":
+          if (pending.size > 0) {
+            yield* malformedPending("text_during_tool_call", event.delta);
+            if (options.suppressTextAfterMalformedTool) break;
+          }
+          if (suppressMalformedTextSpan) break;
+          yield* appendTextBlock("text", event.delta);
+          break;
+
+        case "thinking":
+          if (pending.size > 0) {
+            yield* malformedPending("thinking_during_tool_call", event.delta);
+            if (options.suppressTextAfterMalformedTool) break;
+          }
+          if (suppressMalformedTextSpan) break;
+          yield* appendTextBlock("thinking", event.delta);
+          break;
+
+        case "tool_start":
+          suppressMalformedTextSpan = false;
+          yield* closeOpenBlock();
+          pending.set(event.callId, { callId: event.callId, name: event.name, argsText: "", argsDeltas: [] });
+          break;
+
+        case "tool_delta": {
+          suppressMalformedTextSpan = false;
+          if (malformedCallIds.has(event.callId)) break;
+          const tool = pending.get(event.callId);
+          if (!tool) {
+            yield* emitIssue({
+              kind: "malformed_tool_call",
+              reason: "tool_delta_without_start",
+              message: issueMessage("tool_delta_without_start", undefined),
+              callId: event.callId,
+              argsText: event.argsDelta,
+            });
+            break;
+          }
+          tool.argsText += event.argsDelta;
+          tool.argsDeltas.push(event.argsDelta);
+          break;
+        }
+
+        case "tool_call": {
+          suppressMalformedTextSpan = false;
+          const tool = pending.get(event.callId);
+          if (malformedCallIds.has(event.callId)) {
+            malformedCallIds.delete(event.callId);
+            pending.delete(event.callId);
+            break;
+          }
+
+          if (!event.name.trim()) {
+            malformedCallIds.add(event.callId);
+            pending.delete(event.callId);
+            yield* emitIssue(toolIssue(
+              "malformed_tool_call",
+              tool ?? { callId: event.callId, name: event.name, argsText: "", argsDeltas: [] },
+              "missing_tool_name",
+            ));
+            break;
+          }
+
+          if (tool && !parseArgsText(tool.argsText).ok) {
+            malformedCallIds.add(event.callId);
+            pending.delete(event.callId);
+            yield* emitIssue(toolIssue("malformed_tool_call", tool, "invalid_tool_arguments"));
+            break;
+          }
+
+          pending.delete(event.callId);
+          emittedToolCallCount++;
+          yield* emitToolCallBlock({ type: "tool_call", id: event.callId, name: event.name, args: event.args });
+          break;
+        }
+
+        case "tool_error":
+        case "tool_cancel": {
+          suppressMalformedTextSpan = false;
+          if (event.callId) pending.delete(event.callId);
+          yield* closeOpenBlock();
+          yield* emitIssue({
+            kind: event.type === "tool_error" ? "malformed_tool_call" : "cancelled_tool_call",
+            reason: event.reason,
+            message: event.message,
+            callId: event.callId,
+            name: event.name,
+            argsText: event.argsText,
+            textDelta: event.textDelta,
+          });
+          break;
+        }
+
+        case "usage":
+          suppressMalformedTextSpan = false;
+          if (event.finishReason && pending.size > 0) {
+            yield* cancelPending("stream_ended_before_tool_call");
+          }
+          yield* closeOpenBlock();
+          yield {
+            ...event,
+            finishReason: event.finishReason === "tool_use" && emittedToolCallCount === 0 && issueCount > 0
+              ? "stop"
+              : event.finishReason,
+          };
+          break;
+
+        case "error":
+          suppressMalformedTextSpan = false;
+          yield* cancelPending("provider_error_before_tool_call");
+          yield* closeOpenBlock();
+          yield* emitIssue({
+            kind: "provider_error",
+            message: event.error,
+            retryable: event.retryable,
+            contextOverflow: event.contextOverflow,
+            overflowRatio: event.overflowRatio,
+          });
+          break;
+
+        case "timeout":
+          suppressMalformedTextSpan = false;
+          yield* cancelPending("provider_error_before_tool_call");
+          yield* closeOpenBlock();
+          yield* emitIssue({
+            kind: "timeout",
+            scope: event.scope,
+            message: event.message,
+            retryable: event.retryable,
+          });
+          break;
+      }
+    }
+  } catch (error) {
+    yield* cancelPending("provider_error_before_tool_call");
+    yield* closeOpenBlock();
+    if (isProviderTimeoutError(error)) {
+      yield* emitIssue({
+        kind: "timeout",
+        scope: error.scope,
+        message: error.message,
+        retryable: true,
+      });
+      return;
+    }
+    yield* emitIssue({
+      kind: "provider_error",
+      message: error instanceof Error ? error.message : String(error),
+      retryable: true,
+    });
+    return;
   }
+
+  yield* cancelPending("stream_ended_before_tool_call");
+  yield* closeOpenBlock();
 }

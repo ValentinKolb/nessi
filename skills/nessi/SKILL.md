@@ -1,6 +1,6 @@
 ---
 name: nessi
-description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about @valentinkolb/nessi/ai complete(), stream(), provider setup, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, streaming events, tool_error/tool_cancel malformed tool streams, loopId correlation, done.aggregate loop metadata, loop-level stats, tool calls, usage accounting, generation options, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root agent loop."
+description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about @valentinkolb/nessi/ai complete(), stream(), provider setup, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, canonical block streaming events, issue events for malformed tool streams, loopId correlation, loop_end.aggregate metadata, loop-level stats, tool execution events, usage accounting, generation options, provider timeouts, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root agent loop."
 ---
 
 # @valentinkolb/nessi Consumer Skill
@@ -37,8 +37,10 @@ Read only the references needed for the task:
 - Stream by iterating events and switching on `event.type`.
 - For root `nessi()` loops, pass an application-level `loopId` when the app already has a request/response group id; otherwise use the generated `event.loopId` that appears on every outbound event.
 - For root `nessi()` loops, pass `temperature`, `maxOutputTokens`, and `disableReasoning` at the top level when the app has a default generation policy for the whole loop.
-- For root `nessi()` loops, use `event.type === "done"` plus `event.aggregate` for one logical response group, aggregate usage, loop-level stats, assistant turn count, tool calls, tool results, validation/execution errors, and malformed/cancelled tool-stream issues across multi-turn tool loops.
-- Treat `tool_error` and `tool_cancel` as pre-execution stream issues. They mean no executable tool call exists for that pending start.
+- For root `nessi()` loops, use `event.type === "loop_end"` plus `event.aggregate` for one logical response group, aggregate usage, loop-level stats, assistant turn count, tool calls, tool results, validation/execution errors, and malformed/cancelled tool-stream issues across multi-turn tool loops.
+- For standalone `compact()` loops, use the same `loopId` grouping pattern and handle `loop_start`, `compaction_start`, `compaction_end`, `issue`, and `loop_end`.
+- Treat `issue.kind === "malformed_tool_call"` and `issue.kind === "cancelled_tool_call"` as pre-execution stream issues. They mean no executable tool call exists for that pending provider start.
+- Treat `tool_execution_start` / `tool_execution_end` as Nessi's tool-runtime attempt boundary. `tool_action_request` is the event that asks the app for approval or client-side tool output.
 - Treat tool calls as data the application must handle; `@valentinkolb/nessi/ai` does not execute tools.
 - Surface unsupported file input and provider error behavior instead of hiding it.
 - If the user asks for browser code, keep API keys server-side and expose a backend route.
@@ -94,12 +96,16 @@ const result = await provider.complete({
 Common stream shape:
 
 ```ts
+const textBlocks = new Set<string>();
+
 for await (const event of provider.stream({ messages })) {
-  if (event.type === "text") process.stdout.write(event.delta);
+  if (event.type === "block_start" && event.kind === "text") textBlocks.add(event.blockId);
+  if (event.type === "block_delta" && textBlocks.has(event.blockId)) process.stdout.write(event.delta);
+  if (event.type === "issue") console.error(event.issue.kind, event.issue.message);
 }
 ```
 
-Common root-loop done handling:
+Common root-loop handling:
 
 ```ts
 const loop = nessi({
@@ -114,14 +120,18 @@ const loop = nessi({
   disableReasoning: true,
 });
 
+const textBlocks = new Set<string>();
+
 for await (const event of loop) {
-  if (event.type === "text") process.stdout.write(event.delta);
-  if (event.type === "done") {
+  if (event.type === "block_start" && event.kind === "text") textBlocks.add(event.blockId);
+  if (event.type === "block_delta" && textBlocks.has(event.blockId)) process.stdout.write(event.delta);
+  if (event.type === "issue") console.error(event.issue.kind, event.issue.message);
+  if (event.type === "loop_end") {
     console.log(event.loopId);
     console.log(event.reason);
-    console.log(event.aggregate?.usage);
-    console.log(event.aggregate?.toolErrorCount);
-    console.log(event.aggregate?.toolMalformedCount);
+    console.log(event.aggregate.usage);
+    console.log(event.aggregate.toolErrorCount);
+    console.log(event.aggregate.toolMalformedCount);
   }
 }
 ```

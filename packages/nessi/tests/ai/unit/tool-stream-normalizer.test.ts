@@ -1,27 +1,34 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeToolStream } from "../../../src/ai/shared/tool-stream-normalizer.js";
-import type { StreamEvent } from "../../../src/ai/types.js";
+import { normalizeProviderStream } from "../../../src/ai/shared/tool-stream-normalizer.js";
+import type { RawStreamEvent, StreamEvent } from "../../../src/ai/types.js";
 
-async function collect(events: StreamEvent[]): Promise<StreamEvent[]> {
+async function collect(events: RawStreamEvent[]): Promise<StreamEvent[]> {
   const out: StreamEvent[] = [];
   async function* source() {
     for (const event of events) yield event;
   }
-  for await (const event of normalizeToolStream(source(), { suppressTextAfterMalformedTool: true })) {
+  for await (const event of normalizeProviderStream(source(), { suppressTextAfterMalformedTool: true })) {
     out.push(event);
   }
   return out;
 }
 
-describe("normalizeToolStream", () => {
-  it("passes valid streamed tool calls through", async () => {
+describe("normalizeProviderStream", () => {
+  it("emits valid streamed tool calls as executable content blocks", async () => {
     const events = await collect([
       { type: "tool_start", callId: "c1", name: "search" },
       { type: "tool_delta", callId: "c1", argsDelta: "{\"q\":\"x\"}" },
       { type: "tool_call", callId: "c1", name: "search", args: { q: "x" } },
     ]);
 
-    expect(events.map((event) => event.type)).toEqual(["tool_start", "tool_delta", "tool_call"]);
+    expect(events.map((event) => event.type)).toEqual(["block_start", "block_delta", "block_end"]);
+    const end = events.find((event) => event.type === "block_end");
+    expect(end?.type === "block_end" ? end.block : undefined).toEqual({
+      type: "tool_call",
+      id: "c1",
+      name: "search",
+      args: { q: "x" },
+    });
   });
 
   it("marks pending tool calls malformed when text arrives", async () => {
@@ -34,12 +41,12 @@ describe("normalizeToolStream", () => {
       { type: "usage", usage: { input: 1, output: 2, total: 3 }, finishReason: "stop" },
     ]);
 
-    expect(events.map((event) => event.type)).toEqual(["tool_error", "usage"]);
-    const issue = events.find((event) => event.type === "tool_error") as Extract<StreamEvent, { type: "tool_error" }>;
-    expect(issue.reason).toBe("text_during_tool_call");
-    expect(issue.textDelta).toBe("</invoke>");
-    expect(events.some((event) => event.type === "tool_call")).toBe(false);
-    expect(events.some((event) => event.type === "text")).toBe(false);
+    expect(events.map((event) => event.type)).toEqual(["issue", "usage"]);
+    const issue = events.find((event) => event.type === "issue");
+    expect(issue?.type === "issue" ? issue.issue.reason : undefined).toBe("text_during_tool_call");
+    expect(issue?.type === "issue" ? issue.issue.textDelta : undefined).toBe("</invoke>");
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "text")).toBe(false);
   });
 
   it("does not turn malformed argument JSON into an executable tool call", async () => {
@@ -49,9 +56,9 @@ describe("normalizeToolStream", () => {
       { type: "tool_call", callId: "c1", name: "card", args: {} },
     ]);
 
-    expect(events.map((event) => event.type)).toEqual(["tool_error"]);
-    const issue = events.find((event) => event.type === "tool_error") as Extract<StreamEvent, { type: "tool_error" }>;
-    expect(issue.reason).toBe("invalid_tool_arguments");
+    expect(events.map((event) => event.type)).toEqual(["issue"]);
+    const issue = events.find((event) => event.type === "issue");
+    expect(issue?.type === "issue" ? issue.issue.reason : undefined).toBe("invalid_tool_arguments");
   });
 
   it("cancels pending tool calls when the stream ends", async () => {
@@ -60,9 +67,10 @@ describe("normalizeToolStream", () => {
       { type: "tool_delta", callId: "c1", argsDelta: "{\"q\":" },
     ]);
 
-    expect(events.map((event) => event.type)).toEqual(["tool_cancel"]);
-    const cancel = events.find((event) => event.type === "tool_cancel") as Extract<StreamEvent, { type: "tool_cancel" }>;
-    expect(cancel.reason).toBe("stream_ended_before_tool_call");
+    expect(events.map((event) => event.type)).toEqual(["issue"]);
+    const cancel = events.find((event) => event.type === "issue");
+    expect(cancel?.type === "issue" ? cancel.issue.reason : undefined).toBe("stream_ended_before_tool_call");
+    expect(cancel?.type === "issue" ? cancel.issue.kind : undefined).toBe("cancelled_tool_call");
   });
 
   it("downgrades tool_use finish reason when malformed calls suppressed all executable tools", async () => {
@@ -84,8 +92,10 @@ describe("normalizeToolStream", () => {
       { type: "error", error: "network", retryable: true },
     ]);
 
-    expect(events.map((event) => event.type)).toEqual(["tool_cancel", "error"]);
-    const cancel = events.find((event) => event.type === "tool_cancel") as Extract<StreamEvent, { type: "tool_cancel" }>;
-    expect(cancel.reason).toBe("provider_error_before_tool_call");
+    expect(events.map((event) => event.type)).toEqual(["issue", "issue"]);
+    const cancel = events[0];
+    expect(cancel?.type === "issue" ? cancel.issue.reason : undefined).toBe("provider_error_before_tool_call");
+    const providerError = events[1];
+    expect(providerError?.type === "issue" ? providerError.issue.kind : undefined).toBe("provider_error");
   });
 });

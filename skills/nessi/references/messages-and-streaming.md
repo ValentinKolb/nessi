@@ -74,60 +74,126 @@ const text = result.message.content
 Always switch on `event.type`:
 
 ```ts
+const textBlocks = new Set<string>();
+const thinkingBlocks = new Set<string>();
+
 for await (const event of provider.stream({ messages })) {
   switch (event.type) {
-    case "text":
-      process.stdout.write(event.delta);
+    case "block_start":
+      if (event.kind === "text") textBlocks.add(event.blockId);
+      if (event.kind === "thinking") thinkingBlocks.add(event.blockId);
       break;
-    case "thinking":
-      console.error(event.delta);
+    case "block_delta":
+      if (textBlocks.has(event.blockId)) process.stdout.write(event.delta);
+      if (thinkingBlocks.has(event.blockId)) {
+        console.error(event.delta);
+      }
       break;
-    case "tool_start":
-      console.error("tool started", event.name, event.callId);
+    case "block_end":
+      if (event.block.type === "tool_call") {
+        await handleToolCall(event.block);
+      }
+      textBlocks.delete(event.blockId);
+      thinkingBlocks.delete(event.blockId);
       break;
-    case "tool_delta":
-      break;
-    case "tool_call":
-      await handleToolCall(event);
-      break;
-    case "tool_error":
-      console.error("malformed tool stream", event.reason, event.callId);
-      break;
-    case "tool_cancel":
-      console.error("cancelled tool stream", event.reason, event.callId);
+    case "issue":
+      if (event.issue.kind === "provider_error" || event.issue.kind === "timeout") {
+        throw new Error(event.issue.message);
+      }
+      console.warn(event.issue.kind, event.issue.message);
       break;
     case "usage":
       console.error("usage", event.usage, event.finishReason);
       break;
-    case "error":
-      throw new Error(event.error);
   }
 }
 ```
 
 Event meanings:
 
-- `text`: user-visible text delta.
-- `thinking`: provider-exposed reasoning delta when available.
-- `tool_start`: a streamed tool call has begun. In root `nessi()` loops this is emitted only once the call has validated executable input.
-- `tool_delta`: partial tool argument text for providers that stream tool input.
-- `tool_call`: final parsed tool call with `callId`, `name`, and structured `args`.
-- `tool_error`: malformed pre-execution tool stream, such as text arriving while a tool call is half-open or invalid streamed JSON arguments. Do not execute a tool for this event.
-- `tool_cancel`: a pending tool start was cancelled before it became executable, usually because the stream ended or the provider failed.
+- `block_start`: a normalized assistant content block started. `kind` is `text`, `thinking`, or `tool_call`.
+- `block_delta`: incremental text for the current block. Track `block_start.kind` by `blockId` before printing deltas.
+- `block_end`: final structured assistant content block. Executable provider tool calls appear here as `block.type === "tool_call"`.
+- `issue`: structured provider, timeout, malformed/cancelled tool-stream, tool-execution, or runtime problem.
 - `usage`: token usage, sometimes with final `finishReason`.
-- `error`: normalized provider or connection error.
+
+Root `nessi()` loops forward provider block events and add `loopId`, `turnId`, and `turnIndex`:
+
+```ts
+for await (const event of loop) {
+  switch (event.type) {
+    case "loop_start":
+    case "turn_start":
+      break;
+    case "block_delta":
+      // Same block event shape as provider.stream(), with loop and turn metadata.
+      break;
+    case "tool_execution_start":
+      console.error("tool attempt", event.name, event.callId);
+      break;
+    case "tool_action_request":
+      // Respond with loop.push({ type: "approval_response" | "tool_result", ... }).
+      break;
+    case "tool_execution_end":
+      console.error("tool finished", event.name, event.isError);
+      break;
+    case "loop_end":
+      console.error(event.aggregate.usage);
+      break;
+  }
+}
+```
 
 ## Tool-stream invariants
 
-Apps should execute tools only from final `tool_call` events. Provider adapters
-can still expose `tool_start` / `tool_delta` for live diagnostics, but malformed
-or cancelled pending starts are closed with `tool_error` or `tool_cancel`.
+Apps should execute tools only from final `tool_call` content blocks:
 
-For root `nessi()` loops, `tool_start` is durable/user-visible only after Nessi
-has validated the tool input against the app's tool schema. If a provider emits
-plain text while a tool call is half-open, Nessi emits `tool_error`, suppresses
-the malformed text from assistant persistence, and reports the issue in
-`done.aggregate.toolIssues`.
+```ts
+if (event.type === "block_end" && event.block.type === "tool_call") {
+  await executeTool(event.block.name, event.block.args);
+}
+```
+
+Provider adapters do not expose half-open tool starts through the public stream.
+If text, thinking text, invalid JSON, a provider error, or stream end interrupts
+a pending tool call, the public event is `issue` with `issue.kind` set to
+`malformed_tool_call` or `cancelled_tool_call`.
+
+Root `nessi()` loops only execute tool calls that reached a final `tool_call`
+content block. Tool runtime events are separate:
+
+- `tool_execution_start`: Nessi started handling a final tool call. It is paired with `tool_execution_end`, including validation failures.
+- `tool_action_request`: the app must answer an approval or client-side tool request with `loop.push()`.
+- `tool_execution_end`: Nessi produced a tool result or an error result.
+
+Malformed/cancelled provider tool streams are reported in `issue` events and in
+`loop_end.aggregate.toolIssues`.
+
+## Standalone compaction loop
+
+The exported `compact()` helper uses the same loop-style event pattern for UI
+and persistence code. Every event carries `agentId` and `loopId`.
+After `compaction_start`, Nessi emits `compaction_end` even when the compaction
+operation fails; the failure is reported as `issue` before the final `loop_end`.
+
+```ts
+for await (const event of compact({ store, provider, compact: compactFn })) {
+  switch (event.type) {
+    case "loop_start":
+      break;
+    case "compaction_start":
+      break;
+    case "compaction_end":
+      break;
+    case "issue":
+      console.error(event.issue.kind, event.issue.message);
+      break;
+    case "loop_end":
+      console.log(event.loopId, event.reason, event.result);
+      break;
+  }
+}
+```
 
 ## Usage accounting
 

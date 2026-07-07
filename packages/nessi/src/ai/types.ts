@@ -20,6 +20,8 @@ export type ToolCallBlock = {
 
 export type AssistantContentBlock = TextBlock | ThinkingBlock | ToolCallBlock;
 
+export type AssistantBlockKind = AssistantContentBlock["type"];
+
 export type UserMessage = {
   role: "user";
   content: ContentPart[];
@@ -53,7 +55,7 @@ export type Usage = {
   creditsUsed?: number;
 };
 
-export type ToolStreamIssueKind = "malformed" | "cancelled";
+export type ToolStreamIssueKind = "malformed_tool_call" | "cancelled_tool_call";
 
 export type ToolStreamIssueReason =
   | "text_during_tool_call"
@@ -73,6 +75,45 @@ export type ToolStreamIssue = {
   argsText?: string;
   textDelta?: string;
 };
+
+export type ProviderIssue = {
+  kind: "provider_error";
+  message: string;
+  retryable: boolean;
+  contextOverflow?: boolean;
+  overflowRatio?: number;
+};
+
+export type TimeoutIssue = {
+  kind: "timeout";
+  scope: "provider_first_byte" | "provider_idle" | "tool";
+  message: string;
+  retryable: boolean;
+  callId?: string;
+  name?: string;
+};
+
+export type ToolExecutionIssue = {
+  kind: "tool_execution_error";
+  reason:
+    | "unknown_tool"
+    | "input_validation_failed"
+    | "output_validation_failed"
+    | "execution_failed"
+    | "approval_denied";
+  message: string;
+  retryable: boolean;
+  callId: string;
+  name: string;
+};
+
+export type RuntimeIssue = {
+  kind: "runtime_error";
+  message: string;
+  retryable: boolean;
+};
+
+export type NessiIssue = ToolStreamIssue | ProviderIssue | TimeoutIssue | ToolExecutionIssue | RuntimeIssue;
 
 export type ToolSpec = {
   name: string;
@@ -123,7 +164,36 @@ export type GenerateResult = {
   };
 };
 
+export type BlockStartEvent = {
+  type: "block_start";
+  blockId: string;
+  index: number;
+  kind: AssistantBlockKind;
+  callId?: string;
+  name?: string;
+};
+
+export type BlockDeltaEvent = {
+  type: "block_delta";
+  blockId: string;
+  delta: string;
+};
+
+export type BlockEndEvent = {
+  type: "block_end";
+  blockId: string;
+  index: number;
+  block: AssistantContentBlock;
+};
+
 export type StreamEvent =
+  | BlockStartEvent
+  | BlockDeltaEvent
+  | BlockEndEvent
+  | { type: "issue"; issue: NessiIssue }
+  | { type: "usage"; usage: Usage; finishReason?: AssistantStopReason };
+
+export type RawStreamEvent =
   | { type: "text"; delta: string }
   | { type: "thinking"; delta: string }
   | { type: "tool_start"; callId: string; name: string }
@@ -132,7 +202,13 @@ export type StreamEvent =
   | ({ type: "tool_error" } & Omit<ToolStreamIssue, "kind">)
   | ({ type: "tool_cancel" } & Omit<ToolStreamIssue, "kind">)
   | { type: "usage"; usage: Usage; finishReason?: AssistantStopReason }
+  | { type: "timeout"; scope: "provider_first_byte" | "provider_idle"; message: string; retryable: boolean }
   | { type: "error"; error: string; retryable: boolean; contextOverflow?: boolean; overflowRatio?: number };
+
+export type ProviderTimeouts = {
+  firstByteMs?: number;
+  idleMs?: number;
+};
 
 export type Provider = {
   name: string;
@@ -160,6 +236,7 @@ export type OpenAICompatibleConfig = {
   apiKey?: string;
   contextWindow?: number;
   compat?: OpenAICompat;
+  timeouts?: ProviderTimeouts;
   temperature?: number;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;

@@ -73,13 +73,22 @@ const loop = nessi({
   maxOutputTokens: 512,
 });
 
+const textBlocks = new Set<string>();
+
 for await (const event of loop) {
-  if (event.type === "text") process.stdout.write(event.delta);
-  if (event.type === "error") throw new Error(event.error);
-  if (event.type === "done") {
+  if (event.type === "block_start" && event.kind === "text") {
+    textBlocks.add(event.blockId);
+  }
+  if (event.type === "block_delta" && textBlocks.has(event.blockId)) {
+    process.stdout.write(event.delta);
+  }
+  if (event.type === "issue") {
+    console.error(event.issue.kind, event.issue.message);
+  }
+  if (event.type === "loop_end") {
     console.error("loop id", event.loopId);
     console.error("finish", event.reason);
-    console.error("loop usage", event.aggregate?.usage);
+    console.error("loop usage", event.aggregate.usage);
   }
 }
 ```
@@ -89,22 +98,23 @@ Pass an application request or response-group id when you have one, or use the
 generated `event.loopId` if omitted.
 
 `turn_end` is emitted for each internal provider turn. A single user request
-with tools can have multiple internal turns. Use the final `done.aggregate`
+with tools can have multiple internal turns. Use the final `loop_end.aggregate`
 for one logical response group, aggregate usage, assistant-turn count,
-tool-call count, and tool-error count:
+tool-call count, tool-error count, and structured issues:
 
 ```ts
-if (event.type === "done") {
+if (event.type === "loop_end") {
   const aggregate = event.aggregate;
-  console.log(aggregate?.assistantMessageCount);
-  console.log(aggregate?.toolCallCount, aggregate?.toolErrorCount);
-  console.log(aggregate?.toolMalformedCount, aggregate?.toolCancelledCount);
-  console.log(aggregate?.toolIssues);
-  console.log(aggregate?.usage);
+  console.log(aggregate.assistantMessageCount);
+  console.log(aggregate.toolCallCount, aggregate.toolErrorCount);
+  console.log(aggregate.toolMalformedCount, aggregate.toolCancelledCount);
+  console.log(aggregate.toolIssues);
+  console.log(aggregate.issues);
+  console.log(aggregate.usage);
 }
 ```
 
-If your app persists chat UI state, persist the `done.aggregate` payload with
+If your app persists chat UI state, persist the `loop_end.aggregate` payload with
 `event.loopId` on your response group. Nessi owns the generic loop semantics;
 your app still owns database IDs and storage schema.
 
@@ -155,16 +165,22 @@ const messages = [
   },
 ];
 
+const textBlocks = new Set<string>();
+
 for await (const event of provider.stream({ messages })) {
   switch (event.type) {
-    case "text":
-      process.stdout.write(event.delta);
+    case "block_start":
+      if (event.kind === "text") textBlocks.add(event.blockId);
+      break;
+    case "block_delta":
+      if (textBlocks.has(event.blockId)) process.stdout.write(event.delta);
       break;
     case "usage":
       console.error("\nusage", event.usage);
       break;
-    case "error":
-      throw new Error(event.error);
+    case "issue":
+      console.error(event.issue.kind, event.issue.message);
+      break;
   }
 }
 ```

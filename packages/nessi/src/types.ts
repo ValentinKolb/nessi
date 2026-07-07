@@ -4,12 +4,18 @@
 
 import type { z } from "zod";
 import type {
+  AssistantStopReason,
+  BlockDeltaEvent,
+  BlockEndEvent,
+  BlockStartEvent,
   AssistantMessage,
   ContentPart,
   GenerateRequest,
   Message,
+  NessiIssue,
   Provider,
   StreamEvent,
+  ToolExecutionIssue,
   ToolResultMessage,
   ToolStreamIssue,
   Usage,
@@ -17,19 +23,28 @@ import type {
 } from "./ai/index.js";
 export type {
   AssistantContentBlock,
+  AssistantBlockKind,
   AssistantMessage,
   AssistantStopReason,
+  BlockDeltaEvent,
+  BlockEndEvent,
+  BlockStartEvent,
   ContentPart,
   Message,
+  NessiIssue,
   Provider,
+  ProviderIssue,
+  RuntimeIssue,
   TextBlock,
   ThinkingBlock,
   ToolCallBlock,
+  ToolExecutionIssue,
   ToolResultMessage,
   ToolStreamIssue,
   ToolStreamIssueKind,
   ToolStreamIssueReason,
   ToolSpec,
+  TimeoutIssue,
   Usage,
   UserMessage,
 } from "./ai/index.js";
@@ -52,30 +67,36 @@ type LoopEventFields = {
   loopId: string;
 }
 
+type TurnEventFields = LoopEventFields & {
+  turnId: string;
+  turnIndex: number;
+}
+
+export type ToolActionKind = "approval" | "client_tool" | "custom_approval";
+
 export type OutboundEvent =
-  | (LoopEventFields & { type: "turn_start" })
-  | (LoopEventFields & { type: "text"; delta: string })
-  | (LoopEventFields & { type: "thinking"; delta: string })
-  | (LoopEventFields & { type: "tool_start"; callId: string; name: string })
-  | (LoopEventFields & { type: "tool_call"; callId: string; name: string; args: unknown })
-  | (LoopEventFields & { type: "tool_error" } & Omit<ToolStreamIssue, "kind">)
-  | (LoopEventFields & { type: "tool_cancel" } & Omit<ToolStreamIssue, "kind">)
-  | (LoopEventFields & { type: "tool_end"; callId: string; name: string; result: unknown; isError?: boolean })
-  | (LoopEventFields & { type: "turn_end"; message: AssistantMessage })
-  | (LoopEventFields & {
-      type: "action_request";
-      kind: "approval" | "client_tool" | "custom_approval";
+  | (LoopEventFields & { type: "loop_start" })
+  | (TurnEventFields & { type: "turn_start"; resumed?: boolean })
+  | (TurnEventFields & BlockStartEvent)
+  | (TurnEventFields & BlockDeltaEvent)
+  | (TurnEventFields & BlockEndEvent)
+  | (TurnEventFields & { type: "usage"; usage: Usage; finishReason?: AssistantStopReason })
+  | (LoopEventFields & { type: "issue"; issue: NessiIssue; turnId?: string; turnIndex?: number })
+  | (TurnEventFields & { type: "tool_execution_start"; callId: string; name: string; args: unknown })
+  | (TurnEventFields & {
+      type: "tool_action_request";
+      kind: ToolActionKind;
       callId: string;
       name: string;
       args: unknown;
       message?: string;
     })
-  | (LoopEventFields & { type: "error"; error: string; retryable: boolean; contextOverflow?: boolean; overflowRatio?: number })
+  | (TurnEventFields & { type: "tool_execution_end"; callId: string; name: string; result: unknown; isError?: boolean })
+  | (TurnEventFields & { type: "turn_end"; message: AssistantMessage })
   | (LoopEventFields & { type: "steer_applied"; message: string })
   | (LoopEventFields & { type: "compaction_start" })
   | (LoopEventFields & { type: "compaction_end" })
-  | (LoopEventFields & { type: "interrupted" })
-  | (LoopEventFields & { type: "done"; reason: DoneReason; aggregate?: LoopAggregate });
+  | (LoopEventFields & { type: "loop_end"; reason: DoneReason; aggregate: LoopAggregate });
 
 export type InboundEvent =
   | { type: "approval_response"; callId: string; approved: boolean }
@@ -92,6 +113,7 @@ export type LoopToolCallAggregate = {
 };
 
 export type LoopToolIssueAggregate = ToolStreamIssue;
+export type LoopIssueAggregate = NessiIssue;
 
 export type LoopTurnAggregate = {
   message: AssistantMessage;
@@ -99,11 +121,14 @@ export type LoopTurnAggregate = {
   stopReason?: AssistantMessage["stopReason"];
   toolCalls: LoopToolCallAggregate[];
   toolIssues?: LoopToolIssueAggregate[];
+  issues?: LoopIssueAggregate[];
 };
 
 export type LoopAggregate = {
   turns: LoopTurnAggregate[];
   usage?: Usage;
+  issueCount: number;
+  issues: LoopIssueAggregate[];
   toolCallCount: number;
   toolErrorCount: number;
   toolIssueCount: number;
@@ -123,6 +148,7 @@ export type ToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput extends
   inputSchema: TInput;
   outputSchema?: TOutput;
   needsApproval?: boolean;
+  timeoutMs?: number | false;
 
   server(execute: (input: z.infer<TInput>, ctx: ToolContext) => Promise<z.infer<TOutput>>): ServerTool<TInput, TOutput>;
 
@@ -179,9 +205,15 @@ export type NessiOptions = {
   temperature?: number;
   maxOutputTokens?: number;
   disableReasoning?: boolean;
+  coalesce?: CoalesceOptions;
   /** Max chars for tool results in the context sent to the provider. Longer results are truncated. */
   maxToolResultChars?: number;
   signal?: AbortSignal;
+}
+
+export type CoalesceOptions = {
+  ms?: number;
+  maxChars?: number;
 }
 
 export type NessiLoop = {
@@ -225,6 +257,8 @@ export type CompactContext = {
 
 export type CompactOptions = {
   agentId?: string;
+  /** Correlates every event emitted by one standalone compact() run. Generated when omitted. */
+  loopId?: string;
   store: SessionStore;
   provider: Provider;
   compact: CompactFn;
@@ -243,10 +277,11 @@ export type CompactResult = {
 export type CompactDoneReason = "stop" | "error" | "aborted";
 
 export type CompactEvent =
-  | { type: "compaction_start"; agentId: string }
-  | { type: "compaction_end"; agentId: string }
-  | { type: "error"; agentId: string; error: string; retryable: false }
-  | { type: "done"; agentId: string; reason: CompactDoneReason; result: CompactResult };
+  | (LoopEventFields & { type: "loop_start" })
+  | (LoopEventFields & { type: "compaction_start" })
+  | (LoopEventFields & { type: "compaction_end" })
+  | (LoopEventFields & { type: "issue"; issue: NessiIssue })
+  | (LoopEventFields & { type: "loop_end"; reason: CompactDoneReason; result: CompactResult });
 
 export type CompactLoop = {
   [Symbol.asyncIterator](): AsyncIterator<CompactEvent>;

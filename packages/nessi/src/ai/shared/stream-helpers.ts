@@ -1,11 +1,11 @@
 import { formatConnectionError, normalizeHttpError } from "./errors.js";
-import { parseSSE } from "./sse.js";
+import { parseSSE, SSETimeoutError } from "./sse.js";
 import type { SSEEvent } from "./sse.js";
-import type { StreamEvent } from "../types.js";
+import type { ProviderTimeouts, RawStreamEvent } from "../types.js";
 
 type SSEStreamResult =
   | { ok: true; events: AsyncGenerator<SSEEvent> }
-  | { ok: false; error: StreamEvent & { type: "error" } };
+  | { ok: false; error: Extract<RawStreamEvent, { type: "error" | "timeout" }> };
 
 export const openSSEStream = async (
   url: string,
@@ -14,17 +14,47 @@ export const openSSEStream = async (
   label: string,
   signal?: AbortSignal,
   contextWindow?: number,
+  timeouts?: ProviderTimeouts,
 ): Promise<SSEStreamResult> => {
   const serializedBody = JSON.stringify(body);
   let response: Response;
+  const controller = new AbortController();
+  const abortExternal = () => controller.abort(signal?.reason);
+  const cleanupExternalAbort = () => {
+    if (signal) signal.removeEventListener("abort", abortExternal);
+  };
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else signal.addEventListener("abort", abortExternal, { once: true });
+  }
+  let firstByteTimeout: ReturnType<typeof setTimeout> | undefined;
+  const firstByteDeadline = timeouts?.firstByteMs && timeouts.firstByteMs > 0
+    ? Date.now() + timeouts.firstByteMs
+    : undefined;
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: serializedBody,
-      signal,
-    });
+    response = await Promise.race([
+      fetch(url, {
+        method: "POST",
+        headers,
+        body: serializedBody,
+        signal: controller.signal,
+      }),
+      new Promise<never>((_, reject) => {
+        if (!timeouts?.firstByteMs || timeouts.firstByteMs <= 0) return;
+        firstByteTimeout = setTimeout(() => {
+          controller.abort();
+          reject(new SSETimeoutError("provider_first_byte", timeouts.firstByteMs!));
+        }, timeouts.firstByteMs);
+      }),
+    ]);
   } catch (error) {
+    cleanupExternalAbort();
+    if (error instanceof SSETimeoutError) {
+      return {
+        ok: false,
+        error: { type: "timeout", scope: error.scope, message: error.message, retryable: true },
+      };
+    }
     // Heuristic: if the request body is large relative to the context window,
     // a network error likely means the server rejected it for context overflow
     // (browsers hide the actual HTTP 400 body behind CORS on error responses).
@@ -49,20 +79,39 @@ export const openSSEStream = async (
       ok: false,
       error: { type: "error", error: formatConnectionError(label, error), retryable: true },
     };
+  } finally {
+    if (firstByteTimeout) clearTimeout(firstByteTimeout);
   }
 
   if (!response.ok) {
     const normalized = await normalizeHttpError(label, response);
+    cleanupExternalAbort();
     return { ok: false, error: { type: "error", ...normalized } };
   }
 
   const reader = response.body?.getReader() as ReadableStreamDefaultReader<Uint8Array> | undefined;
   if (!reader) {
+    cleanupExternalAbort();
     return {
       ok: false,
       error: { type: "error", error: `${label} response body missing`, retryable: false },
     };
   }
 
-  return { ok: true, events: parseSSE(reader) };
+  const streamTimeouts = timeouts ? { ...timeouts } : undefined;
+  if (firstByteDeadline && streamTimeouts) {
+    streamTimeouts.firstByteMs = Math.max(1, firstByteDeadline - Date.now());
+  }
+
+  const events = async function* (): AsyncGenerator<SSEEvent> {
+    try {
+      yield* parseSSE(reader, streamTimeouts);
+    } finally {
+      cleanupExternalAbort();
+      controller.abort();
+      await reader.cancel().catch(() => {});
+    }
+  };
+
+  return { ok: true, events: events() };
 };

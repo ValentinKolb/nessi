@@ -54,6 +54,19 @@ const askSurveyTool = defineTool({
   return { result: response.result };
 });
 
+const surveyTool = defineTool({
+  name: "survey",
+  description: "Ask a survey on the client",
+  inputSchema: z.object({
+    title: z.string(),
+    questions: z.array(z.object({
+      question: z.string(),
+      options: z.array(z.string()),
+    })),
+  }),
+  outputSchema: z.object({ result: z.string() }),
+}).client(() => ({ result: "A" }));
+
 describe("nessi core loop", () => {
   it("rejects duplicate tool names", () => {
     const first = defineTool({
@@ -77,7 +90,7 @@ describe("nessi core loop", () => {
     ).toThrow("Duplicate tool name: dup");
   });
 
-  it("emits error and done when the store throws", async () => {
+  it("emits issue and loop_end(error) when the store throws", async () => {
     const brokenStore: SessionStore = {
       async load() {
         return [];
@@ -95,9 +108,15 @@ describe("nessi core loop", () => {
       }),
     );
 
-    expect(events[0]).toMatchObject({ type: "error", agentId: "main", error: "store failed", retryable: false });
-    expect(events[1]).toMatchObject({
-      type: "done",
+    const issue = events.find((event) => event.type === "issue") as Extract<OutboundEvent, { type: "issue" }>;
+    expect(issue).toMatchObject({
+      type: "issue",
+      agentId: "main",
+      issue: { kind: "runtime_error", message: "store failed", retryable: false },
+    });
+    const done = events.find((event) => event.type === "loop_end") as Extract<OutboundEvent, { type: "loop_end" }>;
+    expect(done).toMatchObject({
+      type: "loop_end",
       agentId: "main",
       reason: "error",
       aggregate: {
@@ -107,7 +126,7 @@ describe("nessi core loop", () => {
         assistantMessageCount: 0,
       },
     });
-    expect(events[0]?.loopId).toBe(events[1]?.loopId);
+    expect(issue.loopId).toBe(done.loopId);
   });
 
   it("handles simple text response", async () => {
@@ -126,16 +145,15 @@ describe("nessi core loop", () => {
 
     const types = events.map((e) => e.type);
     expect(types).toContain("turn_start");
-    expect(types).toContain("text");
+    expect(types).toContain("block_end");
     expect(types).toContain("turn_end");
-    expect(types).toContain("done");
+    expect(types).toContain("loop_end");
 
-    const textEvents = events.filter((e) => e.type === "text");
-    expect(textEvents).toHaveLength(2);
-    expect((textEvents[0] as any).delta).toBe("Hello ");
-    expect((textEvents[1] as any).delta).toBe("world!");
+    const textEvents = events.filter((e) => e.type === "block_end" && e.block.type === "text");
+    expect(textEvents).toHaveLength(1);
+    expect(textEvents[0]?.type === "block_end" && textEvents[0].block.type === "text" ? textEvents[0].block.text : "").toBe("Hello world!");
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("stop");
   });
 
@@ -159,10 +177,32 @@ describe("nessi core loop", () => {
       }),
     );
 
-    expect(events.some((event) => event.type === "done")).toBe(true);
+    expect(events.some((event) => event.type === "loop_end")).toBe(true);
     expect(capturedRequest.temperature).toBe(0);
     expect(capturedRequest.maxOutputTokens).toBe(64);
     expect(capturedRequest.disableReasoning).toBe(true);
+  });
+
+  it("coalesces adjacent block deltas when requested", async () => {
+    const events = await collectEvents(
+      nessi({
+        provider: mockProvider([
+          { type: "text", delta: "a" },
+          { type: "text", delta: "b" },
+          { type: "text", delta: "c" },
+          { type: "usage", usage: { input: 1, output: 3, total: 4 } },
+        ]),
+        systemPrompt: "test",
+        store: memoryStore(),
+        input: "Hi",
+        coalesce: { maxChars: 2 },
+      }),
+    );
+
+    const deltas = events
+      .filter((event): event is Extract<OutboundEvent, { type: "block_delta" }> => event.type === "block_delta")
+      .map((event) => event.delta);
+    expect(deltas).toEqual(["ab", "c"]);
   });
 
   it("classifies malformed half-open tool streams without durable tool UI events", async () => {
@@ -186,15 +226,16 @@ describe("nessi core loop", () => {
       }),
     );
 
-    expect(events.some((event) => event.type === "tool_start")).toBe(false);
-    expect(events.some((event) => event.type === "tool_call")).toBe(false);
-    expect(events.some((event) => event.type === "text")).toBe(false);
+    expect(events.some((event) => event.type === "tool_execution_start")).toBe(false);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "text")).toBe(false);
 
-    const issue = events.find((event) => event.type === "tool_error") as Extract<OutboundEvent, { type: "tool_error" }>;
-    expect(issue.reason).toBe("text_during_tool_call");
-    expect(issue.textDelta).toBe("</invoke>");
+    const issue = events.find((event) => event.type === "issue") as Extract<OutboundEvent, { type: "issue" }>;
+    expect(issue.issue.kind).toBe("malformed_tool_call");
+    expect(issue.issue.kind === "malformed_tool_call" ? issue.issue.reason : undefined).toBe("text_during_tool_call");
+    expect(issue.issue.kind === "malformed_tool_call" ? issue.issue.textDelta : undefined).toBe("</invoke>");
 
-    const done = events.find((event) => event.type === "done") as Extract<OutboundEvent, { type: "done" }>;
+    const done = events.find((event) => event.type === "loop_end") as Extract<OutboundEvent, { type: "loop_end" }>;
     expect(done.aggregate?.toolIssueCount).toBe(1);
     expect(done.aggregate?.toolMalformedCount).toBe(1);
     expect(done.aggregate?.toolCancelledCount).toBe(0);
@@ -228,13 +269,14 @@ describe("nessi core loop", () => {
       }),
     );
 
-    expect(events.some((event) => event.type === "tool_start")).toBe(false);
-    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "tool_execution_start")).toBe(false);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "tool_call")).toBe(false);
 
-    const cancel = events.find((event) => event.type === "tool_cancel") as Extract<OutboundEvent, { type: "tool_cancel" }>;
-    expect(cancel.reason).toBe("stream_ended_before_tool_call");
+    const cancel = events.find((event) => event.type === "issue") as Extract<OutboundEvent, { type: "issue" }>;
+    expect(cancel.issue.kind).toBe("cancelled_tool_call");
+    expect(cancel.issue.kind === "cancelled_tool_call" ? cancel.issue.reason : undefined).toBe("stream_ended_before_tool_call");
 
-    const done = events.find((event) => event.type === "done") as Extract<OutboundEvent, { type: "done" }>;
+    const done = events.find((event) => event.type === "loop_end") as Extract<OutboundEvent, { type: "loop_end" }>;
     expect(done.aggregate?.toolIssueCount).toBe(1);
     expect(done.aggregate?.toolMalformedCount).toBe(0);
     expect(done.aggregate?.toolCancelledCount).toBe(1);
@@ -261,7 +303,7 @@ describe("nessi core loop", () => {
     expect(loopId.length).toBeGreaterThan(0);
   });
 
-  it("emits loop aggregate metadata on done for multi-turn tool loops", async () => {
+  it("emits loop aggregate metadata on loop_end for multi-turn tool loops", async () => {
     const provider = mockProviderMultiTurn((request, callIndex) => {
       if (callIndex === 0) {
         return [
@@ -287,7 +329,7 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const done = events.find((e) => e.type === "done") as Extract<OutboundEvent, { type: "done" }>;
+    const done = events.find((e) => e.type === "loop_end") as Extract<OutboundEvent, { type: "loop_end" }>;
 
     expect(events.every((event) => event.loopId === "test-loop-aggregate")).toBe(true);
     expect(done.loopId).toBe("test-loop-aggregate");
@@ -351,9 +393,13 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const thinkingEvents = events.filter((e) => e.type === "thinking");
+    const thinkingEvents = events.filter((e) => e.type === "block_end" && e.block.type === "thinking");
     expect(thinkingEvents).toHaveLength(1);
-    expect((thinkingEvents[0] as any).delta).toBe("Let me think...");
+    expect(
+      thinkingEvents[0]?.type === "block_end" && thinkingEvents[0].block.type === "thinking"
+        ? thinkingEvents[0].block.thinking
+        : undefined,
+    ).toBe("Let me think...");
 
     const turnEnd = events.find((event) => event.type === "turn_end") as Extract<OutboundEvent, { type: "turn_end" }>;
     expect(turnEnd.message.content.map((block) => block.type)).toEqual(["thinking", "text"]);
@@ -393,23 +439,23 @@ describe("nessi core loop", () => {
     );
 
     const types = events.map((e) => e.type);
-    expect(types).toContain("tool_start");
-    expect(types).toContain("tool_call");
-    expect(types).toContain("tool_end");
+    expect(types).toContain("tool_execution_start");
+    expect(types).toContain("block_end");
+    expect(types).toContain("tool_execution_end");
     // Should have two turn_starts (original + after tool)
     expect(types.filter((t) => t === "turn_start")).toHaveLength(2);
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.result).toEqual({ echoed: "hello" });
 
-    // turn_end must come AFTER tool_call and tool_end
+    // turn_end must come after the assistant tool_call block and tool execution.
     const firstTurnEndIdx = types.indexOf("turn_end");
-    const toolCallIdx = types.indexOf("tool_call");
-    const toolEndIdx = types.indexOf("tool_end");
+    const toolCallIdx = events.findIndex((event) => event.type === "block_end" && event.block.type === "tool_call");
+    const toolEndIdx = types.indexOf("tool_execution_end");
     expect(toolCallIdx).toBeLessThan(firstTurnEndIdx);
     expect(toolEndIdx).toBeLessThan(firstTurnEndIdx);
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("stop");
   });
 
@@ -439,17 +485,145 @@ describe("nessi core loop", () => {
     const events: OutboundEvent[] = [];
     for await (const event of loop) {
       events.push(event);
-      if (event.type === "action_request" && event.kind === "client_tool") {
+      if (event.type === "tool_action_request" && event.kind === "client_tool") {
         loop.push({ type: "tool_result", callId: event.callId, result: { shown: true } });
       }
     }
 
-    const actionReq = events.find((e) => e.type === "action_request") as any;
+    const actionReq = events.find((e) => e.type === "tool_action_request") as any;
     expect(actionReq.kind).toBe("client_tool");
     expect(actionReq.name).toBe("toast");
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.result).toEqual({ shown: true });
+  });
+
+  it("validates pushed client tool results", async () => {
+    const provider = mockProviderMultiTurn((_request, callIndex) => {
+      if (callIndex === 0) {
+        return [
+          { type: "tool_start", callId: "c1", name: "toast" },
+          { type: "tool_call", callId: "c1", name: "toast", args: { message: "Done!" } },
+          { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+        ];
+      }
+      return [
+        { type: "text", delta: "Handled." },
+        { type: "usage", usage: { input: 20, output: 10, total: 30 } },
+      ];
+    });
+
+    const loop = nessi({
+      provider,
+      systemPrompt: "test",
+      store: memoryStore(),
+      tools: [toastTool],
+      input: "Show a toast",
+    });
+
+    const events: OutboundEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+      if (event.type === "tool_action_request" && event.kind === "client_tool") {
+        loop.push({ type: "tool_result", callId: event.callId, result: { shown: "yes" } });
+      }
+    }
+
+    const toolEnd = events.find((event) => event.type === "tool_execution_end") as any;
+    expect(toolEnd.isError).toBe(true);
+    expect(toolEnd.result).toContain("Output validation error");
+    const issue = events.find((event) => event.type === "issue") as Extract<OutboundEvent, { type: "issue" }>;
+    expect(issue.issue.kind).toBe("tool_execution_error");
+    expect(issue.issue.kind === "tool_execution_error" ? issue.issue.reason : undefined).toBe("output_validation_failed");
+  });
+
+  it("times out client tools only when timeoutMs is set on the tool", async () => {
+    const slowClientTool = defineTool({
+      name: "slow_client",
+      description: "Waits for a client result",
+      inputSchema: z.object({}),
+      outputSchema: z.object({ ok: z.boolean() }),
+      timeoutMs: 1,
+    }).client(() => ({ ok: true }));
+    const provider = mockProviderMultiTurn((_request, callIndex) => {
+      if (callIndex === 0) {
+        return [
+          { type: "tool_start", callId: "c1", name: "slow_client" },
+          { type: "tool_call", callId: "c1", name: "slow_client", args: {} },
+          { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+        ];
+      }
+      return [
+        { type: "text", delta: "Timed out and continued." },
+        { type: "usage", usage: { input: 20, output: 10, total: 30 } },
+      ];
+    });
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store: memoryStore(),
+        tools: [slowClientTool],
+        input: "Run slow client",
+      }),
+    );
+
+    const issue = events.find((event) => event.type === "issue") as Extract<OutboundEvent, { type: "issue" }>;
+    expect(issue.issue.kind).toBe("timeout");
+    expect(issue.issue.kind === "timeout" ? issue.issue.scope : undefined).toBe("tool");
+    const toolEnd = events.find((event) => event.type === "tool_execution_end") as any;
+    expect(toolEnd.isError).toBe(true);
+    const done = events.find((event) => event.type === "loop_end") as any;
+    expect(done.reason).toBe("stop");
+    expect(done.aggregate.toolErrorCount).toBe(1);
+  });
+
+  it("removes timed-out inbound waiters before later client tool results", async () => {
+    const slowClientTool = defineTool({
+      name: "slow_client",
+      description: "Waits for a client result",
+      inputSchema: z.object({ index: z.number() }),
+      outputSchema: z.object({ ok: z.boolean(), index: z.number() }),
+      timeoutMs: 20,
+    }).client(() => ({ ok: true, index: 0 }));
+    const provider = mockProviderMultiTurn((_request, callIndex) => {
+      if (callIndex === 0) {
+        return [
+          { type: "tool_start", callId: "c1", name: "slow_client" },
+          { type: "tool_call", callId: "c1", name: "slow_client", args: { index: 1 } },
+          { type: "tool_start", callId: "c2", name: "slow_client" },
+          { type: "tool_call", callId: "c2", name: "slow_client", args: { index: 2 } },
+          { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+        ];
+      }
+      return [
+        { type: "text", delta: "Continued." },
+        { type: "usage", usage: { input: 20, output: 10, total: 30 } },
+      ];
+    });
+
+    const loop = nessi({
+      provider,
+      systemPrompt: "test",
+      store: memoryStore(),
+      tools: [slowClientTool],
+      input: "Run slow clients",
+    });
+
+    const events: OutboundEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+      if (event.type === "tool_action_request" && event.callId === "c2") {
+        loop.push({ type: "tool_result", callId: event.callId, result: { ok: true, index: 2 } });
+      }
+    }
+
+    const toolEnds = events.filter((event) => event.type === "tool_execution_end") as Array<any>;
+    expect(toolEnds.map((event) => [event.callId, event.isError, event.result])).toEqual([
+      ["c1", true, expect.stringContaining("timed out")],
+      ["c2", undefined, { ok: true, index: 2 }],
+    ]);
   });
 
   it("supports server tool -> requestClientTool() bridge", async () => {
@@ -478,17 +652,60 @@ describe("nessi core loop", () => {
     const events: OutboundEvent[] = [];
     for await (const event of loop) {
       events.push(event);
-      if (event.type === "action_request" && event.kind === "client_tool" && event.name === "survey") {
+      if (event.type === "tool_action_request" && event.kind === "client_tool" && event.name === "survey") {
         loop.push({ type: "tool_result", callId: event.callId, result: { result: "Pick one\nA" } });
       }
     }
 
-    const actionReq = events.find((e) => e.type === "action_request") as any;
+    const actionReq = events.find((e) => e.type === "tool_action_request") as any;
     expect(actionReq.kind).toBe("client_tool");
     expect(actionReq.name).toBe("survey");
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.result).toEqual({ result: "Pick one\nA" });
+  });
+
+  it("validates registered requestClientTool() bridge results", async () => {
+    const provider = mockProviderMultiTurn((_request, callIndex) => {
+      if (callIndex === 0) {
+        return [
+          { type: "tool_start", callId: "c1", name: "ask_survey" },
+          { type: "tool_call", callId: "c1", name: "ask_survey", args: {} },
+          { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+        ];
+      }
+      return [
+        { type: "text", delta: "Handled." },
+        { type: "usage", usage: { input: 20, output: 10, total: 30 } },
+      ];
+    });
+
+    const loop = nessi({
+      provider,
+      systemPrompt: "test",
+      store: memoryStore(),
+      tools: [askSurveyTool, surveyTool],
+      input: "Ask survey",
+    });
+
+    const events: OutboundEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+      if (event.type === "tool_action_request" && event.kind === "client_tool" && event.name === "survey") {
+        loop.push({ type: "tool_result", callId: event.callId, result: { result: 123 } });
+      }
+    }
+
+    const issue = events.find((event) =>
+      event.type === "issue"
+      && event.issue.kind === "tool_execution_error"
+      && event.issue.callId === "c1-client-0"
+    ) as Extract<OutboundEvent, { type: "issue" }>;
+    expect(issue.issue.kind === "tool_execution_error" ? issue.issue.reason : undefined).toBe("output_validation_failed");
+
+    const toolEnd = events.find((event) => event.type === "tool_execution_end" && event.callId === "c1") as any;
+    expect(toolEnd.isError).toBe(true);
+    expect(toolEnd.result).toContain('Output validation error for client tool "survey"');
   });
 
   it("buffers out-of-order inbound events by callId", async () => {
@@ -519,14 +736,14 @@ describe("nessi core loop", () => {
     const events: OutboundEvent[] = [];
     for await (const event of loop) {
       events.push(event);
-      if (event.type === "action_request" && event.kind === "client_tool" && event.callId === "c1") {
+      if (event.type === "tool_action_request" && event.kind === "client_tool" && event.callId === "c1") {
         // Push c2 first, then c1. c2 should be buffered until requested.
         loop.push({ type: "tool_result", callId: "c2", result: { shown: true, which: 2 } });
         loop.push({ type: "tool_result", callId: "c1", result: { shown: true, which: 1 } });
       }
     }
 
-    const toolEnds = events.filter((e) => e.type === "tool_end") as Array<any>;
+    const toolEnds = events.filter((e) => e.type === "tool_execution_end") as Array<any>;
     expect(toolEnds).toHaveLength(2);
     expect(toolEnds[0].callId).toBe("c1");
     expect(toolEnds[0].result).toEqual({ shown: true, which: 1 });
@@ -560,15 +777,15 @@ describe("nessi core loop", () => {
     const events: OutboundEvent[] = [];
     for await (const event of loop) {
       events.push(event);
-      if (event.type === "action_request" && event.kind === "approval") {
+      if (event.type === "tool_action_request" && event.kind === "approval") {
         loop.push({ type: "approval_response", callId: event.callId, approved: true });
       }
     }
 
-    const actionReq = events.find((e) => e.type === "action_request") as any;
+    const actionReq = events.find((e) => e.type === "tool_action_request") as any;
     expect(actionReq.kind).toBe("approval");
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.isError).toBeUndefined();
   });
 
@@ -598,12 +815,12 @@ describe("nessi core loop", () => {
     const events: OutboundEvent[] = [];
     for await (const event of loop) {
       events.push(event);
-      if (event.type === "action_request" && event.kind === "approval") {
+      if (event.type === "tool_action_request" && event.kind === "approval") {
         loop.push({ type: "approval_response", callId: event.callId, approved: false });
       }
     }
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.isError).toBe(true);
     expect(toolEnd.result).toContain("denied");
   });
@@ -627,7 +844,7 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("max_turns");
     expect(done.aggregate?.assistantMessageCount).toBe(2);
     expect(done.aggregate?.toolCallCount).toBe(2);
@@ -656,10 +873,10 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("no_credits");
     // Should not have any text events — stopped before provider call
-    const textEvents = events.filter((e) => e.type === "text");
+    const textEvents = events.filter((e) => e.type === "block_end" && e.block.type === "text");
     expect(textEvents).toHaveLength(0);
   });
 
@@ -714,7 +931,7 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("error");
     expect(done.aggregate?.assistantMessageCount).toBe(1);
     expect(done.aggregate?.usage).toEqual({ input: 10, output: 5, total: 15, creditsUsed: 7 });
@@ -740,11 +957,11 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("aborted");
   });
 
-  it("includes loopId on abort() injected events", async () => {
+  it("includes loopId on abort() loop events", async () => {
     const loop = nessi({
       loopId: "abort-loop",
       provider: mockProvider([
@@ -761,11 +978,10 @@ describe("nessi core loop", () => {
     loop.abort();
     const events = await collectEvents(loop);
 
-    const interrupted = events.find((e) => e.type === "interrupted");
-    const done = events.find((e) => e.type === "done");
-    expect(interrupted?.loopId).toBe("abort-loop");
+    const done = events.find((e) => e.type === "loop_end");
     expect(done?.loopId).toBe("abort-loop");
-    expect(subscribedEvents.find((e) => e.type === "interrupted")?.loopId).toBe("abort-loop");
+    expect(events.every((event) => event.loopId === "abort-loop")).toBe(true);
+    expect(subscribedEvents.every((event) => event.loopId === "abort-loop")).toBe(true);
   });
 
   it("preserves stream block order for interrupted assistant messages", async () => {
@@ -782,7 +998,7 @@ describe("nessi core loop", () => {
     });
 
     loop.subscribe((event) => {
-      if (event.type === "text") loop.abort();
+      if (event.type === "usage") loop.abort();
     });
 
     const events = await collectEvents(loop);
@@ -813,13 +1029,13 @@ describe("nessi core loop", () => {
     });
 
     loop.subscribe((event) => {
-      if (event.type === "text") loop.abort();
+      if (event.type === "usage") loop.abort();
     });
 
     const events = await collectEvents(loop);
 
     expect(events.some((event) => event.type === "turn_end")).toBe(false);
-    const done = events.find((event) => event.type === "done") as Extract<OutboundEvent, { type: "done" }>;
+    const done = events.find((event) => event.type === "loop_end") as Extract<OutboundEvent, { type: "loop_end" }>;
     expect(done.reason).toBe("aborted");
 
     const entries = await store.load();
@@ -852,14 +1068,16 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.isError).toBe(true);
     expect(toolEnd.result).toContain("Validation");
-    // No tool_call event should be emitted for invalid args
-    const toolCalls = events.filter((e) => e.type === "tool_call");
-    expect(toolCalls).toHaveLength(0);
+    // The assistant tool_call block is preserved, and execution attempts remain start/end paired.
+    const toolCalls = events.filter((e) => e.type === "block_end" && e.block.type === "tool_call");
+    expect(toolCalls).toHaveLength(1);
+    const toolStart = events.find((event) => event.type === "tool_execution_start") as any;
+    expect(toolStart.args).toEqual({ text: 123 });
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.aggregate?.toolCallCount).toBe(1);
     expect(done.aggregate?.toolErrorCount).toBe(1);
     expect(done.aggregate?.turns[0]?.toolCalls[0]?.args).toEqual({ text: 123 });
@@ -899,7 +1117,7 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.isError).toBe(true);
     expect(toolEnd.result).toContain("Output validation");
   });
@@ -929,7 +1147,7 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.isError).toBe(true);
     expect(toolEnd.result).toContain("Unknown tool");
   });
@@ -970,6 +1188,38 @@ describe("nessi core loop", () => {
     expect(csIdx).toBeLessThan(tsIdx);
   });
 
+  it("emits compaction_end before issue when root compaction rejects asynchronously", async () => {
+    const events = await collectEvents(
+      nessi({
+        provider: mockProvider([
+          { type: "text", delta: "Should not run" },
+          { type: "usage", usage: { input: 10, output: 5, total: 15 } },
+        ]),
+        systemPrompt: "test",
+        store: memoryStore(),
+        compact: async () => {
+          await Promise.resolve();
+          throw new Error("async compact failed");
+        },
+        input: "Hi",
+      }),
+    );
+
+    const types = events.map((event) => event.type);
+    const startIdx = types.indexOf("compaction_start");
+    const endIdx = types.indexOf("compaction_end");
+    const issueIdx = types.indexOf("issue");
+    const loopEndIdx = types.indexOf("loop_end");
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(startIdx);
+    expect(issueIdx).toBeGreaterThan(endIdx);
+    expect(loopEndIdx).toBeGreaterThan(issueIdx);
+    const issue = events[issueIdx];
+    expect(issue.type).toBe("issue");
+    if (issue.type !== "issue") return;
+    expect(issue.issue.message).toContain("async compact failed");
+  });
+
   it("handles context overflow with compaction retry", async () => {
     let callCount = 0;
     const provider: typeof echoTool extends never ? never : import("../src/types.js").Provider = {
@@ -987,10 +1237,15 @@ describe("nessi core loop", () => {
       async *stream() {
         callCount++;
         if (callCount === 1) {
-          yield { type: "error" as const, error: "context too long", retryable: false, contextOverflow: true };
+          yield {
+            type: "issue" as const,
+            issue: { kind: "provider_error" as const, message: "context too long", retryable: false, contextOverflow: true },
+          };
           return;
         }
-        yield { type: "text" as const, delta: "After compaction" };
+        yield { type: "block_start" as const, blockId: "b0", index: 0, kind: "text" as const };
+        yield { type: "block_delta" as const, blockId: "b0", delta: "After compaction" };
+        yield { type: "block_end" as const, blockId: "b0", index: 0, block: { type: "text" as const, text: "After compaction" } };
         yield { type: "usage" as const, usage: { input: 10, output: 5, total: 15 } };
       },
       complete(request) {
@@ -1020,11 +1275,11 @@ describe("nessi core loop", () => {
     const types = events.map((e) => e.type);
     expect(types).toContain("compaction_start");
     expect(types).toContain("compaction_end");
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("stop");
   });
 
-  it("context overflow without compact → done", async () => {
+  it("context overflow without compact -> loop_end(context_overflow)", async () => {
     const events = await collectEvents(
       nessi({
         provider: mockProvider([{ type: "error", error: "context too long", retryable: false, contextOverflow: true }]),
@@ -1034,11 +1289,11 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("context_overflow");
   });
 
-  it("context overflow with compaction retry that also fails → no infinite loop", async () => {
+  it("context overflow with compaction retry that also fails -> no infinite loop", async () => {
     const provider: import("../src/types.js").Provider = {
       name: "mock",
       family: "openai-compatible",
@@ -1053,7 +1308,10 @@ describe("nessi core loop", () => {
       contextWindow: 100_000,
       async *stream() {
         // Always overflow
-        yield { type: "error" as const, error: "context too long", retryable: false, contextOverflow: true };
+        yield {
+          type: "issue" as const,
+          issue: { kind: "provider_error" as const, message: "context too long", retryable: false, contextOverflow: true },
+        };
       },
       complete(request) {
         return completeFromStream(provider, request);
@@ -1077,11 +1335,66 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("context_overflow");
     // Should have exactly 2 compaction rounds (normal + force retry), then give up
     const compactionStarts = events.filter((e) => e.type === "compaction_start");
     expect(compactionStarts.length).toBeLessThanOrEqual(2);
+  });
+
+  it("emits compaction_end before issue when context-overflow compaction rejects asynchronously", async () => {
+    const provider: import("../src/types.js").Provider = {
+      name: "mock",
+      family: "openai-compatible",
+      model: "mock",
+      capabilities: {
+        streaming: true,
+        tools: true,
+        images: true,
+        thinking: true,
+        usage: true,
+      },
+      contextWindow: 100_000,
+      async *stream() {
+        yield {
+          type: "issue" as const,
+          issue: { kind: "provider_error" as const, message: "context too long", retryable: false, contextOverflow: true },
+        };
+      },
+      complete(request) {
+        return completeFromStream(provider, request);
+      },
+    };
+
+    const events = await collectEvents(
+      nessi({
+        provider,
+        systemPrompt: "test",
+        store: memoryStore(),
+        compact(ctx) {
+          if (!ctx.force) return null;
+          return (async () => {
+            await Promise.resolve();
+            throw new Error("overflow compact failed");
+          })();
+        },
+        input: "Hi",
+      }),
+    );
+
+    const types = events.map((event) => event.type);
+    const startIdx = types.indexOf("compaction_start");
+    const endIdx = types.indexOf("compaction_end");
+    const issueIdx = types.findIndex((type, index) => type === "issue" && index > endIdx);
+    const loopEndIdx = types.indexOf("loop_end");
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(startIdx);
+    expect(issueIdx).toBeGreaterThan(endIdx);
+    expect(loopEndIdx).toBeGreaterThan(issueIdx);
+    const issue = events[issueIdx];
+    expect(issue.type).toBe("issue");
+    if (issue.type !== "issue") return;
+    expect(issue.issue.message).toContain("overflow compact failed");
   });
 
   it("subscribe() receives events in parallel", async () => {
@@ -1138,7 +1451,7 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const toolEnds = events.filter((e) => e.type === "tool_end");
+    const toolEnds = events.filter((e) => e.type === "tool_execution_end");
     expect(toolEnds).toHaveLength(2);
     expect((toolEnds[0] as any).result).toEqual({ echoed: "first" });
     expect((toolEnds[1] as any).result).toEqual({ echoed: "second" });
@@ -1213,12 +1526,12 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const toolEnd = events.find((e) => e.type === "tool_end") as any;
+    const toolEnd = events.find((e) => e.type === "tool_execution_end") as any;
     expect(toolEnd.isError).toBe(true);
     expect(toolEnd.result).toContain("boom");
 
     // Should still continue to next turn
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("stop");
     expect(done.aggregate?.toolErrorCount).toBe(1);
     expect(done.aggregate?.turns[0]?.toolCalls[0]?.result).toContain("boom");
@@ -1262,7 +1575,7 @@ describe("nessi core loop", () => {
     }
   });
 
-  it("provider error (non-retryable) → done with error", async () => {
+  it("provider error (non-retryable) -> loop_end(error)", async () => {
     const events = await collectEvents(
       nessi({
         provider: mockProvider([{ type: "error", error: "API key invalid", retryable: false }]),
@@ -1273,8 +1586,8 @@ describe("nessi core loop", () => {
     );
 
     const types = events.map((e) => e.type);
-    expect(types).toContain("error");
-    const done = events.find((e) => e.type === "done") as any;
+    expect(types).toContain("issue");
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("error");
     expect(done.aggregate?.assistantMessageCount).toBe(0);
     expect(done.aggregate?.usage).toBeUndefined();
@@ -1292,9 +1605,9 @@ describe("nessi core loop", () => {
     );
 
     const types = events.map((e) => e.type);
-    expect(types).toContain("error");
+    expect(types).toContain("issue");
     expect(types).not.toContain("turn_end");
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("error");
 
     const entries = await store.load();
@@ -1333,7 +1646,7 @@ describe("nessi core loop", () => {
     for await (const event of loop) {
       events.push(event);
       // Steer after first tool completes
-      if (event.type === "tool_end") {
+      if (event.type === "tool_execution_end") {
         loop.steer("Focus on X");
       }
     }
@@ -1383,7 +1696,7 @@ describe("nessi core loop", () => {
     for await (const event of loop) {
       events.push(event);
       // After first tool_end, steer to reset turns
-      if (event.type === "tool_end" && (event as any).callId === "c0") {
+      if (event.type === "tool_execution_end" && (event as any).callId === "c0") {
         loop.steer("Keep going");
       }
     }
@@ -1449,7 +1762,7 @@ describe("nessi core loop", () => {
     expect(compactCtx!.fillRatio!).toBeGreaterThanOrEqual(0.85);
 
     // Should still complete the turn
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("stop");
   });
 
@@ -1484,7 +1797,7 @@ describe("nessi core loop", () => {
     // No compaction events should have been emitted (compact returned null)
     const types = events.map((e) => e.type);
     expect(types).not.toContain("compaction_start");
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("stop");
   });
 
@@ -1500,12 +1813,12 @@ describe("nessi core loop", () => {
       }),
     );
 
-    const error = events.find((e) => e.type === "error") as any;
+    const error = events.find((e) => e.type === "issue") as any;
     expect(error).toBeDefined();
-    expect(error.contextOverflow).toBe(true);
-    expect(error.overflowRatio).toBeDefined();
+    expect(error.issue.contextOverflow).toBe(true);
+    expect(error.issue.overflowRatio).toBeDefined();
 
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("context_overflow");
   });
 
@@ -1521,10 +1834,21 @@ describe("nessi core loop", () => {
       async *stream() {
         callCount++;
         if (callCount === 1) {
-          yield { type: "error" as const, error: "context too long", retryable: false, contextOverflow: true, overflowRatio: 1.3 };
+          yield {
+            type: "issue" as const,
+            issue: {
+              kind: "provider_error" as const,
+              message: "context too long",
+              retryable: false,
+              contextOverflow: true,
+              overflowRatio: 1.3,
+            },
+          };
           return;
         }
-        yield { type: "text" as const, delta: "After compaction" };
+        yield { type: "block_start" as const, blockId: "b0", index: 0, kind: "text" as const };
+        yield { type: "block_delta" as const, blockId: "b0", delta: "After compaction" };
+        yield { type: "block_end" as const, blockId: "b0", index: 0, block: { type: "text" as const, text: "After compaction" } };
         yield { type: "usage" as const, usage: { input: 10, output: 5, total: 15 } };
       },
       complete(request) {
@@ -1553,7 +1877,7 @@ describe("nessi core loop", () => {
 
     expect(callCount).toBe(2);
     expect(retryFillRatio).toBeDefined();
-    const done = events.find((e) => e.type === "done") as any;
+    const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("stop");
   });
 });

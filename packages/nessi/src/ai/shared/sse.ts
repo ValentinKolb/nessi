@@ -4,6 +4,23 @@ export type SSEEvent = {
   id?: string;
 };
 
+export type SSETimeoutScope = "provider_first_byte" | "provider_idle";
+
+export class SSETimeoutError extends Error {
+  readonly scope: SSETimeoutScope;
+
+  constructor(scope: SSETimeoutScope, timeoutMs: number) {
+    super(`SSE stream ${scope === "provider_first_byte" ? "first byte" : "idle"} timeout after ${timeoutMs}ms.`);
+    this.name = "SSETimeoutError";
+    this.scope = scope;
+  }
+}
+
+export type SSETimeouts = {
+  firstByteMs?: number;
+  idleMs?: number;
+};
+
 const parseFrame = (frame: string): SSEEvent | null => {
   const lines = frame.split(/\r?\n/);
   const dataLines: string[] = [];
@@ -26,12 +43,42 @@ const parseFrame = (frame: string): SSEEvent | null => {
   return { event, data: dataLines.join("\n"), id };
 };
 
-export const parseSSE = async function* (reader: ReadableStreamDefaultReader<Uint8Array>): AsyncGenerator<SSEEvent> {
+const readWithTimeout = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  scope: SSETimeoutScope,
+  timeoutMs: number | undefined,
+) => {
+  if (!timeoutMs || timeoutMs <= 0) return reader.read();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          const error = new SSETimeoutError(scope, timeoutMs);
+          void reader.cancel?.(error).catch(() => {});
+          reject(error);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+export const parseSSE = async function* (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeouts: SSETimeouts = {},
+): AsyncGenerator<SSEEvent> {
   const decoder = new TextDecoder();
   let buffer = "";
+  let readCount = 0;
 
   while (true) {
-    const { done, value } = await reader.read();
+    const scope = readCount === 0 ? "provider_first_byte" : "provider_idle";
+    const timeoutMs = readCount === 0 ? timeouts.firstByteMs : timeouts.idleMs;
+    const { done, value } = await readWithTimeout(reader, scope, timeoutMs);
+    readCount++;
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });

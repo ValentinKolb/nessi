@@ -26,8 +26,8 @@ describe("ollama provider", () => {
     const events = [];
     for await (const event of provider.stream({ messages: [] })) events.push(event);
 
-    expect(events.filter((event) => event.type === "text")).toHaveLength(2);
-    expect(events.some((event) => event.type === "tool_call")).toBe(true);
+    expect(events.filter((event) => event.type === "block_end" && event.block.type === "text")).toHaveLength(1);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "tool_call")).toBe(true);
     expect(events.some((event) => event.type === "usage")).toBe(true);
   });
 

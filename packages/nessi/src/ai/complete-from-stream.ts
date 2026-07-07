@@ -19,28 +19,21 @@ export const completeFromStream = async (
 
   for await (const event of provider.stream(request)) {
     switch (event.type) {
-      case "text":
-        appendAssistantContentBlock(content, { type: "text", text: event.delta });
+      case "block_start":
+      case "block_delta":
         break;
-      case "thinking":
-        appendAssistantContentBlock(content, { type: "thinking", thinking: event.delta });
+      case "block_end":
+        if (event.block.type === "tool_call") toolCalls.push(event.block);
+        appendAssistantContentBlock(content, event.block);
         break;
-      case "tool_call":
-        {
-          const block: ToolCallBlock = { type: "tool_call", id: event.callId, name: event.name, args: event.args };
-          toolCalls.push(block);
-          appendAssistantContentBlock(content, block);
-        }
-        break;
-      case "tool_error":
-      case "tool_cancel":
+      case "issue":
+        if (event.issue.kind === "provider_error") throw new Error(event.issue.message);
+        if (event.issue.kind === "timeout" && event.issue.scope !== "tool") throw new Error(event.issue.message);
         break;
       case "usage":
         usage = event.usage;
         finishReason = event.finishReason ?? finishReason;
         break;
-      case "error":
-        throw new Error(event.error);
     }
   }
 

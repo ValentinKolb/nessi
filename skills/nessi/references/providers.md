@@ -25,6 +25,7 @@ Useful options:
 - `contextWindow` when the app wants overflow heuristics
 - `creditsPerInputToken` and `creditsPerOutputToken` for cost accounting
 - `normalizeToolCallIds: "strict9"` for providers that need short alphanumeric tool IDs
+- `timeouts.firstByteMs` and `timeouts.idleMs` for streaming timeout policy
 
 ## OpenRouter
 
@@ -38,7 +39,7 @@ const provider = openrouter("openai/gpt-4.1-mini", {
 });
 ```
 
-OpenRouter is a good default when the app needs model routing or easy model swapping. It can emit `thinking` events for reasoning-capable models through normalized stream events.
+OpenRouter is a good default when the app needs model routing or easy model swapping. Reasoning-capable models can appear as normalized `thinking` blocks in stream events.
 
 ## vLLM and custom OpenAI-compatible endpoints
 
@@ -64,6 +65,18 @@ const custom = openAICompatible({
 
 Use `openAICompatible` when a gateway follows Chat Completions semantics closely enough but needs explicit compatibility flags.
 
+Use `timeouts` for vLLM/OpenAI-compatible streams that may stall or emit malformed partial tool calls:
+
+```ts
+const localVllm = vllm("Qwen/Qwen3-32B", {
+  baseURL: "http://localhost:8000/v1",
+  timeouts: {
+    firstByteMs: 30_000,
+    idleMs: 15_000,
+  },
+});
+```
+
 ## Ollama
 
 ```ts
@@ -75,7 +88,7 @@ const provider = ollama("llama3.1", {
 });
 ```
 
-Ollama is useful for local development and offline workflows. It streams NDJSON internally, but consumers still receive normalized `StreamEvent` values.
+Ollama is useful for local development and offline workflows. It streams NDJSON internally, but consumers still receive normalized `StreamEvent` values. It supports the same `timeouts.firstByteMs` and `timeouts.idleMs` streaming controls.
 
 ## Anthropic
 
@@ -88,7 +101,7 @@ const provider = anthropic("claude-sonnet", {
 });
 ```
 
-Anthropic uses native content blocks for tool use. Consumers still receive normalized assistant content and `tool_call` stream events.
+Anthropic uses native content blocks for tool use. Consumers still receive normalized assistant content and `block_end` events for final `tool_call` blocks.
 
 ## Mistral
 

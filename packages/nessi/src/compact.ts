@@ -4,7 +4,7 @@ import type {
   CompactOptions,
   CompactResult,
 } from "./types.js";
-import { zeroUsage, toErrorMessage } from "./utils.js";
+import { createLoopId, zeroUsage, toErrorMessage } from "./utils.js";
 
 /**
  * Run compaction as a loop-style operation so consumers can iterate or subscribe to events.
@@ -12,6 +12,7 @@ import { zeroUsage, toErrorMessage } from "./utils.js";
 export const compact = (options: CompactOptions): CompactLoop => {
   const {
     agentId = "main",
+    loopId: requestedLoopId,
     store,
     provider,
     compact: compactFn,
@@ -22,6 +23,8 @@ export const compact = (options: CompactOptions): CompactLoop => {
 
   const subscribers: Array<(event: CompactEvent) => void> = [];
   const abortController = new AbortController();
+  const loopId = requestedLoopId?.trim() ? requestedLoopId : createLoopId();
+  const eventFields = { agentId, loopId };
 
   if (externalSignal) {
     if (externalSignal.aborted) abortController.abort();
@@ -39,13 +42,14 @@ export const compact = (options: CompactOptions): CompactLoop => {
 
   async function* run(): AsyncGenerator<CompactEvent> {
     let entriesBefore = 0;
+    yield { type: "loop_start", ...eventFields };
 
     try {
       const entries = await store.load();
       entriesBefore = entries.length;
 
       if (signal.aborted) {
-        yield { type: "done", agentId, reason: "aborted", result: mkResult(false, entriesBefore, entriesBefore) };
+        yield { type: "loop_end", ...eventFields, reason: "aborted", result: mkResult(false, entriesBefore, entriesBefore) };
         return;
       }
 
@@ -58,28 +62,35 @@ export const compact = (options: CompactOptions): CompactLoop => {
       });
 
       if (!operation) {
-        yield { type: "done", agentId, reason: "stop", result: mkResult(false, entriesBefore, entriesBefore) };
+        yield { type: "loop_end", ...eventFields, reason: "stop", result: mkResult(false, entriesBefore, entriesBefore) };
         return;
       }
 
-      yield { type: "compaction_start", agentId };
-      await operation;
-      yield { type: "compaction_end", agentId };
+      yield { type: "compaction_start", ...eventFields };
+      try {
+        await operation;
+      } finally {
+        yield { type: "compaction_end", ...eventFields };
+      }
 
       const entriesAfter = (await store.load()).length;
       yield {
-        type: "done",
-        agentId,
+        type: "loop_end",
+        ...eventFields,
         reason: signal.aborted ? "aborted" : "stop",
         result: mkResult(true, entriesBefore, entriesAfter),
       };
     } catch (err) {
       const message = toErrorMessage(err);
       const entriesAfter = await store.load().then(e => e.length).catch(() => entriesBefore);
-      yield { type: "error", agentId, error: message, retryable: false };
       yield {
-        type: "done",
-        agentId,
+        type: "issue",
+        ...eventFields,
+        issue: { kind: "runtime_error", message, retryable: false },
+      };
+      yield {
+        type: "loop_end",
+        ...eventFields,
         reason: signal.aborted ? "aborted" : "error",
         result: mkResult(false, entriesBefore, entriesAfter),
       };

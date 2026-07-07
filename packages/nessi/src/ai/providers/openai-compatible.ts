@@ -2,7 +2,7 @@ import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
 import { openSSEStream } from "../shared/stream-helpers.js";
-import { normalizeToolStream } from "../shared/tool-stream-normalizer.js";
+import { normalizeProviderStream } from "../shared/tool-stream-normalizer.js";
 import { createStrictToolCallIdFactory } from "../shared/tool-call-ids.js";
 import { toOpenAITools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
@@ -13,6 +13,7 @@ import type {
   Message,
   OpenAICompatibleConfig,
   Provider,
+  RawStreamEvent,
   StreamEvent,
   ToolCallBlock,
   Usage,
@@ -260,7 +261,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
     },
 
     stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
-      const raw = async function* (): AsyncIterable<StreamEvent> {
+      const raw = async function* (): AsyncIterable<RawStreamEvent> {
       const messages = convertMessages(request.messages, request.systemPrompt, config);
       const tools = request.tools?.length ? toOpenAITools(request.tools) : undefined;
 
@@ -293,6 +294,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         config.name,
         request.signal,
         contextWindow,
+        config.timeouts,
       );
 
       if (!result.ok) {
@@ -309,7 +311,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         yield { type: "tool_start" as const, callId: buffer.callId, name: buffer.name };
         if (buffer.argsBuffer) yield { type: "tool_delta" as const, callId: buffer.callId, argsDelta: buffer.argsBuffer };
       };
-      const flushToolCalls = function* (): Generator<StreamEvent> {
+      const flushToolCalls = function* (): Generator<RawStreamEvent> {
         for (const [, buffer] of toolBuffers) {
           yield* startToolCall(buffer);
           yield {
@@ -380,6 +382,11 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         }
       }
 
+      if (toolBuffers.size > 0) {
+        latestFinishReason = "tool_use";
+        yield* flushToolCalls();
+      }
+
       if (latestFinishReason) {
         yield {
           type: "usage",
@@ -388,7 +395,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         };
       }
       };
-      return normalizeToolStream(raw(), { suppressTextAfterMalformedTool: true });
+      return normalizeProviderStream(raw(), { suppressTextAfterMalformedTool: true });
     },
   };
 

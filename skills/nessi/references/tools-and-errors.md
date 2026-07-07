@@ -9,11 +9,13 @@ debug output:
 
 - `loopId` is present on every outbound event from one logical loop.
 - `turn_end` reports each internal provider turn.
-- `tool_call` / `tool_end` report live tool execution.
-- `tool_error` / `tool_cancel` report malformed or cancelled pre-execution tool starts.
-- `done.aggregate` reports the complete logical loop after all internal turns.
+- `block_end` with `block.type === "tool_call"` reports final executable provider tool calls.
+- `tool_execution_start` / `tool_execution_end` report Nessi's tool execution attempts.
+- `tool_action_request` asks the app for approval, client-side tool output, or a custom approval inside a server tool.
+- `issue` reports provider errors, timeouts, malformed/cancelled tool streams, and tool execution failures.
+- `loop_end.aggregate` reports the complete logical loop after all internal turns.
 
-Use `done.aggregate` when the app needs one user-visible response group,
+Use `loop_end.aggregate` when the app needs one user-visible response group,
 aggregate usage, loop-level tool counts, persisted tool execution errors, or
 malformed/cancelled tool-stream metadata:
 
@@ -28,19 +30,21 @@ const loop = nessi({
 });
 
 for await (const event of loop) {
-  if (event.type === "done") {
+  if (event.type === "loop_end") {
     const { aggregate } = event;
     saveResponseGroup({
       loopId: event.loopId,
       reason: event.reason,
-      usage: aggregate?.usage,
-      turns: aggregate?.turns,
-      toolCallCount: aggregate?.toolCallCount ?? 0,
-      toolErrorCount: aggregate?.toolErrorCount ?? 0,
-      toolIssueCount: aggregate?.toolIssueCount ?? 0,
-      toolMalformedCount: aggregate?.toolMalformedCount ?? 0,
-      toolCancelledCount: aggregate?.toolCancelledCount ?? 0,
-      toolIssues: aggregate?.toolIssues ?? [],
+      usage: aggregate.usage,
+      turns: aggregate.turns,
+      issueCount: aggregate.issueCount,
+      issues: aggregate.issues,
+      toolCallCount: aggregate.toolCallCount,
+      toolErrorCount: aggregate.toolErrorCount,
+      toolIssueCount: aggregate.toolIssueCount,
+      toolMalformedCount: aggregate.toolMalformedCount,
+      toolCancelledCount: aggregate.toolCancelledCount,
+      toolIssues: aggregate.toolIssues,
     });
   }
 }
@@ -104,43 +108,57 @@ If there can be multiple tool calls, append the assistant message once, then app
 
 ## Streaming tool-call flow
 
-During provider-only streaming, collect final `tool_call` events. Use
-`tool_start` / `tool_delta` only for live UI display or debugging; execute tools
-from the final structured event. If `tool_error` or `tool_cancel` appears, the
-pending start never became executable.
+During provider-only streaming, collect final `tool_call` content blocks from
+`block_end`. If an `issue` appears with `kind` set to `malformed_tool_call` or
+`cancelled_tool_call`, the pending provider start never became executable.
 
 ```ts
 const toolCalls = [];
 const toolIssues = [];
 
 for await (const event of provider.stream({ messages, tools })) {
-  if (event.type === "tool_call") {
-    toolCalls.push(event);
+  if (event.type === "block_end" && event.block.type === "tool_call") {
+    toolCalls.push(event.block);
   }
-  if (event.type === "tool_error" || event.type === "tool_cancel") {
-    toolIssues.push(event);
+  if (
+    event.type === "issue"
+    && (event.issue.kind === "malformed_tool_call" || event.issue.kind === "cancelled_tool_call")
+  ) {
+    toolIssues.push(event.issue);
   }
 }
 ```
 
-For root `nessi()` loops, wait for `tool_call` before showing a frontend tool as
-executable. Nessi emits root `tool_start` only after the tool input passes the
-app's schema validation.
+For root `nessi()` loops, wait for `tool_action_request` before asking the app
+to approve an action or execute a client-side tool:
+
+```ts
+for await (const event of loop) {
+  if (event.type === "tool_action_request" && event.kind === "client_tool") {
+    const result = await runClientTool(event.name, event.args);
+    loop.push({ type: "tool_result", callId: event.callId, result });
+  }
+}
+```
+
+Top-level client tools validate pushed results against their `outputSchema`.
+Nested `ctx.requestClientTool()` calls also validate args and output when the
+requested client tool name is registered in `tools`.
 
 ## Error handling
 
-Stream errors are normalized events:
+Stream problems are normalized `issue` events:
 
 ```ts
 for await (const event of provider.stream({ messages })) {
-  if (event.type === "error") {
-    if (event.contextOverflow) {
+  if (event.type === "issue") {
+    if (event.issue.kind === "provider_error" && event.issue.contextOverflow) {
       // Summarize, truncate, or ask the user to reduce input.
     }
-    if (event.retryable) {
+    if ("retryable" in event.issue && event.issue.retryable) {
       // Apply bounded retry with backoff in application code.
     }
-    throw new Error(event.error);
+    throw new Error(event.issue.message);
   }
 }
 ```
@@ -149,8 +167,11 @@ Malformed tool streams are not provider connection errors. Handle them separatel
 if the UI wants to show model/tool-call diagnostics:
 
 ```ts
-if (event.type === "tool_error" || event.type === "tool_cancel") {
-  console.warn(event.reason, event.callId, event.message);
+if (
+  event.type === "issue"
+  && (event.issue.kind === "malformed_tool_call" || event.issue.kind === "cancelled_tool_call")
+) {
+  console.warn(event.issue.reason, event.issue.callId, event.issue.message);
 }
 ```
 
@@ -160,7 +181,7 @@ if (event.type === "tool_error" || event.type === "tool_cancel") {
 
 Context overflow can appear as:
 
-- `event.type === "error"` with `contextOverflow: true` in streaming
+- `event.type === "issue"` with `issue.kind === "provider_error"` and `contextOverflow: true` in streaming
 - a thrown error from `complete()`
 
 Recommended application behavior:

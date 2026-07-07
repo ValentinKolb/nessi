@@ -30,6 +30,7 @@ describe("loop aggregate helpers", () => {
         },
       ],
       usage: { input: 1, output: 2, total: 3 },
+      issueCount: 1,
       toolCallCount: 1,
       toolErrorCount: 0,
       toolIssueCount: 1,
@@ -37,7 +38,16 @@ describe("loop aggregate helpers", () => {
       toolCancelledCount: 0,
       toolIssues: [
         {
-          kind: "malformed",
+          kind: "malformed_tool_call",
+          reason: "text_during_tool_call",
+          message: "bad stream",
+          callId: "c2",
+          name: "card",
+        },
+      ],
+      issues: [
+        {
+          kind: "malformed_tool_call",
           reason: "text_during_tool_call",
           message: "bad stream",
           callId: "c2",
@@ -92,6 +102,8 @@ describe("loop aggregate helpers", () => {
         },
       ],
       usage: { input: 10, output: 5, total: 15, cacheRead: 3 },
+      issueCount: 0,
+      issues: [],
       toolCallCount: 1,
       toolErrorCount: 0,
       toolIssueCount: 0,
@@ -110,6 +122,7 @@ describe("loop aggregate helpers", () => {
         },
       ],
       usage: { input: 20, output: 6, total: 26, creditsUsed: 2 },
+      issueCount: 1,
       toolCallCount: 1,
       toolErrorCount: 1,
       toolIssueCount: 1,
@@ -117,7 +130,16 @@ describe("loop aggregate helpers", () => {
       toolCancelledCount: 1,
       toolIssues: [
         {
-          kind: "cancelled",
+          kind: "cancelled_tool_call",
+          reason: "stream_ended_before_tool_call",
+          message: "stream ended",
+          callId: "c3",
+          name: "lookup",
+        },
+      ],
+      issues: [
+        {
+          kind: "cancelled_tool_call",
           reason: "stream_ended_before_tool_call",
           message: "stream ended",
           callId: "c3",

@@ -15,6 +15,7 @@ export const defineTool = <TInput extends z.ZodType, TOutput extends z.ZodType =
   inputSchema: TInput;
   outputSchema?: TOutput;
   needsApproval?: boolean;
+  timeoutMs?: number | false;
 }): ToolDefinition<TInput, TOutput> => {
   const def: ToolDefinition<TInput, TOutput> = {
     ...config,

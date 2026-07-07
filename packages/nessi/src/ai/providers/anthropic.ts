@@ -2,10 +2,19 @@ import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
 import { openSSEStream } from "../shared/stream-helpers.js";
-import { normalizeToolStream } from "../shared/tool-stream-normalizer.js";
+import { normalizeProviderStream } from "../shared/tool-stream-normalizer.js";
 import { toAnthropicTools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
-import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock } from "../types.js";
+import type {
+  GenerateRequest,
+  GenerateResult,
+  Message,
+  Provider,
+  ProviderTimeouts,
+  RawStreamEvent,
+  StreamEvent,
+  ToolCallBlock,
+} from "../types.js";
 
 type AnthropicBlock =
   | { type: "text"; text: string }
@@ -63,6 +72,7 @@ export type AnthropicOptions = {
   maxOutputTokens?: number;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
+  timeouts?: ProviderTimeouts;
 };
 
 const mapFinishReason = (reason: string | null | undefined, hasTools: boolean) => {
@@ -231,7 +241,7 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
     },
 
     stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
-      const raw = async function* (): AsyncIterable<StreamEvent> {
+      const raw = async function* (): AsyncIterable<RawStreamEvent> {
       const body: Record<string, unknown> = {
         model,
         system: request.systemPrompt,
@@ -253,6 +263,8 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         body,
         "anthropic",
         request.signal,
+        undefined,
+        options?.timeouts,
       );
 
       if (!result.ok) {
@@ -340,7 +352,7 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         yield { type: "usage", usage: latestUsage, finishReason: latestFinishReason };
       }
       };
-      return normalizeToolStream(raw(), { suppressTextAfterMalformedTool: true });
+      return normalizeProviderStream(raw(), { suppressTextAfterMalformedTool: true });
     },
   };
 };

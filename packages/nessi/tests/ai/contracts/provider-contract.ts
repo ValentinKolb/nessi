@@ -14,10 +14,11 @@ export async function expectProviderContract(provider: Provider, request: Genera
   const events = await collectStream(provider, request);
 
   const streamedText = events
-    .filter((event): event is Extract<StreamEvent, { type: "text" }> => event.type === "text")
-    .map((event) => event.delta)
+    .filter((event): event is Extract<StreamEvent, { type: "block_end" }> =>
+      event.type === "block_end" && event.block.type === "text")
+    .map((event) => event.block.type === "text" ? event.block.text : "")
     .join("");
-  const streamedTools = events.filter((event) => event.type === "tool_call");
+  const streamedTools = events.filter((event) => event.type === "block_end" && event.block.type === "tool_call");
 
   const resultText = result.message.content
     .filter((block): block is Extract<typeof result.message.content[number], { type: "text" }> => block.type === "text")

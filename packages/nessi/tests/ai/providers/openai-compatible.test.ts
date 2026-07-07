@@ -58,7 +58,7 @@ describe("openAICompatible provider", () => {
     const events = [];
     for await (const event of provider.stream({ messages })) events.push(event);
 
-    expect(events.find((event) => event.type === "tool_call")).toBeDefined();
+    expect(events.find((event) => event.type === "block_end" && event.block.type === "tool_call")).toBeDefined();
     const assistantMessage = capturedBody.messages.find((message: any) => message.role === "assistant");
     expect(/^[A-Za-z0-9]{9}$/.test(assistantMessage.tool_calls[0].id)).toBe(true);
   });
@@ -81,15 +81,15 @@ describe("openAICompatible provider", () => {
     const events = [];
     for await (const event of provider.stream({ messages: [] })) events.push(event);
 
-    expect(events.some((event) => event.type === "tool_start")).toBe(false);
-    expect(events.some((event) => event.type === "tool_call")).toBe(false);
-    expect(events.some((event) => event.type === "text")).toBe(false);
+    expect(events.some((event) => event.type === "block_start" && event.kind === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "tool_call")).toBe(false);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "text")).toBe(false);
 
-    const issue = events.find((event) => event.type === "tool_error") as any;
-    expect(issue.reason).toBe("text_during_tool_call");
-    expect(issue.callId).toBe("call_card");
-    expect(issue.name).toBe("card");
-    expect(issue.textDelta).toBe("</invoke>");
+    const issue = events.find((event) => event.type === "issue") as any;
+    expect(issue.issue.reason).toBe("text_during_tool_call");
+    expect(issue.issue.callId).toBe("call_card");
+    expect(issue.issue.name).toBe("card");
+    expect(issue.issue.textDelta).toBe("</invoke>");
   });
 
   it("maps openrouter reasoning details to thinking events", async () => {
@@ -100,8 +100,8 @@ describe("openAICompatible provider", () => {
     const events = [];
     for await (const event of provider.stream({ messages: [] })) events.push(event);
 
-    expect(events.some((event) => event.type === "thinking")).toBe(true);
-    expect(events.some((event) => event.type === "text")).toBe(true);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "thinking")).toBe(true);
+    expect(events.some((event) => event.type === "block_end" && event.block.type === "text")).toBe(true);
   });
 
   it("sends temperature 0 explicitly", async () => {

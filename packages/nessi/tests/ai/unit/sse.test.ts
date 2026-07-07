@@ -35,4 +35,21 @@ describe("parseSSE", () => {
 
     expect(events[0]?.data).toBe("{\"hello\":\"world\"}");
   });
+
+  it("throws a structured first-byte timeout", async () => {
+    const reader = {
+      read: () => new Promise<never>(() => {}),
+    } as ReadableStreamDefaultReader<Uint8Array>;
+
+    let error: unknown;
+    try {
+      for await (const _event of parseSSE(reader, { firstByteMs: 1 })) {
+        // consume
+      }
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({ scope: "provider_first_byte" });
+  });
 });

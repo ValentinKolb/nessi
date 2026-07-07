@@ -2,9 +2,19 @@ import { formatConnectionError, normalizeHttpError } from "../shared/errors.js";
 import { assertOnlySupportedFiles, buildAssistantMessage } from "../shared/messages.js";
 import { parseNDJSON } from "../shared/ndjson.js";
 import { ensureRecord, safeJsonParse, stringifyJson } from "../shared/json.js";
+import { normalizeProviderStream } from "../shared/tool-stream-normalizer.js";
 import { toOllamaTools } from "../shared/tools.js";
 import { applyCredits, makeUsage } from "../shared/usage.js";
-import type { GenerateRequest, GenerateResult, Message, Provider, StreamEvent, ToolCallBlock } from "../types.js";
+import type {
+  GenerateRequest,
+  GenerateResult,
+  Message,
+  Provider,
+  ProviderTimeouts,
+  RawStreamEvent,
+  StreamEvent,
+  ToolCallBlock,
+} from "../types.js";
 
 type OllamaMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -33,6 +43,7 @@ export type OllamaOptions = {
   temperature?: number;
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
+  timeouts?: ProviderTimeouts;
 };
 
 const convertMessages = (messages: Message[], systemPrompt: string | undefined) => {
@@ -152,7 +163,8 @@ export const ollama = (model: string, options?: OllamaOptions): Provider => {
       };
     },
 
-    async *stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
+    stream(request: GenerateRequest): AsyncIterable<StreamEvent> {
+      const raw = async function* (): AsyncIterable<RawStreamEvent> {
       const body: Record<string, unknown> = {
         model,
         messages: convertMessages(request.messages, request.systemPrompt),
@@ -163,51 +175,103 @@ export const ollama = (model: string, options?: OllamaOptions): Provider => {
       if (temperature !== undefined) body.options = { temperature };
 
       let response: Response;
+      const controller = new AbortController();
+      const abortExternal = () => controller.abort(request.signal?.reason);
+      const cleanupExternalAbort = () => {
+        if (request.signal) request.signal.removeEventListener("abort", abortExternal);
+      };
+      if (request.signal) {
+        if (request.signal.aborted) controller.abort(request.signal.reason);
+        else request.signal.addEventListener("abort", abortExternal, { once: true });
+      }
+      let firstByteTimeout: ReturnType<typeof setTimeout> | undefined;
+      const firstByteDeadline = options?.timeouts?.firstByteMs && options.timeouts.firstByteMs > 0
+        ? Date.now() + options.timeouts.firstByteMs
+        : undefined;
       try {
-        response = await fetch(`${baseURL}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: request.signal,
-        });
+        response = await Promise.race([
+          fetch(`${baseURL}/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          }),
+          new Promise<never>((_, reject) => {
+            if (!options?.timeouts?.firstByteMs || options.timeouts.firstByteMs <= 0) return;
+            firstByteTimeout = setTimeout(() => {
+              controller.abort();
+              reject({
+                scope: "provider_first_byte",
+                message: `ollama first byte timeout after ${options.timeouts!.firstByteMs}ms.`,
+              });
+            }, options.timeouts.firstByteMs);
+          }),
+        ]);
       } catch (error) {
+        cleanupExternalAbort();
+        if (error && typeof error === "object" && (error as { scope?: unknown }).scope === "provider_first_byte") {
+          yield {
+            type: "timeout",
+            scope: "provider_first_byte",
+            message: String((error as { message?: unknown }).message ?? "ollama first byte timeout"),
+            retryable: true,
+          };
+          return;
+        }
         yield {
           type: "error",
           error: formatConnectionError("ollama", error),
           retryable: true,
         };
         return;
+      } finally {
+        if (firstByteTimeout) clearTimeout(firstByteTimeout);
       }
 
       if (!response.ok) {
         const normalized = await normalizeHttpError("ollama", response);
+        cleanupExternalAbort();
         yield { type: "error", ...normalized };
         return;
       }
 
       const reader = response.body?.getReader() as ReadableStreamDefaultReader<Uint8Array> | undefined;
       if (!reader) {
+        cleanupExternalAbort();
         yield { type: "error", error: "ollama response body missing", retryable: false };
         return;
       }
 
       let toolCounter = 0;
-      for await (const chunk of parseNDJSON<OllamaResponse>(reader)) {
-        if (chunk.message?.content) yield { type: "text", delta: chunk.message.content };
-        for (const toolCall of chunk.message?.tool_calls ?? []) {
-          const callId = `ollama-${toolCounter++}`;
-          yield { type: "tool_start", callId, name: toolCall.function.name };
-          yield {
-            type: "tool_call",
-            callId,
-            name: toolCall.function.name,
-            args: ensureRecord(toolCall.function.arguments),
-          };
-        }
-        if (chunk.done) {
-          yield { type: "usage", usage: usageFromResponse(chunk, options) };
-        }
+      const streamTimeouts = options?.timeouts ? { ...options.timeouts } : undefined;
+      if (firstByteDeadline && streamTimeouts) {
+        streamTimeouts.firstByteMs = Math.max(1, firstByteDeadline - Date.now());
       }
+
+      try {
+        for await (const chunk of parseNDJSON<OllamaResponse>(reader, streamTimeouts)) {
+          if (chunk.message?.content) yield { type: "text", delta: chunk.message.content };
+          for (const toolCall of chunk.message?.tool_calls ?? []) {
+            const callId = `ollama-${toolCounter++}`;
+            yield { type: "tool_start", callId, name: toolCall.function.name };
+            yield {
+              type: "tool_call",
+              callId,
+              name: toolCall.function.name,
+              args: ensureRecord(toolCall.function.arguments),
+            };
+          }
+          if (chunk.done) {
+            yield { type: "usage", usage: usageFromResponse(chunk, options) };
+          }
+        }
+      } finally {
+        cleanupExternalAbort();
+        controller.abort();
+        await reader.cancel().catch(() => {});
+      }
+      };
+      return normalizeProviderStream(raw(), { suppressTextAfterMalformedTool: true });
     },
   };
 };
