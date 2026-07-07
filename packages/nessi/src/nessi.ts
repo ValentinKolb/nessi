@@ -35,6 +35,8 @@ import { zeroUsage, toErrorMessage, estimateTokens, truncateToolResults } from "
 type Channel<T> = {
   push(value: T): void;
   pull(): Promise<T>;
+  /** Synchronously empty the queued (not yet pulled) values. */
+  drain(): T[];
 }
 
 const createChannel = <T>(): Channel<T> => {
@@ -55,6 +57,9 @@ const createChannel = <T>(): Channel<T> => {
       if (queued !== undefined) return Promise.resolve(queued);
       return new Promise((resolve) => waiters.push(resolve));
     },
+    drain() {
+      return queue.splice(0, queue.length);
+    },
   };
 }
 
@@ -62,7 +67,7 @@ const createChannel = <T>(): Channel<T> => {
 // Input normalization
 // ----------------------------------------------------------------------------
 
-const normalizeInput = (input: NessiOptions["input"]): UserMessage => {
+const normalizeInput = (input: NonNullable<NessiOptions["input"]>): UserMessage => {
   if (typeof input === "string") {
     return { role: "user", content: [{ type: "text", text: input }] };
   }
@@ -126,6 +131,16 @@ const formatToolValidationError = (tool: Tool, args: unknown, error: { issues: u
 const createLoopId = () =>
   globalThis.crypto?.randomUUID?.() ?? `loop-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
+/** Thrown when the loop is aborted while waiting for an inbound event. */
+class LoopAbortedError extends Error {
+  constructor() {
+    super("nessi loop aborted");
+    this.name = "LoopAbortedError";
+  }
+}
+
+const ABORTED_PULL: unique symbol = Symbol("nessi.aborted-pull");
+
 // ----------------------------------------------------------------------------
 // nessi()
 // ----------------------------------------------------------------------------
@@ -187,14 +202,32 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     loopTurns.push(turn);
   };
 
+  // Resolves once the loop is aborted — lets pullMatching stop waiting instead of hanging forever.
+  let notifyAbortedPull!: () => void;
+  const abortedPull = new Promise<typeof ABORTED_PULL>((resolve) => {
+    notifyAbortedPull = () => resolve(ABORTED_PULL);
+  });
+  if (abortController.signal.aborted) notifyAbortedPull();
+  else abortController.signal.addEventListener("abort", () => notifyAbortedPull(), { once: true });
+
+  // True when a matching inbound event was already pushed (e.g. seeded before a resume).
+  // Used to skip emitting action_request events that are already answered.
+  const hasBufferedInbound = (match: (event: InboundEvent) => boolean): boolean => {
+    deferredInbound.push(...channel.drain());
+    return deferredInbound.some(match);
+  };
+
   // Pull the inbound event for a specific callId/type, buffering unrelated events.
+  // Throws LoopAbortedError when the loop is aborted while waiting.
   const pullMatching = async <T extends InboundEvent>(match: (event: InboundEvent) => event is T): Promise<T> => {
     while (true) {
       const bufferedIdx = deferredInbound.findIndex(match);
       if (bufferedIdx >= 0) {
         return deferredInbound.splice(bufferedIdx, 1)[0] as T;
       }
-      const inbound = await channel.pull();
+      if (abortController.signal.aborted) throw new LoopAbortedError();
+      const inbound = await Promise.race([channel.pull(), abortedPull]);
+      if (inbound === ABORTED_PULL) throw new LoopAbortedError();
       if (match(inbound)) return inbound;
       deferredInbound.push(inbound);
     }
@@ -226,13 +259,285 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     return msg;
   }
 
+  type UpdateAggregateToolCall = (callId: string, patch: Partial<LoopToolCallAggregate>) => void;
+
+  // Execute a single tool call: validation, approval/client-tool round-trips, execution,
+  // result persistence. Shared by the live turn loop and history resume.
+  async function* executeToolCall(tc: ToolCallBlock, updateAggregateToolCall: UpdateAggregateToolCall): AsyncGenerator<OutboundEvent> {
+    const tool = toolMap.get(tc.name);
+    if (!tool) {
+      // Unknown tool — report error to LLM
+      const errorMsg = `Unknown tool: ${tc.name}`;
+      await appendToolResult(tc.id, tc.name, errorMsg, true);
+      updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
+      yield {
+        type: "tool_end",
+        agentId,
+        loopId,
+        callId: tc.id,
+        name: tc.name,
+        result: errorMsg,
+        isError: true,
+      };
+      return;
+    }
+
+    // Validate input
+    const inputResult = tool.def.inputSchema.safeParse(tc.args);
+    if (!inputResult.success) {
+      const errorMsg = formatToolValidationError(tool, tc.args, inputResult.error);
+      await appendToolResult(tc.id, tc.name, errorMsg, true);
+      updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
+      yield {
+        type: "tool_end",
+        agentId,
+        loopId,
+        callId: tc.id,
+        name: tc.name,
+        result: errorMsg,
+        isError: true,
+      };
+      return;
+    }
+
+    const validatedInput = inputResult.data;
+    updateAggregateToolCall(tc.id, { args: validatedInput });
+
+    // Only expose a durable tool start once the call has executable input.
+    yield { type: "tool_start", agentId, loopId, callId: tc.id, name: tc.name };
+    yield { type: "tool_call", agentId, loopId, callId: tc.id, name: tc.name, args: validatedInput };
+
+    // Client tool — pause and wait for consumer
+    if (tool.kind === "client") {
+      const matchesToolResult = (event: InboundEvent): event is Extract<InboundEvent, { type: "tool_result" }> =>
+        event.type === "tool_result" && event.callId === tc.id;
+      if (!hasBufferedInbound(matchesToolResult)) {
+        yield {
+          type: "action_request",
+          agentId,
+          loopId,
+          kind: "client_tool",
+          callId: tc.id,
+          name: tc.name,
+          args: validatedInput,
+        };
+      }
+      const response = await pullMatching(matchesToolResult);
+      await appendToolResult(tc.id, tc.name, response.result);
+      updateAggregateToolCall(tc.id, { result: response.result });
+      yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: response.result };
+      return;
+    }
+
+    // Server tool with approval
+    if (tool.def.needsApproval) {
+      const matchesApproval = (event: InboundEvent): event is Extract<InboundEvent, { type: "approval_response" }> =>
+        event.type === "approval_response" && event.callId === tc.id;
+      if (!hasBufferedInbound(matchesApproval)) {
+        yield {
+          type: "action_request",
+          agentId,
+          loopId,
+          kind: "approval",
+          callId: tc.id,
+          name: tc.name,
+          args: validatedInput,
+        };
+      }
+      const response = await pullMatching(matchesApproval);
+      if (!response.approved) {
+        await appendToolResult(tc.id, tc.name, "User denied this action", true);
+        updateAggregateToolCall(tc.id, { result: "User denied this action", isError: true });
+        yield {
+          type: "tool_end",
+          agentId,
+          loopId,
+          callId: tc.id,
+          name: tc.name,
+          result: "User denied this action",
+          isError: true,
+        };
+        return;
+      }
+    }
+
+    // Execute server tool with custom approval support
+    try {
+      // Approval infrastructure — lets tool handlers call ctx.requestApproval()
+      const approvalQueue: Array<{
+        id: string;
+        message: string;
+        resolve: (approved: boolean) => void;
+      }> = [];
+      const clientToolQueue: Array<{
+        id: string;
+        name: string;
+        args: unknown;
+        resolve: (result: unknown) => void;
+      }> = [];
+      let queueNotify: (() => void) | null = null;
+      let approvalCounter = 0;
+      let clientToolCounter = 0;
+
+      const ctx: ToolContext = {
+        signal,
+        requestApproval(message: string) {
+          return new Promise((resolve) => {
+            const id = `${tc.id}-approval-${approvalCounter++}`;
+            approvalQueue.push({ id, message, resolve });
+            queueNotify?.();
+          });
+        },
+        requestClientTool<T = unknown>(name: string, args: unknown) {
+          return new Promise<T>((resolve) => {
+            const id = `${tc.id}-client-${clientToolCounter++}`;
+            clientToolQueue.push({ id, name, args, resolve: resolve as (result: unknown) => void });
+            queueNotify?.();
+          });
+        },
+      };
+
+      const resultPromise = tool.execute(validatedInput, ctx);
+
+      // Supervise: race between tool completion and queued sub-requests
+      let result: unknown;
+      let done = false;
+      while (!done) {
+        const settled = await Promise.race([
+          resultPromise.then((r) => ({ kind: "done" as const, result: r })),
+          new Promise<{ kind: "queue" }>((resolve) => {
+            if (approvalQueue.length > 0 || clientToolQueue.length > 0) resolve({ kind: "queue" });
+            else queueNotify = () => resolve({ kind: "queue" });
+          }),
+        ]);
+
+        if (settled.kind === "done") {
+          result = settled.result;
+          done = true;
+        } else {
+          // Drain pending approval requests
+          while (approvalQueue.length > 0) {
+            const req = approvalQueue.shift()!;
+            const matchesCustomApproval = (event: InboundEvent): event is Extract<InboundEvent, { type: "approval_response" }> =>
+              event.type === "approval_response" && event.callId === req.id;
+            if (!hasBufferedInbound(matchesCustomApproval)) {
+              yield {
+                type: "action_request",
+                agentId,
+                loopId,
+                kind: "custom_approval" as const,
+                callId: req.id,
+                name: tc.name,
+                args: validatedInput,
+                message: req.message,
+              };
+            }
+            const response = await pullMatching(matchesCustomApproval);
+            req.resolve(response.approved);
+          }
+          while (clientToolQueue.length > 0) {
+            const req = clientToolQueue.shift()!;
+            const matchesClientResult = (event: InboundEvent): event is Extract<InboundEvent, { type: "tool_result" }> =>
+              event.type === "tool_result" && event.callId === req.id;
+            if (!hasBufferedInbound(matchesClientResult)) {
+              yield {
+                type: "action_request",
+                agentId,
+                loopId,
+                kind: "client_tool" as const,
+                callId: req.id,
+                name: req.name,
+                args: req.args,
+              };
+            }
+            const response = await pullMatching(matchesClientResult);
+            req.resolve(response.result);
+          }
+          queueNotify = null;
+        }
+      }
+
+      // Validate output
+      if (tool.def.outputSchema) {
+        const outputResult = tool.def.outputSchema.safeParse(result);
+        if (!outputResult.success) {
+          const errorMsg = `Output validation error: ${outputResult.error.message}`;
+          await appendToolResult(tc.id, tc.name, errorMsg, true);
+          updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
+          yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
+          return;
+        }
+      }
+
+      await appendToolResult(tc.id, tc.name, result);
+      updateAggregateToolCall(tc.id, { result });
+      yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result };
+    } catch (err) {
+      // Aborts (including suspension by the consumer) must not be recorded as tool failures.
+      if (err instanceof LoopAbortedError || signal.aborted) throw err;
+      const errorMsg = toErrorMessage(err);
+      await appendToolResult(tc.id, tc.name, errorMsg, true);
+      updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
+      yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
+    }
+  }
+
+  const noopAggregateUpdate: UpdateAggregateToolCall = () => {};
+
+  // Resume mode (input omitted): execute tool_call blocks of the trailing assistant
+  // message that have no tool_result yet, then close the round with turn_end.
+  async function* resumePendingToolCalls(): AsyncGenerator<OutboundEvent> {
+    const entries = await store.load();
+
+    let lastAssistantIdx = -1;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const role = entries[i]!.message.role;
+      if (role === "user") return; // trailing user input — nothing to resume
+      if (role === "assistant") {
+        lastAssistantIdx = i;
+        break;
+      }
+    }
+    if (lastAssistantIdx < 0) return;
+
+    const entry = entries[lastAssistantIdx]!;
+    if (entry.kind === "summary") return;
+    const assistantMessage = entry.message as AssistantMessage;
+    const toolCallBlocks = assistantMessage.content.filter((block): block is ToolCallBlock => block.type === "tool_call");
+    if (toolCallBlocks.length === 0) return;
+
+    const resolvedCallIds = new Set<string>();
+    for (let i = lastAssistantIdx + 1; i < entries.length; i++) {
+      const message = entries[i]!.message;
+      if (message.role === "tool_result") resolvedCallIds.add(message.callId);
+    }
+
+    const pending = toolCallBlocks.filter((block) => !resolvedCallIds.has(block.id));
+    if (pending.length === 0) return;
+
+    for (const tc of pending) {
+      if (signal.aborted) return;
+      yield* executeToolCall(tc, noopAggregateUpdate);
+    }
+    yield { type: "turn_end", agentId, loopId, message: assistantMessage };
+  }
+
   // The generator that drives the loop
   async function* run(): AsyncGenerator<OutboundEvent> {
-    const userMessage = normalizeInput(input);
     let turn = 0;
     let compactionRetried = false;
     try {
-      await store.append(userMessage);
+      if (input !== undefined) {
+        await store.append(normalizeInput(input));
+      } else {
+        // Run from history: resume unresolved tool calls of the trailing assistant
+        // message (if any), then continue with regular provider turns.
+        yield* resumePendingToolCalls();
+        if (signal.aborted) {
+          yield doneEvent("aborted");
+          return;
+        }
+      }
 
       while (turn < maxTurns) {
         if (signal.aborted) {
@@ -539,216 +844,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
 
       // Execute tool calls
       for (const tc of toolCalls) {
-        const tool = toolMap.get(tc.name);
-        if (!tool) {
-          // Unknown tool — report error to LLM
-          const errorMsg = `Unknown tool: ${tc.name}`;
-          await appendToolResult(tc.id, tc.name, errorMsg, true);
-          updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
-          yield {
-            type: "tool_end",
-            agentId,
-            loopId,
-            callId: tc.id,
-            name: tc.name,
-            result: errorMsg,
-            isError: true,
-          };
-          continue;
-        }
-
-        // Validate input
-        const inputResult = tool.def.inputSchema.safeParse(tc.args);
-        if (!inputResult.success) {
-          const errorMsg = formatToolValidationError(tool, tc.args, inputResult.error);
-          await appendToolResult(tc.id, tc.name, errorMsg, true);
-          updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
-          yield {
-            type: "tool_end",
-            agentId,
-            loopId,
-            callId: tc.id,
-            name: tc.name,
-            result: errorMsg,
-            isError: true,
-          };
-          continue;
-        }
-
-        const validatedInput = inputResult.data;
-        updateAggregateToolCall(tc.id, { args: validatedInput });
-
-        // Only expose a durable tool start once the call has executable input.
-        yield { type: "tool_start", agentId, loopId, callId: tc.id, name: tc.name };
-        yield { type: "tool_call", agentId, loopId, callId: tc.id, name: tc.name, args: validatedInput };
-
-        // Client tool — pause and wait for consumer
-        if (tool.kind === "client") {
-          yield {
-            type: "action_request",
-            agentId,
-            loopId,
-            kind: "client_tool",
-            callId: tc.id,
-            name: tc.name,
-            args: validatedInput,
-          };
-          const response = await pullMatching(
-            (event): event is Extract<InboundEvent, { type: "tool_result" }> =>
-              event.type === "tool_result" && event.callId === tc.id,
-          );
-          await appendToolResult(tc.id, tc.name, response.result);
-          updateAggregateToolCall(tc.id, { result: response.result });
-          yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: response.result };
-          continue;
-        }
-
-        // Server tool with approval
-        if (tool.def.needsApproval) {
-          yield {
-            type: "action_request",
-            agentId,
-            loopId,
-            kind: "approval",
-            callId: tc.id,
-            name: tc.name,
-            args: validatedInput,
-          };
-          const response = await pullMatching(
-            (event): event is Extract<InboundEvent, { type: "approval_response" }> =>
-              event.type === "approval_response" && event.callId === tc.id,
-          );
-          if (!response.approved) {
-            await appendToolResult(tc.id, tc.name, "User denied this action", true);
-            updateAggregateToolCall(tc.id, { result: "User denied this action", isError: true });
-            yield {
-              type: "tool_end",
-              agentId,
-              loopId,
-              callId: tc.id,
-              name: tc.name,
-              result: "User denied this action",
-              isError: true,
-            };
-            continue;
-          }
-        }
-
-        // Execute server tool with custom approval support
-        try {
-          // Approval infrastructure — lets tool handlers call ctx.requestApproval()
-          const approvalQueue: Array<{
-            id: string;
-            message: string;
-            resolve: (approved: boolean) => void;
-          }> = [];
-          const clientToolQueue: Array<{
-            id: string;
-            name: string;
-            args: unknown;
-            resolve: (result: unknown) => void;
-          }> = [];
-          let queueNotify: (() => void) | null = null;
-          let approvalCounter = 0;
-          let clientToolCounter = 0;
-
-          const ctx: ToolContext = {
-            signal,
-            requestApproval(message: string) {
-              return new Promise((resolve) => {
-                const id = `${tc.id}-approval-${approvalCounter++}`;
-                approvalQueue.push({ id, message, resolve });
-                queueNotify?.();
-              });
-            },
-            requestClientTool<T = unknown>(name: string, args: unknown) {
-              return new Promise<T>((resolve) => {
-                const id = `${tc.id}-client-${clientToolCounter++}`;
-                clientToolQueue.push({ id, name, args, resolve: resolve as (result: unknown) => void });
-                queueNotify?.();
-              });
-            },
-          };
-
-          const resultPromise = tool.execute(validatedInput, ctx);
-
-          // Supervise: race between tool completion and queued sub-requests
-          let result: unknown;
-          let done = false;
-          while (!done) {
-            const settled = await Promise.race([
-              resultPromise.then((r) => ({ kind: "done" as const, result: r })),
-              new Promise<{ kind: "queue" }>((resolve) => {
-                if (approvalQueue.length > 0 || clientToolQueue.length > 0) resolve({ kind: "queue" });
-                else queueNotify = () => resolve({ kind: "queue" });
-              }),
-            ]);
-
-            if (settled.kind === "done") {
-              result = settled.result;
-              done = true;
-            } else {
-              // Drain pending approval requests
-              while (approvalQueue.length > 0) {
-                const req = approvalQueue.shift()!;
-                yield {
-                  type: "action_request",
-                  agentId,
-                  loopId,
-                  kind: "custom_approval" as const,
-                  callId: req.id,
-                  name: tc.name,
-                  args: validatedInput,
-                  message: req.message,
-                };
-                const response = await pullMatching(
-                  (event): event is Extract<InboundEvent, { type: "approval_response" }> =>
-                    event.type === "approval_response" && event.callId === req.id,
-                );
-                req.resolve(response.approved);
-              }
-              while (clientToolQueue.length > 0) {
-                const req = clientToolQueue.shift()!;
-                yield {
-                  type: "action_request",
-                  agentId,
-                  loopId,
-                  kind: "client_tool" as const,
-                  callId: req.id,
-                  name: req.name,
-                  args: req.args,
-                };
-                const response = await pullMatching(
-                  (event): event is Extract<InboundEvent, { type: "tool_result" }> =>
-                    event.type === "tool_result" && event.callId === req.id,
-                );
-                req.resolve(response.result);
-              }
-              queueNotify = null;
-            }
-          }
-
-          // Validate output
-          if (tool.def.outputSchema) {
-            const outputResult = tool.def.outputSchema.safeParse(result);
-            if (!outputResult.success) {
-              const errorMsg = `Output validation error: ${outputResult.error.message}`;
-              await appendToolResult(tc.id, tc.name, errorMsg, true);
-              updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
-              yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
-              continue;
-            }
-          }
-
-          await appendToolResult(tc.id, tc.name, result);
-          updateAggregateToolCall(tc.id, { result });
-          yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result };
-        } catch (err) {
-          const errorMsg = toErrorMessage(err);
-          await appendToolResult(tc.id, tc.name, errorMsg, true);
-          updateAggregateToolCall(tc.id, { result: errorMsg, isError: true });
-          yield { type: "tool_end", agentId, loopId, callId: tc.id, name: tc.name, result: errorMsg, isError: true };
-        }
+        yield* executeToolCall(tc, updateAggregateToolCall);
       }
 
       yield { type: "turn_end", agentId, loopId, message: assistantMessage };
