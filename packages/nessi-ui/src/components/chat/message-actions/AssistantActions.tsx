@@ -62,6 +62,9 @@ export const AssistantActions = (props: { message: UIAssistantMessage }) => {
   const toolErrors = createMemo(() =>
     loopAggregate()?.toolErrorCount ?? props.message.blocks.filter((block) => block.type === "tool_call" && block.isError).length,
   );
+  const loopIssues = createMemo(() => loopAggregate()?.issueCount ?? 0);
+  const malformedTools = createMemo(() => loopAggregate()?.toolMalformedCount ?? 0);
+  const cancelledTools = createMemo(() => loopAggregate()?.toolCancelledCount ?? 0);
   const assistantTurns = createMemo(() => loopAggregate()?.assistantMessageCount ?? 1);
   const thinkingBlocks = createMemo(() => props.message.blocks.filter((block) => block.type === "thinking").length);
   const speed = createMemo(() => {
@@ -129,7 +132,10 @@ export const AssistantActions = (props: { message: UIAssistantMessage }) => {
               <div class="ui-metric">
                 <p class="ui-metric-label">Structure</p>
                 <p class="ui-metric-value">
-                  {assistantTurns()} turns · {toolCalls()} tools · {toolErrors()} errors · {thinkingBlocks()} thinking
+                  {assistantTurns()} turns · {toolCalls()} tools · {toolErrors()} tool errors · {loopIssues()} issues · {thinkingBlocks()} thinking
+                  <Show when={malformedTools() || cancelledTools()}>
+                    <> · {malformedTools()} malformed · {cancelledTools()} cancelled</>
+                  </Show>
                 </p>
               </div>
               <div class="ui-metric">

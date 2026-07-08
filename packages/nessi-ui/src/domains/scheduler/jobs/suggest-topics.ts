@@ -1,4 +1,6 @@
 import type { ScheduleCtx } from "@valentinkolb/sync-browser";
+import { nessi } from "@valentinkolb/nessi";
+import { z } from "zod";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
 import { memoryService } from "../../memory/index.js";
 import { chatRepo } from "../../chat/index.js";
@@ -19,47 +21,12 @@ const LAST_RUN_KEY = "nessi:suggestions-last-run";
 const MIN_HOURS_BETWEEN_RUNS = 3;
 const MAX_RECENT_CHATS = 8;
 
-type ContentBlock = { type: string; text?: string; thinking?: string };
+const stripLegacyOutputFormat = (prompt: string) =>
+  prompt.replace(/\n# Output[\s\S]*$/i, "").trim();
 
-/** Extract usable response text, falling back to the last line of thinking blocks when no text blocks exist. */
-const extractResponseText = (blocks: readonly ContentBlock[]): string => {
-  const textOut = blocks
-    .filter((b) => b.type === "text" && typeof b.text === "string")
-    .map((b) => b.text as string)
-    .join(" ")
-    .trim();
-  if (textOut) return textOut;
-
-  const thinkingTails = blocks
-    .filter((b) => b.type === "thinking" && typeof b.thinking === "string")
-    .map((b) => {
-      const lines = (b.thinking as string).split("\n").map((l) => l.trim()).filter(Boolean);
-      return lines[lines.length - 1] ?? "";
-    })
-    .filter(Boolean);
-  return thinkingTails.join("\n").trim();
-};
-
-/**
- * Diagnostic string for empty-response errors:
- * "blocks: thinking×2, text×0, stopReason: max_tokens, outputTokens: 800"
- * — gives the user enough context to tell provider-refuse from token-budget-exhaustion.
- */
-const describeEmptyResponse = (
-  blocks: readonly ContentBlock[],
-  stopReason: string | undefined,
-  outputTokens: number | undefined,
-): string => {
-  const counts: Record<string, number> = {};
-  for (const b of blocks) counts[b.type] = (counts[b.type] ?? 0) + 1;
-  const blockParts = Object.entries(counts).map(([type, n]) => `${type}×${n}`);
-  const parts: string[] = [
-    `blocks: ${blockParts.length > 0 ? blockParts.join(", ") : "none"}`,
-  ];
-  if (stopReason) parts.push(`stopReason: ${stopReason}`);
-  if (typeof outputTokens === "number") parts.push(`outputTokens: ${outputTokens}`);
-  return parts.join(", ");
-};
+const suggestionsSchema = z.object({
+  suggestions: z.array(z.string()).min(1).max(6),
+});
 
 export const getSuggestions = (): string[] =>
   localStorageJson.read<string[]>(SUGGESTIONS_KEY, []);
@@ -98,29 +65,32 @@ const generateSuggestions = async (signal?: AbortSignal): Promise<{ summary: str
   const memories = await memoryService.formatForPrompt();
   const recentChats = await buildRecentChatsContext();
   const promptTemplate = await getSuggestionPrompt();
-  const systemPrompt = resolvePrompt(promptTemplate, memories, recentChats);
+  const systemPrompt = stripLegacyOutputFormat(resolvePrompt(promptTemplate, memories, recentChats));
 
   const provider = createProvider(providerEntry);
-  const result = await provider.complete({
-    systemPrompt,
-    messages: [
-      { role: "user", content: [{ type: "text", text: "Generate conversation starters." }] },
-    ],
+  const result = await nessi.structured({
+    provider,
+    systemPrompt: [
+      systemPrompt,
+      "Structured output contract:",
+      "- Return only the schema fields requested by the caller.",
+      "- Put 4-6 standalone conversation starters in the suggestions array.",
+      "- Do not prefix suggestions with bullets, numbering, quotes, or markdown.",
+    ].join("\n"),
+    input: "Generate conversation starters.",
+    outputName: "chat_suggestions",
+    output: suggestionsSchema,
     disableReasoning: true,
+    maxOutputTokens: 800,
     signal,
   });
-  const blocks = result.message.content as ContentBlock[];
-  const text = extractResponseText(blocks);
 
-  if (!text) {
-    throw new Error(`empty response (${describeEmptyResponse(blocks, result.message.stopReason, result.message.usage?.output)})`);
-  }
-
-  const suggestions = text
-    .split("\n")
-    .map((line) => line.replace(/^[-*•\d.)\s]+/, "").trim())
+  const suggestions = result.output.suggestions
+    .map((line) => line.trim())
     .filter((line) => line.length > 5 && line.length < 120)
     .slice(0, 6);
+
+  if (suggestions.length === 0) throw new Error("empty structured suggestions response");
 
   localStorageJson.write(SUGGESTIONS_KEY, suggestions);
   localStorageJson.writeString(LAST_RUN_KEY, new Date().toISOString());
@@ -164,4 +134,3 @@ export const suggestTopicsProcess = async (
     throw err;
   }
 };
-

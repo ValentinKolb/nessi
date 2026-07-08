@@ -1,11 +1,12 @@
 import { job, type ScheduleCtx } from "@valentinkolb/sync-browser";
-import type { StoreEntry } from "@valentinkolb/nessi";
+import { nessi, type StoreEntry } from "@valentinkolb/nessi";
+import { z } from "zod";
 import { chatRepo } from "../../chat/index.js";
 import { contentPartsToText } from "../../../lib/utils.js";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
 import { memoryService } from "../../memory/index.js";
 import { getBackgroundPrompt } from "./background-prompt.js";
-import { parseBackgroundOutput, applyMemoryOps } from "./parse-background-output.js";
+import { applyMemoryOps, type BackgroundOutput } from "./parse-background-output.js";
 import { createLog, pushJobLog, type JobRunLog } from "../scheduler.js";
 
 const log = createLog("refresh-metadata");
@@ -14,6 +15,42 @@ import { loadPersistedEntries } from "../../../lib/store.js";
 
 const MAX_TRANSCRIPT_CHARS = 4000;
 const MAX_MESSAGES = 50;
+
+const stripLegacyOutputFormat = (prompt: string) =>
+  prompt.replace(/\n# Output format[\s\S]*$/i, "").trim();
+
+const memoryOpSchema = z.object({
+  type: z.enum(["add", "replace", "remove"]),
+  text: z.string(),
+  line: z.number().int().nonnegative(),
+  reason: z.string(),
+});
+
+const backgroundOutputSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  topics: z.array(z.string()),
+  memoryOps: z.array(memoryOpSchema),
+});
+
+const normalizeBackgroundOutput = (output: z.infer<typeof backgroundOutputSchema>, fallbackTitle: string): BackgroundOutput => ({
+  title: output.title.replace(/\s+/g, " ").trim().slice(0, 80) || fallbackTitle,
+  description: output.description.trim().slice(0, 2000),
+  topics: output.topics
+    .map((topic) => topic.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 15),
+  memoryOps: output.memoryOps
+    .map((op) => {
+      if (op.type === "add") return { type: "add" as const, text: op.text.trim(), reason: op.reason.trim() };
+      if (op.type === "replace") return { type: "replace" as const, line: op.line, text: op.text.trim(), reason: op.reason.trim() };
+      return { type: "remove" as const, line: op.line, reason: op.reason.trim() };
+    })
+    .filter((op) => {
+      if (op.type === "add") return op.text.length > 0;
+      return op.line > 0 && (op.type === "remove" || op.text.length > 0);
+    }),
+});
 
 const buildTranscript = async (chatId: string): Promise<string> => {
   const entries = await loadPersistedEntries(chatId) as StoreEntry[];
@@ -83,29 +120,31 @@ const processChat = async (
 
   const memories = await memoryService.formatAll();
   const promptTemplate = await getBackgroundPrompt();
-  const systemPrompt = promptTemplate
+  const systemPrompt = stripLegacyOutputFormat(promptTemplate
     .replaceAll("{{memories}}", memories)
-    .replaceAll("{{date}}", new Date().toISOString().slice(0, 10));
+    .replaceAll("{{date}}", new Date().toISOString().slice(0, 10)));
 
   const provider = createProvider(providerEntry);
-  const result = await provider.complete({
-    systemPrompt,
-    messages: [
-      { role: "user", content: [{ type: "text", text: `Conversation:\n${transcript}` }] },
-    ],
+  const result = await nessi.structured({
+    provider,
+    systemPrompt: [
+      systemPrompt,
+      "Structured output contract:",
+      "- Return only the schema fields requested by the caller.",
+      "- For memoryOps, use objects with type, text, line, and reason.",
+      "- For add operations set line to 0.",
+      "- For remove operations set text to an empty string.",
+      "- Use an empty memoryOps array when no memory changes are useful.",
+    ].join("\n"),
+    input: [{ type: "text", text: `Conversation:\n${transcript}` }],
+    outputName: "chat_metadata",
+    output: backgroundOutputSchema,
     disableReasoning: true,
+    maxOutputTokens: 3000,
     signal,
   });
 
-  const responseText = result.message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join(" ")
-    .trim();
-
-  if (!responseText) throw new Error("Empty response from provider");
-
-  const parsed = parseBackgroundOutput(responseText, fallbackTitle);
+  const parsed = normalizeBackgroundOutput(result.output, fallbackTitle);
 
   // Update chat metadata
   await chatRepo.updateMeta(chatId, {

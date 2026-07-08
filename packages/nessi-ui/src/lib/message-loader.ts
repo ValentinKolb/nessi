@@ -8,10 +8,12 @@ import type {
   AssistantMessage,
   LoopAggregate,
   LoopToolCallAggregate,
+  LoopToolIssueAggregate,
   LoopTurnAggregate,
   StoreEntry,
   Usage,
 } from "@valentinkolb/nessi";
+import type { NessiIssue } from "@valentinkolb/nessi/ai";
 import type { UIMessage, UIBlock, UIAssistantMessage } from "../components/chat/types.js";
 import { contentPartsToUIContent } from "./chat-content.js";
 import { fileMetasForMessage } from "./chat-files.js";
@@ -20,6 +22,7 @@ import { inlineToolHandlers } from "./inline-tool-blocks.js";
 
 const msgId = () => humanId({ separator: "-", capitalize: false });
 type ToolResult = { result: unknown; isError?: boolean };
+type LoopIssueAggregate = NessiIssue;
 
 const compactPreview = (text: string, max = 1200) =>
   text.length <= max ? text : `${text.slice(0, max)}...`;
@@ -48,15 +51,38 @@ const addUsage = (left: Usage | undefined, right: Usage | undefined): Usage | un
 
 const cloneToolCall = (toolCall: LoopToolCallAggregate): LoopToolCallAggregate => ({ ...toolCall });
 
+const cloneToolIssue = (issue: LoopToolIssueAggregate): LoopToolIssueAggregate => ({ ...issue });
+
+const cloneIssue = (issue: LoopIssueAggregate): LoopIssueAggregate => ({ ...issue });
+
+const isToolStreamIssue = (issue: LoopIssueAggregate): issue is LoopToolIssueAggregate =>
+  issue.kind === "malformed_tool_call" || issue.kind === "cancelled_tool_call";
+
 const cloneTurn = (turn: LoopTurnAggregate): LoopTurnAggregate => ({
   ...turn,
   usage: cloneUsage(turn.usage),
   toolCalls: turn.toolCalls.map(cloneToolCall),
+  ...(turn.toolIssues ? { toolIssues: turn.toolIssues.map(cloneToolIssue) } : {}),
+  ...(turn.issues ? { issues: turn.issues.map(cloneIssue) } : {}),
 });
 
-const aggregateFromTurns = (turns: LoopTurnAggregate[]): LoopAggregate => {
+const issuesFromAggregate = (aggregate: LoopAggregate): LoopIssueAggregate[] =>
+  (aggregate.issues ?? aggregate.toolIssues ?? aggregate.turns.flatMap((turn) => turn.issues ?? turn.toolIssues ?? []))
+    .map(cloneIssue);
+
+const toolIssuesFromAggregate = (aggregate: LoopAggregate): LoopToolIssueAggregate[] =>
+  (aggregate.toolIssues ?? aggregate.turns.flatMap((turn) => turn.toolIssues ?? [])).map(cloneToolIssue);
+
+const aggregateFromTurns = (
+  turns: LoopTurnAggregate[],
+  loopIssues: LoopIssueAggregate[] = [],
+): LoopAggregate => {
   const clonedTurns = turns.map(cloneTurn);
   const usage = clonedTurns.reduce<Usage | undefined>((total, turn) => addUsage(total, turn.usage), undefined);
+  const issues = loopIssues.length > 0
+    ? loopIssues.map(cloneIssue)
+    : clonedTurns.flatMap((turn) => turn.issues ?? turn.toolIssues ?? []);
+  const toolIssues = issues.filter(isToolStreamIssue);
   const toolCallCount = clonedTurns.reduce((count, turn) => count + turn.toolCalls.length, 0);
   const toolErrorCount = clonedTurns.reduce(
     (count, turn) => count + turn.toolCalls.filter((toolCall) => toolCall.isError).length,
@@ -66,22 +92,42 @@ const aggregateFromTurns = (turns: LoopTurnAggregate[]): LoopAggregate => {
   return {
     turns: clonedTurns,
     usage,
+    issueCount: issues.length,
+    issues: issues.map(cloneIssue),
     toolCallCount,
     toolErrorCount,
+    toolIssueCount: toolIssues.length,
+    toolMalformedCount: toolIssues.filter((issue) => issue.kind === "malformed_tool_call").length,
+    toolCancelledCount: toolIssues.filter((issue) => issue.kind === "cancelled_tool_call").length,
+    toolIssues: toolIssues.map(cloneToolIssue),
     assistantMessageCount: clonedTurns.length,
   };
 };
 
-const cloneAggregate = (aggregate: LoopAggregate): LoopAggregate => ({
-  turns: aggregate.turns.map(cloneTurn),
-  usage: cloneUsage(aggregate.usage),
-  toolCallCount: aggregate.toolCallCount,
-  toolErrorCount: aggregate.toolErrorCount,
-  assistantMessageCount: aggregate.assistantMessageCount,
-});
+const cloneAggregate = (aggregate: LoopAggregate): LoopAggregate => {
+  const turns = aggregate.turns.map(cloneTurn);
+  const issues = issuesFromAggregate(aggregate);
+  const toolIssues = toolIssuesFromAggregate(aggregate);
+  return {
+    turns,
+    usage: cloneUsage(aggregate.usage),
+    issueCount: aggregate.issueCount ?? issues.length,
+    issues,
+    toolCallCount: aggregate.toolCallCount,
+    toolErrorCount: aggregate.toolErrorCount,
+    toolIssueCount: aggregate.toolIssueCount ?? toolIssues.length,
+    toolMalformedCount: aggregate.toolMalformedCount ?? toolIssues.filter((issue) => issue.kind === "malformed_tool_call").length,
+    toolCancelledCount: aggregate.toolCancelledCount ?? toolIssues.filter((issue) => issue.kind === "cancelled_tool_call").length,
+    toolIssues,
+    assistantMessageCount: aggregate.assistantMessageCount,
+  };
+};
 
 const mergeAggregates = (left: LoopAggregate | undefined, right: LoopAggregate) =>
-  aggregateFromTurns([...(left?.turns ?? []), ...right.turns]);
+  aggregateFromTurns(
+    [...(left?.turns ?? []), ...right.turns],
+    [...(left ? issuesFromAggregate(left) : []), ...issuesFromAggregate(right)],
+  );
 
 const assistantTurnAggregate = (
   message: AssistantMessage,

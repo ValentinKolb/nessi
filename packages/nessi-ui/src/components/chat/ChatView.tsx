@@ -149,13 +149,16 @@ export const ChatView = (props: {
   let streamFeedbackStartedForTurn = false;
   let lastStreamFeedbackAt = 0;
   let streamedCharsSinceFeedback = 0;
+  let activeLoopAbortRequested = false;
 
   let assistantIdx = -1;
+  const streamBlockIndices = new Map<string, { idx?: number; kind: "text" | "thinking" }>();
   const toolBlockIndices = new Map<string, { idx: number; name: string }>();
   const companionBlockIndices = new Map<string, number>();
   const approvalBlockIndices = new Map<string, number>();
 
   const clearPendingCallMappings = () => {
+    streamBlockIndices.clear();
     toolBlockIndices.clear();
     companionBlockIndices.clear();
     approvalBlockIndices.clear();
@@ -229,6 +232,7 @@ export const ChatView = (props: {
     activeLoop?.abort();
     activeLoop = null;
     activeLoopStartSeq = 0;
+    activeLoopAbortRequested = false;
     runtime = null;
     const [messages, nextInputFiles, nextOutputFiles] = await Promise.all([
       loadMessages(chatId),
@@ -358,6 +362,60 @@ export const ChatView = (props: {
       next[assistantIdx] = { ...current, blocks: nextBlocks };
       return next;
     });
+  };
+
+  const appendOrUpdateStreamingBlock = (blockId: string, kind: "text" | "thinking", delta: string) => {
+    let entry = streamBlockIndices.get(blockId);
+    if (!entry) {
+      entry = { kind };
+      streamBlockIndices.set(blockId, entry);
+    }
+    if (entry.idx === undefined) {
+      const idx = appendBlock(kind === "text" ? { type: "text", text: "" } : { type: "thinking", text: "" });
+      if (idx === null) return;
+      entry.idx = idx;
+    }
+    updateBlock(entry.idx, (block) =>
+      block.type === kind ? { ...block, text: block.text + delta } : block,
+    );
+  };
+
+  const finishStreamingBlock = (blockId: string, kind: "text" | "thinking", text: string) => {
+    const entry = streamBlockIndices.get(blockId);
+    streamBlockIndices.delete(blockId);
+
+    if (entry?.idx !== undefined) {
+      updateBlock(entry.idx, (block) =>
+        block.type === kind ? { ...block, text: text || block.text } : block,
+      );
+      return;
+    }
+
+    if (!text) return;
+    appendBlock(kind === "text" ? { type: "text", text } : { type: "thinking", text });
+  };
+
+  const ensureToolCallBlock = (callId: string, name: string, args: unknown) => {
+    const entry = toolBlockIndices.get(callId);
+    if (entry) {
+      updateBlock(entry.idx, (block) =>
+        block.type === "tool_call" ? { ...block, args } : block,
+      );
+      return entry;
+    }
+
+    const idx = appendBlock({
+      type: "tool_call",
+      callId,
+      name,
+      args,
+      startedAt: new Date().toISOString(),
+    });
+    if (idx === null) return null;
+
+    const next = { idx, name };
+    toolBlockIndices.set(callId, next);
+    return next;
   };
 
   const buildRuntimeInitialFiles = async (chatId: string) => {
@@ -602,6 +660,9 @@ export const ChatView = (props: {
 
   const handleNessiEvent = async (event: OutboundEvent) => {
     switch (event.type) {
+      case "loop_start":
+        break;
+
       case "turn_start": {
         currentAssistantStartedAt = new Date().toISOString();
         attentionFeedbackSentForTurn = false;
@@ -612,68 +673,65 @@ export const ChatView = (props: {
         break;
       }
 
-      case "text": {
-        pulseStreamingFeedback(event.delta);
-        const blocks = getCurrentBlocks();
-        const last = blocks[blocks.length - 1];
-        if (last?.type === "text") {
-          updateBlock(blocks.length - 1, (block) =>
-            block.type === "text" ? { ...block, text: block.text + event.delta } : block,
-          );
-        } else {
-          appendBlock({ type: "text", text: event.delta });
+      case "block_start": {
+        if (event.kind === "text" || event.kind === "thinking") {
+          streamBlockIndices.set(event.blockId, { kind: event.kind });
         }
         break;
       }
 
-      case "thinking": {
-        const blocks = getCurrentBlocks();
-        const last = blocks[blocks.length - 1];
-        if (last?.type === "thinking") {
-          updateBlock(blocks.length - 1, (block) =>
-            block.type === "thinking" ? { ...block, text: block.text + event.delta } : block,
-          );
-        } else {
-          appendBlock({ type: "thinking", text: event.delta });
+      case "block_delta": {
+        const entry = streamBlockIndices.get(event.blockId);
+        if (!entry) break;
+        if (entry.kind === "text") {
+          pulseStreamingFeedback(event.delta);
         }
+        appendOrUpdateStreamingBlock(event.blockId, entry.kind, event.delta);
         break;
       }
 
-      case "tool_start": {
+      case "block_end": {
+        if (event.block.type === "text") {
+          finishStreamingBlock(event.blockId, "text", event.block.text);
+          break;
+        }
+
+        if (event.block.type === "thinking") {
+          finishStreamingBlock(event.blockId, "thinking", event.block.thinking);
+          break;
+        }
+
         if (!attentionFeedbackSentForTurn) {
           attentionFeedbackSentForTurn = true;
           haptics.nudge();
         }
-        const idx = appendBlock({
-          type: "tool_call",
-          callId: event.callId,
-          name: event.name,
-          args: {},
-          startedAt: new Date().toISOString(),
-        });
-        if (idx !== null) {
-          toolBlockIndices.set(event.callId, { idx, name: event.name });
-        }
+        ensureToolCallBlock(event.block.id, event.block.name, event.block.args);
+        appendCompanionFromArgs(event.block.name, event.block.args, event.block.id);
         break;
       }
 
-      case "tool_call": {
-        const entry = toolBlockIndices.get(event.callId);
-        if (!entry) break;
-        updateBlock(entry.idx, (block) =>
-          block.type === "tool_call" ? { ...block, args: event.args } : block,
-        );
+      case "usage": {
+        setLastUsage(event.usage);
+        break;
+      }
+
+      case "tool_execution_start": {
+        if (!attentionFeedbackSentForTurn) {
+          attentionFeedbackSentForTurn = true;
+          haptics.nudge();
+        }
+        ensureToolCallBlock(event.callId, event.name, event.args);
         appendCompanionFromArgs(event.name, event.args, event.callId);
         break;
       }
 
-      case "action_request": {
+      case "tool_action_request": {
         if (!attentionFeedbackSentForTurn) {
           attentionFeedbackSentForTurn = true;
           haptics.nudge();
         }
+        const entry = ensureToolCallBlock(event.callId, event.name, event.args);
         if (event.kind === "approval") {
-          const entry = toolBlockIndices.get(event.callId);
           if (!entry) break;
 
           if ((await settingsRepo.loadToolApprovals())[event.name] === true) {
@@ -710,7 +768,7 @@ export const ChatView = (props: {
           }
 
           if (event.name === "survey") {
-            // Companion was likely created earlier by the tool_call event (same callId).
+            // Companion was likely created earlier by the final tool_call block.
             // appendCompanionFromArgs is idempotent and returns null on the second call,
             // so check the indices map directly instead of the call's return value.
             appendCompanionFromArgs(event.name, event.args, event.callId);
@@ -732,7 +790,7 @@ export const ChatView = (props: {
         break;
       }
 
-      case "tool_end": {
+      case "tool_execution_end": {
         const entry = toolBlockIndices.get(event.callId);
         if (!entry) break;
         updateBlock(entry.idx, (block) => {
@@ -774,20 +832,20 @@ export const ChatView = (props: {
         break;
       }
 
-      case "done": {
+      case "loop_end": {
         // The entire agent loop has finished — close the message and notify.
         if (streamFeedbackStartedForTurn) haptics.success();
         const preview = assistantPreviewFromBlocks(getCurrentBlocks());
-        const hasAssistantAggregate = (event.aggregate?.assistantMessageCount ?? 0) > 0;
+        const hasAssistantAggregate = event.aggregate.assistantMessageCount > 0;
         const persistedAssistant = hasAssistantAggregate ? await latestPersistedAssistantEntry(activeLoopStartSeq) : undefined;
         const completedAt = persistedAssistant?.createdAt ?? new Date().toISOString();
-        if (event.aggregate?.usage) setLastUsage(event.aggregate.usage);
-        if (event.aggregate && hasAssistantAggregate) {
+        if (event.aggregate.usage) setLastUsage(event.aggregate.usage);
+        if (hasAssistantAggregate) {
           updateAssistantMeta((meta) => ({
             ...meta,
             entrySeq: persistedAssistant?.seq ?? meta.entrySeq,
             timestamp: completedAt,
-            usage: event.aggregate?.usage ?? meta.usage,
+            usage: event.aggregate.usage ?? meta.usage,
             doneReason: event.reason,
             loopAggregate: event.aggregate,
             durationMs: meta.startedAt
@@ -796,7 +854,7 @@ export const ChatView = (props: {
           }));
         }
         closeStreamingAssistantMessage();
-        if (event.aggregate && hasAssistantAggregate && persistedAssistant) {
+        if (hasAssistantAggregate && persistedAssistant) {
           try {
             await saveEntryLoopAggregate(props.chatId, persistedAssistant.seq, event.aggregate, event.reason);
           } catch (error) {
@@ -815,8 +873,8 @@ export const ChatView = (props: {
         break;
       }
 
-      case "error": {
-        if (event.contextOverflow) {
+      case "issue": {
+        if (event.issue.kind === "provider_error" && event.issue.contextOverflow) {
           haptics.tap();
           mapMessages((messages) => [
             ...messages,
@@ -830,10 +888,15 @@ export const ChatView = (props: {
               }],
             },
           ]);
-        } else {
-          haptics.error();
-          appendStatusMessage(`Error: ${event.error}`);
+          break;
         }
+
+        if (event.issue.kind === "tool_execution_error" && toolBlockIndices.has(event.issue.callId)) {
+          break;
+        }
+
+        haptics.error();
+        appendStatusMessage(`Error: ${event.issue.message}`);
         break;
       }
 
@@ -970,9 +1033,12 @@ export const ChatView = (props: {
         force: true,
       });
 
-      let doneEvent: Extract<CompactEvent, { type: "done" }> | null = null;
+      let doneEvent: Extract<CompactEvent, { type: "loop_end" }> | null = null;
       for await (const event of loop) {
-        if (event.type === "done") doneEvent = event;
+        if (event.type === "issue") {
+          console.warn("Compaction issue", event.issue);
+        }
+        if (event.type === "loop_end") doneEvent = event;
       }
 
       if (!doneEvent) {
@@ -1157,33 +1223,20 @@ export const ChatView = (props: {
 
     activeLoop = loop;
     activeLoopStartSeq = loopStartSeq;
-
-    // Interrupt plumbing: synchronous subscribe fires the moment abort() is called,
-    // so the UI releases the streaming state even if the for-await is blocked on
-    // the provider. Late content events that arrive during the loop's wind-down
-    // are dropped by the guard below.
-    let currentTurnInterrupted = false;
-    const LATE_EVENT_TYPES = new Set(["text", "thinking", "tool_start", "tool_call", "tool_end", "action_request"]);
-    const unsubInterrupt = loop.subscribe((event) => {
-      if (event.type !== "interrupted") return;
-      currentTurnInterrupted = true;
-      haptics.tap();
-      closeStreamingAssistantMessage();
-      setState("streaming", false);
-    });
+    activeLoopAbortRequested = false;
 
     try {
       for await (const event of loop) {
-        if (currentTurnInterrupted && LATE_EVENT_TYPES.has(event.type)) continue;
+        if (activeLoopAbortRequested && event.type !== "loop_end" && event.type !== "issue") continue;
         await handleNessiEvent(event);
       }
     } catch (error) {
       haptics.error();
       appendStatusMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      unsubInterrupt();
       activeLoop = null;
       activeLoopStartSeq = 0;
+      activeLoopAbortRequested = false;
       clearPendingCallMappings();
       closeStreamingAssistantMessage();
       currentAssistantStartedAt = undefined;
@@ -1304,7 +1357,10 @@ export const ChatView = (props: {
   const handleInterrupt = () => {
     if (!activeLoop) return;
     haptics.tap();
+    activeLoopAbortRequested = true;
     activeLoop.abort();
+    closeStreamingAssistantMessage();
+    setState("streaming", false);
   };
 
   const handleSend = (text: string) => {

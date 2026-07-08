@@ -80,13 +80,25 @@ const summarize = async (provider: Provider, conversationText: string, promptTem
   };
 
   let output = "";
+  const textBlocks = new Set<string>();
+  const textBlockBuffers = new Map<string, string>();
   for await (const event of provider.stream({
     systemPrompt,
     messages: [message],
     tools: [],
   })) {
-    if (event.type === "text") output += event.delta;
-    if (event.type === "error") throw new Error(event.error);
+    if (event.type === "block_start" && event.kind === "text") {
+      textBlocks.add(event.blockId);
+    }
+    if (event.type === "block_delta" && textBlocks.has(event.blockId)) {
+      textBlockBuffers.set(event.blockId, `${textBlockBuffers.get(event.blockId) ?? ""}${event.delta}`);
+    }
+    if (event.type === "block_end") {
+      textBlocks.delete(event.blockId);
+      if (event.block.type === "text") output += event.block.text || textBlockBuffers.get(event.blockId) || "";
+      textBlockBuffers.delete(event.blockId);
+    }
+    if (event.type === "issue") throw new Error(event.issue.message);
   }
 
   const summary = output.trim();
