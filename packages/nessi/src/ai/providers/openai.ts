@@ -28,6 +28,7 @@ export const openai = (model: string, options?: OpenAIOptions): Provider => {
       supportsUsageInStreaming: true,
       thinkingFormat: "none",
       maxTokensField: "max_completion_tokens",
+      structuredOutput: "response_format",
     },
   };
 

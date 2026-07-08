@@ -93,4 +93,28 @@ describe("anthropic provider", () => {
     expect(usageEvent && usageEvent.type === "usage" ? usageEvent.usage.output : undefined).toBe(7);
     expect(usageEvent && usageEvent.type === "usage" ? usageEvent.usage.total : undefined).toBe(18);
   });
+
+  it("maps responseFormat to output_config json_schema", async () => {
+    let capturedBody: any;
+    globalThis.fetch = (async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return jsonResponse({
+        id: "msg_123",
+        content: [{ type: "text", text: "{\"ok\":true}" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+    }) as typeof fetch;
+
+    const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] };
+    const provider = anthropic("claude-sonnet");
+    await provider.complete({
+      messages: [],
+      responseFormat: { type: "json_schema", name: "result", schema },
+    });
+
+    expect(capturedBody.output_config).toEqual({
+      format: { type: "json_schema", schema },
+    });
+  });
 });

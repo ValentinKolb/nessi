@@ -2,7 +2,11 @@
 // nessi – Public API
 // ============================================================================
 
-export { nessi } from "./nessi.js";
+import { nessi as createNessiLoop } from "./nessi.js";
+import { structured, StructuredOutputError } from "./structured.js";
+
+export const nessi = Object.assign(createNessiLoop, { structured });
+export { structured, StructuredOutputError };
 export { compact } from "./compact.js";
 export { defineTool, toolToJsonSchema, toolToSpec } from "./tools.js";
 export { memoryStore } from "./stores.js";
@@ -13,8 +17,14 @@ export type {
   // Core
   NessiOptions,
   NessiLoop,
+  StructuredInput,
+  StructuredMeta,
+  StructuredMode,
+  StructuredOptions,
+  StructuredResult,
   // Content
   ContentPart,
+  JsonSchemaObject,
   Input,
   // Events
   OutboundEvent,
@@ -48,6 +58,7 @@ export type {
   Provider,
   ProviderRequest,
   ProviderEvent,
+  ResponseFormat,
   // Store
   StoreEntry,
   SessionStore,

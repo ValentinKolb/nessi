@@ -43,4 +43,21 @@ describe("ollama provider", () => {
 
     expect(capturedBody.options).toEqual({ temperature: 0 });
   });
+
+  it("maps responseFormat to native format schema", async () => {
+    let capturedBody: any;
+    globalThis.fetch = (async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return jsonResponse(await fixtureJson("../fixtures/ollama/complete.json"));
+    }) as typeof fetch;
+
+    const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] };
+    const provider = ollama("llama3.1");
+    await provider.complete({
+      messages: [],
+      responseFormat: { type: "json_schema", name: "result", schema },
+    });
+
+    expect(capturedBody.format).toEqual(schema);
+  });
 });

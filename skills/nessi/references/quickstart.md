@@ -10,6 +10,8 @@ The provider layer gives applications a common `Provider` interface with:
 - `stream(request)` for streaming generation
 
 The provider layer does not run an agent loop, persist messages, or execute tools.
+For schema-valid typed task results, prefer `nessi.structured()` from the root
+package over hand-parsing `provider.complete()` text.
 
 ## Install and import
 
@@ -117,6 +119,67 @@ if (event.type === "loop_end") {
 If your app persists chat UI state, persist the `loop_end.aggregate` payload with
 `event.loopId` on your response group. Nessi owns the generic loop semantics;
 your app still owns database IDs and storage schema.
+
+## Structured output task
+
+Use `nessi.structured()` when the app needs a typed object validated by Zod:
+
+```ts
+import { nessi } from "@valentinkolb/nessi";
+import { openrouter } from "@valentinkolb/nessi/ai";
+import { z } from "zod";
+
+const result = await nessi.structured({
+  provider: openrouter("openai/gpt-4.1-mini", {
+    apiKey: process.env.OPENROUTER_API_KEY,
+  }),
+  input: "Extract a task from: Ship the onboarding flow by Friday.",
+  outputName: "task",
+  output: z.object({
+    title: z.string(),
+    due: z.string().nullable(),
+    priority: z.enum(["low", "medium", "high"]),
+  }),
+  temperature: 0,
+});
+
+console.log(result.output.title);
+console.log(result.structuredMeta);
+console.log(result.aggregate.usage);
+```
+
+`input` may be a string, content parts, or a full user message. Content parts
+can include image file parts when the selected provider supports images.
+
+When the provider and schema are safe for native structured output, Nessi passes
+`responseFormat` to the adapter. Otherwise it adds schema instructions and
+performs one repair attempt if the first response is invalid.
+
+`nessi.structured()` may use server tools:
+
+```ts
+const lookupCustomer = defineTool({
+  name: "lookup_customer",
+  description: "Find a customer by email.",
+  inputSchema: z.object({ email: z.string().email() }),
+}).server(async ({ email }) => {
+  return { email, tier: "pro" };
+});
+
+const result = await nessi.structured({
+  provider,
+  input: "Find ada@example.com and return the account summary.",
+  output: z.object({
+    email: z.string().email(),
+    tier: z.string(),
+  }),
+  tools: [lookupCustomer],
+  maxTurns: 6,
+});
+```
+
+Only pass server tools that do not need approval. Use the full `nessi()` loop
+for client tools, approvals, UI actions, or custom interactive tool bridges.
 
 ## One-shot completion
 

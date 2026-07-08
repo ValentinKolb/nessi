@@ -8,6 +8,40 @@ await provider.complete(request);
 for await (const event of provider.stream(request)) {}
 ```
 
+## Structured output support
+
+Most consumers should use root `nessi.structured()` for typed structured
+results. It validates the result with Zod, uses native provider structured
+output where available, and falls back to schema instructions plus one repair
+attempt.
+
+The provider layer also exposes a low-level `responseFormat` request option for
+apps that intentionally want a single provider call:
+
+```ts
+const result = await provider.complete({
+  messages: [{ role: "user", content: [{ type: "text", text: "Extract a card." }] }],
+  responseFormat: {
+    type: "json_schema",
+    name: "card",
+    schema: {
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+    },
+  },
+});
+```
+
+Provider mappings:
+
+- OpenAI/OpenRouter/OpenAI-compatible: `response_format.json_schema`
+- vLLM: `structured_outputs.json`
+- Ollama: top-level `format` schema
+- Anthropic: `output_config.format`
+- Mistral: `response_format.json_schema`
+- Gemini: `generationConfig.responseMimeType` plus `responseJsonSchema`
+
 ## Hosted OpenAI
 
 ```ts

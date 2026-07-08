@@ -135,6 +135,10 @@ export const gemini = (model: string, options?: GeminiOptions): Provider => {
     const maxOutputTokens = request.maxOutputTokens ?? options?.maxOutputTokens;
     if (maxOutputTokens !== undefined) generationConfig.maxOutputTokens = maxOutputTokens;
     if (request.disableReasoning) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    if (request.responseFormat) {
+      generationConfig.responseMimeType = "application/json";
+      generationConfig.responseJsonSchema = request.responseFormat.schema;
+    }
     if (Object.keys(generationConfig).length > 0) body.generationConfig = generationConfig;
     return body;
   };
@@ -150,6 +154,7 @@ export const gemini = (model: string, options?: GeminiOptions): Provider => {
       images: true,
       thinking: false,
       usage: true,
+      structuredOutput: true,
     },
 
     async complete(request: GenerateRequest): Promise<GenerateResult> {

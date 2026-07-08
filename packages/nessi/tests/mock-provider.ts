@@ -55,6 +55,7 @@ export function mockProvider(
       images: true,
       thinking: true,
       usage: true,
+      structuredOutput: true,
     },
     contextWindow: options?.contextWindow ?? 100_000,
     async *stream(request: ProviderRequest) {
@@ -87,6 +88,7 @@ export function mockProviderMultiTurn(
       images: true,
       thinking: true,
       usage: true,
+      structuredOutput: true,
     },
     contextWindow: options?.contextWindow ?? 100_000,
     async *stream(request: ProviderRequest) {

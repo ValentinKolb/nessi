@@ -42,4 +42,23 @@ describe("gemini provider", () => {
 
     expect(capturedBody.generationConfig.temperature).toBe(0);
   });
+
+  it("maps responseFormat to response schema generation config", async () => {
+    let capturedBody: any;
+    globalThis.fetch = (async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return jsonResponse(await fixtureJson("../fixtures/gemini/complete.json"));
+    }) as typeof fetch;
+
+    const schema = { type: "object", properties: { title: { type: "string" } }, required: ["title"] };
+    const provider = gemini("gemini-2.0-flash", { apiKey: "x" });
+    await provider.complete({
+      messages: [],
+      responseFormat: { type: "json_schema", name: "card", schema },
+    });
+
+    expect(capturedBody.generationConfig.responseMimeType).toBe("application/json");
+    expect(capturedBody.generationConfig.responseJsonSchema).toEqual(schema);
+    expect(capturedBody.generationConfig.responseSchema).toBeUndefined();
+  });
 });

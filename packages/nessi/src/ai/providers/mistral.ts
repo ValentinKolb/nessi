@@ -132,6 +132,23 @@ const mapFinishReason = (reason: string | null | undefined, hasTools: boolean) =
   return "stop" as const;
 };
 
+const responseFormatName = (name: string | undefined) => {
+  const safe = (name ?? "structured_output").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  return safe || "structured_output";
+};
+
+const applyResponseFormat = (body: Record<string, unknown>, request: GenerateRequest) => {
+  if (!request.responseFormat) return;
+  body.response_format = {
+    type: "json_schema",
+    json_schema: {
+      name: responseFormatName(request.responseFormat.name),
+      schema: request.responseFormat.schema,
+      strict: true,
+    },
+  };
+};
+
 export type MistralOptions = {
   apiKey?: string;
   baseURL?: string;
@@ -158,6 +175,7 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
       images: true,
       thinking: false,
       usage: true,
+      structuredOutput: true,
     },
 
     async complete(request: GenerateRequest): Promise<GenerateResult> {
@@ -170,6 +188,7 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
         body.tools = toOpenAITools(request.tools);
         body.parallel_tool_calls = true;
       }
+      applyResponseFormat(body, request);
       const temperature = resolveTemperature(request);
       if (temperature !== undefined) body.temperature = temperature;
       if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens;
@@ -222,6 +241,7 @@ export const mistral = (model: string, options?: MistralOptions): Provider => {
         body.tools = toOpenAITools(request.tools);
         body.parallel_tool_calls = true;
       }
+      applyResponseFormat(body, request);
       const temperature = resolveTemperature(request);
       if (temperature !== undefined) body.temperature = temperature;
       if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens;

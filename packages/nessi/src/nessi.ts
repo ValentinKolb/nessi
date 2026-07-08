@@ -531,6 +531,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     throw new Error(`Duplicate tool name: ${dup}`);
   }
   const toolMap = new Map(tools.map((tool) => [tool.def.name, tool]));
+  const isTerminalTool = (name: string) => Boolean((toolMap.get(name)?.def as { terminal?: boolean } | undefined)?.terminal);
 
   const appendToolResult = async (callId: string, name: string, result: unknown, isError = false) => {
     const msg: ToolResultMessage = { role: "tool_result", callId, name, result, isError };
@@ -1265,8 +1266,14 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           if (aggregateToolCall) Object.assign(aggregateToolCall, patch);
         };
 
+        let terminalToolCompleted = false;
         for (const tc of toolCalls) {
           yield* executeToolCall(tc, turnCtx, updateAggregateToolCall, turnIssues);
+          const aggregateToolCall = aggregateToolCallMap.get(tc.id);
+          if (isTerminalTool(tc.name) && aggregateToolCall && !aggregateToolCall.isError) {
+            terminalToolCompleted = true;
+            break;
+          }
         }
 
         const recordedTurn = loopTurns[loopTurns.length - 1];
@@ -1276,6 +1283,10 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         }
 
         yield { type: "turn_end", agentId, loopId, ...turnCtx, message: assistantMessage };
+        if (terminalToolCompleted) {
+          yield loopEndEvent("stop");
+          return;
+        }
         providerTurn++;
         compactionRetried = false;
       }

@@ -30,4 +30,28 @@ describe("mistral provider", () => {
 
     expect(capturedBody.temperature).toBe(0);
   });
+
+  it("maps responseFormat to json_schema response_format", async () => {
+    let capturedBody: any;
+    globalThis.fetch = (async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return jsonResponse(await fixtureJson("../fixtures/mistral/complete.json"));
+    }) as typeof fetch;
+
+    const schema = { type: "object", properties: { title: { type: "string" } }, required: ["title"] };
+    const provider = mistral("mistral-small-latest");
+    await provider.complete({
+      messages: [],
+      responseFormat: { type: "json_schema", name: "card", schema },
+    });
+
+    expect(capturedBody.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "card",
+        schema,
+        strict: true,
+      },
+    });
+  });
 });

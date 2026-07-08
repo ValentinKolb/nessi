@@ -123,6 +123,7 @@ export const ollama = (model: string, options?: OllamaOptions): Provider => {
       images: true,
       thinking: false,
       usage: true,
+      structuredOutput: true,
     },
 
     async complete(request: GenerateRequest): Promise<GenerateResult> {
@@ -132,6 +133,7 @@ export const ollama = (model: string, options?: OllamaOptions): Provider => {
         stream: false,
       };
       if (request.tools?.length) body.tools = toOllamaTools(request.tools);
+      if (request.responseFormat) body.format = request.responseFormat.schema;
       const temperature = resolveTemperature(request);
       if (temperature !== undefined) body.options = { temperature };
 
@@ -171,6 +173,7 @@ export const ollama = (model: string, options?: OllamaOptions): Provider => {
         stream: true,
       };
       if (request.tools?.length) body.tools = toOllamaTools(request.tools);
+      if (request.responseFormat) body.format = request.responseFormat.schema;
       const temperature = resolveTemperature(request);
       if (temperature !== undefined) body.options = { temperature };
 

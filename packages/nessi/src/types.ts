@@ -11,6 +11,7 @@ import type {
   AssistantMessage,
   ContentPart,
   GenerateRequest,
+  GenerateResult,
   Message,
   NessiIssue,
   Provider,
@@ -30,10 +31,12 @@ export type {
   BlockEndEvent,
   BlockStartEvent,
   ContentPart,
+  JsonSchemaObject,
   Message,
   NessiIssue,
   Provider,
   ProviderIssue,
+  ResponseFormat,
   RuntimeIssue,
   TextBlock,
   ThinkingBlock,
@@ -222,6 +225,46 @@ export type NessiLoop = {
   push(event: InboundEvent): void;
   steer(message: string): void;
   abort(): void;
+}
+
+export type StructuredInput = Input | UserMessage;
+
+export type StructuredMode = "native" | "fallback" | "repair" | "tool_loop";
+
+export type StructuredMeta = {
+  mode: StructuredMode;
+  repaired: boolean;
+  attempts: number;
+  usedResponseFormat: boolean;
+};
+
+export type StructuredOptions<TOutput extends z.ZodType = z.ZodType> = {
+  agentId?: string;
+  /** Correlates the internal structured task. Generated when omitted. */
+  loopId?: string;
+  provider: Provider;
+  systemPrompt?: string;
+  input: StructuredInput;
+  output: TOutput;
+  outputName?: string;
+  tools?: ServerTool[];
+  maxTurns?: number;
+  temperature?: number;
+  maxOutputTokens?: number;
+  disableReasoning?: boolean;
+  signal?: AbortSignal;
+  onEvent?: (event: OutboundEvent) => void;
+}
+
+export type StructuredResult<TOutput> = {
+  output: TOutput;
+  message: AssistantMessage;
+  aggregate: LoopAggregate;
+  reason: DoneReason;
+  loopId: string;
+  usage?: Usage;
+  providerMeta?: GenerateResult["providerMeta"];
+  structuredMeta: StructuredMeta;
 }
 
 // ----------------------------------------------------------------------------

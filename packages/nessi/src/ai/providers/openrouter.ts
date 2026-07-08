@@ -34,6 +34,7 @@ export const openrouter = (model: string, options?: OpenRouterOptions): Provider
       supportsUsageInStreaming: true,
       thinkingFormat: "reasoning_details",
       maxTokensField: "max_tokens",
+      structuredOutput: "response_format",
     },
   };
 

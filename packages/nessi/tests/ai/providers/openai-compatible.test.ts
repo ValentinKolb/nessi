@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { openAICompatible, openrouter } from "../../../src/ai/index.js";
+import { openAICompatible, openrouter, vllm } from "../../../src/ai/index.js";
 import { expectProviderContract } from "../contracts/provider-contract.js";
 import { fixtureJson, fixtureText, jsonResponse, textResponse } from "../helpers/fixtures.js";
 
@@ -121,5 +121,67 @@ describe("openAICompatible provider", () => {
 
     await provider.complete({ messages: [], temperature: 0 });
     expect(capturedBody.temperature).toBe(0);
+  });
+
+  it("maps responseFormat to OpenAI json_schema response_format", async () => {
+    let capturedBody: any;
+    globalThis.fetch = (async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return jsonResponse(await fixtureJson("../fixtures/openai/complete.json"));
+    }) as typeof fetch;
+
+    const provider = openAICompatible({
+      name: "custom",
+      model: "gpt-test",
+      baseURL: "https://example.com/v1",
+      compat: { supportsUsageInStreaming: true, thinkingFormat: "none" },
+    });
+
+    await provider.complete({
+      messages: [],
+      responseFormat: {
+        type: "json_schema",
+        name: "card",
+        schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
+      },
+    });
+
+    expect(capturedBody.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "card",
+        schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
+        strict: true,
+      },
+    });
+  });
+
+  it("maps vLLM responseFormat to structured_outputs", async () => {
+    let capturedBody: any;
+    globalThis.fetch = (async (_input, init) => {
+      capturedBody = JSON.parse(String(init?.body ?? "{}"));
+      return jsonResponse(await fixtureJson("../fixtures/openai/complete.json"));
+    }) as typeof fetch;
+
+    const provider = vllm("qwen-test", { apiKey: "x", baseURL: "https://example.com/v1" });
+    const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] };
+    await provider.complete({
+      messages: [],
+      responseFormat: { type: "json_schema", name: "result", schema },
+    });
+
+    expect(capturedBody.structured_outputs).toEqual({ json: schema });
+    expect(capturedBody.response_format).toBeUndefined();
+  });
+
+  it("does not advertise native structured output for generic compatible providers by default", () => {
+    const provider = openAICompatible({
+      name: "custom",
+      model: "gpt-test",
+      baseURL: "https://example.com/v1",
+      compat: { supportsUsageInStreaming: true, thinkingFormat: "none" },
+    });
+
+    expect(provider.capabilities.structuredOutput).toBe(false);
   });
 });

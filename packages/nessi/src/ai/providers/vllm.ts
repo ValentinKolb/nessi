@@ -27,6 +27,7 @@ export const vllm = (model: string, options?: VLLMOptions): Provider => {
       supportsUsageInStreaming: true,
       thinkingFormat: "none",
       maxTokensField: "max_tokens",
+      structuredOutput: "vllm_structured_outputs",
     },
   };
 

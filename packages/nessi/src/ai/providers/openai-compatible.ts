@@ -84,6 +84,33 @@ const mapFinishReason = (reason: string | null | undefined, hasTools: boolean): 
   return "stop";
 };
 
+const responseFormatName = (name: string | undefined) => {
+  const safe = (name ?? "structured_output").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  return safe || "structured_output";
+};
+
+const applyResponseFormat = (
+  body: Record<string, unknown>,
+  request: GenerateRequest,
+  config: OpenAICompatibleConfig,
+) => {
+  if (!request.responseFormat) return;
+  const mode = config.compat?.structuredOutput ?? "response_format";
+  if (mode === false) return;
+  if (mode === "vllm_structured_outputs") {
+    body.structured_outputs = { json: request.responseFormat.schema };
+    return;
+  }
+  body.response_format = {
+    type: "json_schema",
+    json_schema: {
+      name: responseFormatName(request.responseFormat.name),
+      schema: request.responseFormat.schema,
+      strict: true,
+    },
+  };
+};
+
 const convertMessages = (messages: Message[], systemPrompt: string | undefined, config: OpenAICompatibleConfig) => {
   const result: OAIMessage[] = [];
   const strictIds = normalizeToolCallIds(config.compat);
@@ -219,6 +246,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
       images: true,
       thinking: config.compat?.thinkingFormat !== "none",
       usage: true,
+      structuredOutput: config.compat?.structuredOutput !== undefined && config.compat.structuredOutput !== false,
     },
 
     async complete(request: GenerateRequest): Promise<GenerateResult> {
@@ -230,6 +258,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         stream: false,
       };
       if (tools) body.tools = tools;
+      applyResponseFormat(body, request, config);
       if (request.maxOutputTokens !== undefined) {
         body[config.compat?.maxTokensField ?? "max_completion_tokens"] = request.maxOutputTokens;
       }
@@ -274,6 +303,7 @@ export const openAICompatible = (config: OpenAICompatibleConfig): Provider => {
         body.stream_options = { include_usage: true };
       }
       if (tools) body.tools = tools;
+      applyResponseFormat(body, request, config);
       const temperature = resolveTemperature(request);
       if (temperature !== undefined) body.temperature = temperature;
       if (request.maxOutputTokens !== undefined) {

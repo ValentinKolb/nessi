@@ -55,6 +55,14 @@ export type Usage = {
   creditsUsed?: number;
 };
 
+export type JsonSchemaObject = Record<string, unknown>;
+
+export type ResponseFormat = {
+  type: "json_schema";
+  name?: string;
+  schema: JsonSchemaObject;
+};
+
 export type ToolStreamIssueKind = "malformed_tool_call" | "cancelled_tool_call";
 
 export type ToolStreamIssueReason =
@@ -134,12 +142,14 @@ export type ProviderCapabilities = {
   images: boolean;
   thinking: boolean;
   usage: boolean;
+  structuredOutput?: boolean;
 };
 
 export type GenerateRequest = {
   systemPrompt?: string;
   messages: Message[];
   tools?: ToolSpec[];
+  responseFormat?: ResponseFormat;
   signal?: AbortSignal;
   temperature?: number;
   maxOutputTokens?: number;
@@ -227,6 +237,7 @@ export type OpenAICompat = {
   requiresAssistantAfterToolResult?: boolean;
   thinkingFormat?: "none" | "reasoning_details" | "text";
   maxTokensField?: "max_tokens" | "max_completion_tokens";
+  structuredOutput?: "response_format" | "vllm_structured_outputs" | false;
 };
 
 export type OpenAICompatibleConfig = {

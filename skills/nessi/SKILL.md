@@ -1,6 +1,6 @@
 ---
 name: nessi
-description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about @valentinkolb/nessi/ai complete(), stream(), provider setup, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, canonical block streaming events, issue events for malformed tool streams, loopId correlation, loop_end.aggregate metadata, loop-level stats, tool execution events, usage accounting, generation options, provider timeouts, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root agent loop."
+description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, structured-output task, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about root nessi(), nessi.structured(), @valentinkolb/nessi/ai complete(), stream(), provider setup, responseFormat, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, multimodal input, canonical block streaming events, issue events for malformed tool streams, loopId correlation, loop_end.aggregate metadata, loop-level stats, tool execution events, usage accounting, generation options, provider timeouts, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root APIs."
 ---
 
 # @valentinkolb/nessi Consumer Skill
@@ -13,6 +13,7 @@ Use this skill to help someone build software on top of `@valentinkolb/nessi`. K
 2. Identify the provider family: hosted API, OpenRouter aggregation, local Ollama/vLLM, or a custom OpenAI-compatible endpoint.
 3. Decide whether the user needs only the provider layer or the full agent loop:
    - Use `@valentinkolb/nessi/ai` for provider calls, streaming, message normalization, tool-call extraction, and usage data.
+   - Use `nessi.structured()` from the package root when the user wants a schema-valid typed task result, optionally with bounded server tools.
    - Use the `@valentinkolb/nessi` root exports when the user wants an agent loop that executes tools, stores conversation history, handles approvals, or compacts context.
 4. Produce working TypeScript that matches the current public API:
    - Root agent APIs come from `@valentinkolb/nessi`.
@@ -38,6 +39,9 @@ Read only the references needed for the task:
 - For root `nessi()` loops, pass an application-level `loopId` when the app already has a request/response group id; otherwise use the generated `event.loopId` that appears on every outbound event.
 - For root `nessi()` loops, pass `temperature`, `maxOutputTokens`, and `disableReasoning` at the top level when the app has a default generation policy for the whole loop.
 - For root `nessi()` loops, use `event.type === "loop_end"` plus `event.aggregate` for one logical response group, aggregate usage, loop-level stats, assistant turn count, tool calls, tool results, validation/execution errors, and malformed/cancelled tool-stream issues across multi-turn tool loops.
+- For `nessi.structured()`, require a Zod `output` schema and return `result.output`; use `result.structuredMeta` and `result.aggregate` for diagnostics.
+- For `nessi.structured()` with tools, only pass server tools that do not need approval. Use full `nessi()` for client tools, approvals, or custom interactive tool bridges.
+- For provider-only structured output, pass `responseFormat` to `provider.complete()` only when the user explicitly needs the low-level provider request. Prefer `nessi.structured()` for consumer code that needs validated typed output.
 - For standalone `compact()` loops, use the same `loopId` grouping pattern and handle `loop_start`, `compaction_start`, `compaction_end`, `issue`, and `loop_end`.
 - Treat `issue.kind === "malformed_tool_call"` and `issue.kind === "cancelled_tool_call"` as pre-execution stream issues. They mean no executable tool call exists for that pending provider start.
 - Treat `tool_execution_start` / `tool_execution_end` as Nessi's tool-runtime attempt boundary. `tool_action_request` is the event that asks the app for approval or client-side tool output.
@@ -91,6 +95,30 @@ const result = await provider.complete({
   temperature: 0,
   maxOutputTokens: 512,
 });
+```
+
+Common structured-output shape:
+
+```ts
+import { nessi } from "@valentinkolb/nessi";
+import { openrouter } from "@valentinkolb/nessi/ai";
+import { z } from "zod";
+
+const result = await nessi.structured({
+  provider: openrouter("openai/gpt-4.1-mini", {
+    apiKey: process.env.OPENROUTER_API_KEY,
+  }),
+  input: "Extract a task from: Ship onboarding by Friday.",
+  outputName: "task",
+  output: z.object({
+    title: z.string(),
+    due: z.string().nullable(),
+  }),
+  temperature: 0,
+});
+
+console.log(result.output);
+console.log(result.structuredMeta);
 ```
 
 Common stream shape:

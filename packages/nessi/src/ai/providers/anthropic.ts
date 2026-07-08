@@ -168,6 +168,16 @@ const mergeUsage = (
   );
 };
 
+const applyResponseFormat = (body: Record<string, unknown>, request: GenerateRequest) => {
+  if (!request.responseFormat) return;
+  body.output_config = {
+    format: {
+      type: "json_schema",
+      schema: request.responseFormat.schema,
+    },
+  };
+};
+
 export const anthropic = (model: string, options?: AnthropicOptions): Provider => {
   const baseURL = (options?.baseURL ?? "https://api.anthropic.com").replace(/\/+$/, "");
   const apiVersion = options?.apiVersion ?? "2023-06-01";
@@ -184,6 +194,7 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
       images: true,
       thinking: false,
       usage: true,
+      structuredOutput: true,
     },
 
     async complete(request: GenerateRequest): Promise<GenerateResult> {
@@ -194,6 +205,7 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         max_tokens: request.maxOutputTokens ?? maxOutputTokens,
       };
       if (request.tools?.length) body.tools = toAnthropicTools(request.tools);
+      applyResponseFormat(body, request);
       const temperature = resolveTemperature(request, options);
       if (temperature !== undefined) body.temperature = temperature;
 
@@ -250,6 +262,7 @@ export const anthropic = (model: string, options?: AnthropicOptions): Provider =
         stream: true,
       };
       if (request.tools?.length) body.tools = toAnthropicTools(request.tools);
+      applyResponseFormat(body, request);
       const temperature = resolveTemperature(request, options);
       if (temperature !== undefined) body.temperature = temperature;
 

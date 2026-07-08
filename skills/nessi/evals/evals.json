@@ -24,6 +24,12 @@
       "prompt": "Build a tiny Bun agent with @valentinkolb/nessi that stores history in memory, uses OpenRouter, defines one server-side search_docs tool with zod, and streams text to stdout.",
       "expected_output": "A concise agent-loop example importing nessi, defineTool, and memoryStore from @valentinkolb/nessi, importing openrouter from @valentinkolb/nessi/ai, defining a zod-backed server tool, passing store: memoryStore() and tools to nessi(), and iterating loop events for block_start/block_delta text handling, issue handling, and loop_end.aggregate/loopId handling.",
       "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "I need a typed task extractor with @valentinkolb/nessi. It should return a validated Zod object, accept an image input, and may call one server-side lookup tool before returning.",
+      "expected_output": "A root nessi.structured() example importing nessi and defineTool from @valentinkolb/nessi, importing a provider from @valentinkolb/nessi/ai, defining a Zod output schema, passing string or multimodal content parts as input, optionally passing only server tools, and reading result.output plus result.structuredMeta/result.aggregate. It should not use provider.complete() for the high-level typed task unless explicitly discussing low-level responseFormat.",
+      "files": []
     }
   ]
 }

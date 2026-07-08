@@ -59,6 +59,46 @@ Every outbound event from one `nessi()` run carries the same `loopId`. Pass your
 
 `turn_end` reports each internal provider turn. The final `loop_end` event includes `aggregate`, which groups assistant turns, executable tool calls, tool results, validation/execution errors, malformed or cancelled tool streams, and summed usage for the complete logical loop. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are available from `@valentinkolb/nessi`.
 
+## Structured output
+
+Use `nessi.structured()` when an app wants a schema-valid typed result instead
+of a streamed chat response:
+
+```ts
+import { nessi } from "@valentinkolb/nessi";
+import { openrouter } from "@valentinkolb/nessi/ai";
+import { z } from "zod";
+
+const result = await nessi.structured({
+  provider: openrouter("openai/gpt-4.1-mini", {
+    apiKey: process.env.OPENROUTER_API_KEY,
+  }),
+  input: "Extract a task card for: Ship the onboarding flow by Friday.",
+  outputName: "task_card",
+  output: z.object({
+    title: z.string(),
+    due: z.string().nullable(),
+    priority: z.enum(["low", "medium", "high"]),
+  }),
+  temperature: 0,
+});
+
+console.log(result.output.title);
+console.log(result.structuredMeta);
+console.log(result.aggregate.usage);
+```
+
+For providers and schemas that are safe for native structured output, Nessi
+passes a provider-specific `responseFormat`. Otherwise it falls back to schema
+instructions and one repair attempt. `input` can be a string, content parts, or
+a full user message, including image file parts when the provider supports
+images.
+
+`nessi.structured()` can use server tools for bounded task work. It adds an
+internal `submit_result` tool and returns after that tool receives a valid
+schema value. Client tools, approval tools, and interactive tool bridges remain
+the job of the full `nessi()` loop.
+
 ## Provider-only usage
 
 ```ts
@@ -114,6 +154,7 @@ import { openai } from "@valentinkolb/nessi/ai/providers/openai";
 - Turn-based agent loop with canonical block streaming events
 - Stable `loopId` correlation across all events from one agent loop
 - `loop_start`, `turn_start`, `turn_end`, and `loop_end.aggregate` for logical response grouping
+- `nessi.structured()` for typed schema-valid task results
 - Server tools and client tools
 - Tool approval flow and explicit `tool_action_request` events
 - Tool execution start/end events with per-tool `timeoutMs`
@@ -129,10 +170,10 @@ import { openai } from "@valentinkolb/nessi/ai/providers/openai";
 
 ```txt
 @valentinkolb/nessi
-  Agent loop, tools, stores, compaction, shared types
+  Agent loop, structured task helper, tools, stores, compaction, shared types
 
 @valentinkolb/nessi/ai
-  Provider factories, provider types, complete(), stream()
+  Provider factories, provider types, complete(), stream(), responseFormat
 
 @valentinkolb/nessi/ai/providers/*
   Focused provider entrypoints
