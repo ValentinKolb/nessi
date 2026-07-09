@@ -1,4 +1,4 @@
-import { createLocalStorageStore, scheduler, type Scheduler, type ScheduleAfterCtx } from "@valentinkolb/sync-browser";
+import { createLocalStorageStore, scheduler, type Scheduler, type ScheduleAfterCtx } from "@valentinkolb/sync/browser";
 import { refreshMetadataProcess } from "./jobs/refresh-metadata.js";
 import { consolidateMemoryProcess, incrementChatsSinceConsolidation } from "./jobs/consolidate-memory.js";
 import { suggestTopicsProcess } from "./jobs/suggest-topics.js";

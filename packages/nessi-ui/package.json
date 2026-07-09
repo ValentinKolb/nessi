@@ -28,7 +28,7 @@
     "@tabler/icons-webfont": "^3.36.1",
     "@valentinkolb/nessi": "workspace:*",
     "@valentinkolb/stdlib": "^0.13.0",
-    "@valentinkolb/sync-browser": "5.2.0",
+    "@valentinkolb/sync": "^5.5.2",
     "cron-validator": "^1.4.0",
     "dexie": "^4.4.2",
     "diff": "^8.0.3",

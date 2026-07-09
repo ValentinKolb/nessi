@@ -1,4 +1,4 @@
-import type { ScheduleCtx } from "@valentinkolb/sync-browser";
+import type { ScheduleCtx } from "@valentinkolb/sync/browser";
 import { nessi } from "@valentinkolb/nessi";
 import { z } from "zod";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";

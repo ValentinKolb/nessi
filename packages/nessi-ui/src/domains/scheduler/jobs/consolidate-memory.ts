@@ -1,4 +1,4 @@
-import type { ScheduleCtx } from "@valentinkolb/sync-browser";
+import type { ScheduleCtx } from "@valentinkolb/sync/browser";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
 import { memoryService } from "../../memory/index.js";
 import { localStorageJson } from "../../../shared/storage/local-storage.js";

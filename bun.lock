@@ -11,7 +11,7 @@
     },
     "packages/nessi": {
       "name": "@valentinkolb/nessi",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "dependencies": {
         "zod": "^4.3.0",
       },
@@ -28,7 +28,7 @@
         "@tabler/icons-webfont": "^3.36.1",
         "@valentinkolb/nessi": "workspace:*",
         "@valentinkolb/stdlib": "^0.13.0",
-        "@valentinkolb/sync-browser": "5.2.0",
+        "@valentinkolb/sync": "^5.5.2",
         "cron-validator": "^1.4.0",
         "dexie": "^4.4.2",
         "diff": "^8.0.3",
@@ -417,7 +417,7 @@
 
     "@valentinkolb/stdlib": ["@valentinkolb/stdlib@0.13.0", "", { "dependencies": { "dayjs": "^1.11.0" }, "peerDependencies": { "lean-qr": "", "solid-js": "" }, "optionalPeers": ["lean-qr", "solid-js"] }, "sha512-dj4XWF0yvGp4drf3rHHUDq0LiVc9nrKCqwZJJxtfi4nXVhnZWfBC4nfSSl4W1MVCpWQJDUoBS/VpH8wAIo+Y9Q=="],
 
-    "@valentinkolb/sync-browser": ["@valentinkolb/sync-browser@5.2.0", "", {}, "sha512-mZDxg5VrZbSp2hk4wbRKQcsnsB3YkW9YGb00Om5sRJeMiOzntJaUnEYtgjZVN/yOFnFUZU0yogBjk/Vq1J2CXw=="],
+    "@valentinkolb/sync": ["@valentinkolb/sync@5.5.2", "", {}, "sha512-SEypcXv8VVV0scGvYdxtOH84gpg0+vd8hfBT+RHKwMVp/g/0FI/2/o2P4bqEVB1mTIlUo3jzzBV0B64EfRNZ+A=="],
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.12", "", {}, "sha512-9k/gHF6n/pAi/9tqr3m3aqkuiNosYTurLLUtc7xQ9sxB/wm7WPygCv8GYa6mS0fLJEHhqMC1ATYhz++U/lRHqg=="],
 
