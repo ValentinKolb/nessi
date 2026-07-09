@@ -31,6 +31,7 @@ export type {
   InboundEvent,
   DoneReason,
   LoopAggregate,
+  LoopTimingAggregate,
   LoopTurnAggregate,
   LoopToolCallAggregate,
   LoopToolIssueAggregate,

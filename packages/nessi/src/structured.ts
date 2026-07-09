@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { z } from "zod";
-import { aggregateFromTurns } from "./aggregates.js";
+import { aggregateFromTurns, buildLoopTiming } from "./aggregates.js";
 import { extractAssistantText } from "./ai/shared/messages.js";
 import { nessi } from "./nessi.js";
 import { memoryStore } from "./stores.js";
@@ -291,6 +291,16 @@ const directStructured = async <TOutput extends z.ZodType>(
   jsonSchema: JsonSchemaObject,
   loopId: string,
 ): Promise<StructuredResult<z.infer<TOutput>>> => {
+  const startedAt = Date.now();
+  let generationMs = 0;
+  const completeWithTiming = async (request: Parameters<typeof options.provider.complete>[0]) => {
+    const requestStartedAt = Date.now();
+    try {
+      return await options.provider.complete(request);
+    } finally {
+      generationMs += Math.max(0, Date.now() - requestStartedAt);
+    }
+  };
   const useResponseFormat = options.provider.capabilities.structuredOutput === true
     && isStrictNativeSchemaCompatible(jsonSchema);
   const responseFormat = useResponseFormat ? createResponseFormat(jsonSchema, options.outputName) : undefined;
@@ -302,7 +312,7 @@ const directStructured = async <TOutput extends z.ZodType>(
       ].join("\n\n");
 
   const attempts: GenerateResult[] = [];
-  const first = await options.provider.complete({
+  const first = await completeWithTiming({
     systemPrompt,
     messages: [inputMessage],
     responseFormat,
@@ -315,7 +325,7 @@ const directStructured = async <TOutput extends z.ZodType>(
 
   let parsed = parseStructuredOutput(options.output, textFromMessage(first.message));
   if (!parsed.ok) {
-    const repair = await options.provider.complete({
+    const repair = await completeWithTiming({
       systemPrompt: [
         options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
         schemaInstruction(jsonSchema, options.outputName),
@@ -336,6 +346,12 @@ const directStructured = async <TOutput extends z.ZodType>(
   }
 
   const aggregate = aggregateFromTurns(attempts.map(resultToTurn));
+  aggregate.timing = buildLoopTiming({
+    wallMs: Math.max(0, Date.now() - startedAt),
+    generationMs,
+    toolExecutionMs: 0,
+    actionWaitMs: 0,
+  }, aggregate.usage);
   if (!parsed.ok) {
     throw new StructuredOutputError("Provider returned invalid structured output.", "invalid_output", {
       attempts: attempts.length,

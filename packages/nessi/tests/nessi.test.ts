@@ -5,7 +5,7 @@ import { nessi } from "../src/nessi.js";
 import { defineTool } from "../src/tools.js";
 import { memoryStore } from "../src/stores.js";
 import { mockProvider, mockProviderMultiTurn } from "./mock-provider.js";
-import type { OutboundEvent, ProviderEvent, CreditStore, SessionStore, Usage } from "../src/types.js";
+import type { OutboundEvent, Provider, ProviderEvent, CreditStore, SessionStore, Usage } from "../src/types.js";
 
 // Helper: collect all events from a loop
 async function collectEvents(loop: ReturnType<typeof nessi>): Promise<OutboundEvent[]> {
@@ -354,6 +354,98 @@ describe("nessi core loop", () => {
       },
     ]);
     expect(done.aggregate?.turns[1]?.toolCalls).toEqual([]);
+  });
+
+  it("reports loop timing without counting action waits as generation or total elapsed", async () => {
+    const originalNow = Date.now;
+    let now = 0;
+    Date.now = () => now;
+
+    try {
+      const timedTool = defineTool({
+        name: "timed_danger",
+        description: "Needs approval and takes time",
+        inputSchema: z.object({ action: z.string() }),
+        outputSchema: z.object({ done: z.string() }),
+        needsApproval: true,
+      }).server(async (input) => {
+        now += 300;
+        return { done: input.action };
+      });
+
+      let streamCalls = 0;
+      const timedEvent = <T extends ProviderEvent>(ms: number, event: T): T => {
+        now += ms;
+        return event;
+      };
+      const provider: Provider = {
+        name: "timed-mock",
+        family: "openai-compatible",
+        model: "timed-mock",
+        capabilities: {
+          streaming: true,
+          tools: true,
+          images: true,
+          thinking: true,
+          usage: true,
+          structuredOutput: true,
+        },
+        async *stream() {
+          const callIndex = streamCalls++;
+          if (callIndex === 0) {
+            yield timedEvent(100, {
+              type: "block_end",
+              blockId: "tool-1",
+              index: 0,
+              block: { type: "tool_call", id: "c1", name: "timed_danger", args: { action: "delete" } },
+            });
+            yield timedEvent(50, { type: "usage", usage: { input: 10, output: 5, total: 15 } });
+            return;
+          }
+          yield timedEvent(250, {
+            type: "block_end",
+            blockId: "text-1",
+            index: 0,
+            block: { type: "text", text: "Done." },
+          });
+          yield timedEvent(100, { type: "usage", usage: { input: 20, output: 10, total: 30 } });
+        },
+        complete(request) {
+          return completeFromStream(provider, request);
+        },
+      };
+
+      const loop = nessi({
+        provider,
+        systemPrompt: "test",
+        store: memoryStore(),
+        tools: [timedTool],
+        input: "Do timed work",
+      });
+
+      const events: OutboundEvent[] = [];
+      for await (const event of loop) {
+        events.push(event);
+        if (event.type === "tool_action_request" && event.kind === "approval") {
+          now += 500;
+          loop.push({ type: "approval_response", callId: event.callId, approved: true });
+        } else {
+          now += 25;
+        }
+      }
+
+      const done = events.find((event) => event.type === "loop_end") as Extract<OutboundEvent, { type: "loop_end" }>;
+      expect(done.aggregate.timing).toEqual({
+        wallMs: 1575,
+        totalElapsedMs: 800,
+        generationMs: 500,
+        toolExecutionMs: 300,
+        actionWaitMs: 500,
+        outputTokensPerSecond: 30,
+      });
+    } finally {
+      Date.now = originalNow;
+    }
   });
 
   it("stores the provider model name on assistant messages", async () => {

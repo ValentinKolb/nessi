@@ -5,6 +5,7 @@
 import type {
   LoopAggregate,
   LoopIssueAggregate,
+  LoopTimingAggregate,
   LoopToolCallAggregate,
   LoopToolIssueAggregate,
   LoopTurnAggregate,
@@ -36,6 +37,47 @@ const cloneToolIssue = (toolIssue: LoopToolIssueAggregate): LoopToolIssueAggrega
 
 const cloneIssue = (issue: LoopIssueAggregate): LoopIssueAggregate => ({ ...issue });
 
+const cloneTiming = (timing: LoopTimingAggregate | undefined): LoopTimingAggregate | undefined =>
+  timing
+    ? {
+        ...timing,
+        totalElapsedMs: timing.totalElapsedMs ?? timing.generationMs + timing.toolExecutionMs,
+      }
+    : undefined;
+
+const outputTokensPerSecond = (usage: Usage | undefined, generationMs: number): number | undefined => {
+  if (!usage || usage.output <= 0 || generationMs <= 0) return undefined;
+  return usage.output / (generationMs / 1000);
+}
+
+export const buildLoopTiming = (
+  timing: Pick<LoopTimingAggregate, "wallMs" | "generationMs" | "toolExecutionMs" | "actionWaitMs">,
+  usage: Usage | undefined,
+): LoopTimingAggregate => {
+  const snapshot: LoopTimingAggregate = {
+    ...timing,
+    totalElapsedMs: timing.generationMs + timing.toolExecutionMs,
+  };
+  const throughput = outputTokensPerSecond(usage, timing.generationMs);
+  if (throughput !== undefined) snapshot.outputTokensPerSecond = throughput;
+  return snapshot;
+}
+
+const mergeTiming = (
+  left: LoopTimingAggregate | undefined,
+  right: LoopTimingAggregate | undefined,
+  usage: Usage | undefined,
+): LoopTimingAggregate | undefined => {
+  if (!left && !right) return undefined;
+  const generationMs = (left?.generationMs ?? 0) + (right?.generationMs ?? 0);
+  return buildLoopTiming({
+    wallMs: (left?.wallMs ?? 0) + (right?.wallMs ?? 0),
+    generationMs,
+    toolExecutionMs: (left?.toolExecutionMs ?? 0) + (right?.toolExecutionMs ?? 0),
+    actionWaitMs: (left?.actionWaitMs ?? 0) + (right?.actionWaitMs ?? 0),
+  }, usage);
+}
+
 const toolIssuesFromAggregate = (aggregate: LoopAggregate): LoopToolIssueAggregate[] =>
   (aggregate.toolIssues ?? aggregate.turns.flatMap((turn) => turn.toolIssues ?? [])).map(cloneToolIssue);
 
@@ -54,6 +96,7 @@ const cloneTurn = (turn: LoopTurnAggregate): LoopTurnAggregate => ({
 export const aggregateFromTurns = (
   turns: LoopTurnAggregate[],
   loopIssues: LoopIssueAggregate[] = [],
+  timing?: LoopTimingAggregate,
 ): LoopAggregate => {
   const clonedTurns = turns.map(cloneTurn);
   const issues = loopIssues.length > 0
@@ -62,9 +105,11 @@ export const aggregateFromTurns = (
   const toolIssues = issues.filter((issue): issue is LoopToolIssueAggregate =>
     issue.kind === "malformed_tool_call" || issue.kind === "cancelled_tool_call",
   );
+  const usage = clonedTurns.reduce((mergedUsage, turn) => mergeUsage(mergedUsage, turn.usage), undefined as Usage | undefined);
   return {
     turns: clonedTurns,
-    usage: clonedTurns.reduce((usage, turn) => mergeUsage(usage, turn.usage), undefined as Usage | undefined),
+    usage,
+    ...(timing ? { timing: cloneTiming(timing) } : {}),
     issueCount: issues.length,
     issues: issues.map(cloneIssue),
     toolCallCount: clonedTurns.reduce((count, turn) => count + turn.toolCalls.length, 0),
@@ -87,6 +132,7 @@ export const cloneLoopAggregate = (aggregate: LoopAggregate): LoopAggregate => {
   return {
     turns,
     usage: cloneUsage(aggregate.usage),
+    ...(aggregate.timing ? { timing: cloneTiming(aggregate.timing) } : {}),
     issueCount: aggregate.issueCount ?? issues.length,
     issues,
     toolCallCount: aggregate.toolCallCount,
@@ -105,8 +151,10 @@ export const mergeLoopAggregates = (
 ): LoopAggregate | undefined => {
   if (!left) return right ? cloneLoopAggregate(right) : undefined;
   if (!right) return cloneLoopAggregate(left);
-  return aggregateFromTurns(
+  const merged = aggregateFromTurns(
     [...left.turns, ...right.turns],
     [...issuesFromAggregate(left), ...issuesFromAggregate(right)],
   );
+  const timing = mergeTiming(left.timing, right.timing, merged.usage);
+  return timing ? { ...merged, timing } : merged;
 }

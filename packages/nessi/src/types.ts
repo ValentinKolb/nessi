@@ -127,9 +127,19 @@ export type LoopTurnAggregate = {
   issues?: LoopIssueAggregate[];
 };
 
+export type LoopTimingAggregate = {
+  wallMs: number;
+  totalElapsedMs: number;
+  generationMs: number;
+  toolExecutionMs: number;
+  actionWaitMs: number;
+  outputTokensPerSecond?: number;
+};
+
 export type LoopAggregate = {
   turns: LoopTurnAggregate[];
   usage?: Usage;
+  timing?: LoopTimingAggregate;
   issueCount: number;
   issues: LoopIssueAggregate[];
   toolCallCount: number;

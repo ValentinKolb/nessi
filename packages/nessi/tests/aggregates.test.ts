@@ -30,6 +30,14 @@ describe("loop aggregate helpers", () => {
         },
       ],
       usage: { input: 1, output: 2, total: 3 },
+      timing: {
+        wallMs: 1000,
+        totalElapsedMs: 700,
+        generationMs: 500,
+        toolExecutionMs: 200,
+        actionWaitMs: 300,
+        outputTokensPerSecond: 4,
+      },
       issueCount: 1,
       toolCallCount: 1,
       toolErrorCount: 0,
@@ -62,12 +70,14 @@ describe("loop aggregate helpers", () => {
 
     clone.turns[0]!.toolCalls[0]!.result = "changed";
     clone.toolIssues[0]!.message = "changed";
+    clone.timing!.generationMs = 999;
 
     expect(aggregate.turns[0]!.toolCalls[0]!.result).toBe("hello");
     expect(aggregate.toolIssues[0]!.message).toBe("bad stream");
+    expect(aggregate.timing!.generationMs).toBe(500);
   });
 
-  it("clones legacy loop aggregates without tool issue fields", () => {
+  it("clones legacy loop aggregates without tool issue or total timing fields", () => {
     const legacyAggregate = {
       turns: [
         {
@@ -78,6 +88,12 @@ describe("loop aggregate helpers", () => {
         },
       ],
       usage: { input: 1, output: 2, total: 3 },
+      timing: {
+        wallMs: 100,
+        generationMs: 20,
+        toolExecutionMs: 30,
+        actionWaitMs: 50,
+      },
       toolCallCount: 0,
       toolErrorCount: 0,
       assistantMessageCount: 1,
@@ -89,6 +105,7 @@ describe("loop aggregate helpers", () => {
     expect(clone.toolMalformedCount).toBe(0);
     expect(clone.toolCancelledCount).toBe(0);
     expect(clone.toolIssues).toEqual([]);
+    expect(clone.timing?.totalElapsedMs).toBe(50);
   });
 
   it("merges loop aggregates from their turns", () => {
@@ -102,6 +119,14 @@ describe("loop aggregate helpers", () => {
         },
       ],
       usage: { input: 10, output: 5, total: 15, cacheRead: 3 },
+      timing: {
+        wallMs: 1000,
+        totalElapsedMs: 600,
+        generationMs: 400,
+        toolExecutionMs: 200,
+        actionWaitMs: 300,
+        outputTokensPerSecond: 12.5,
+      },
       issueCount: 0,
       issues: [],
       toolCallCount: 1,
@@ -122,6 +147,14 @@ describe("loop aggregate helpers", () => {
         },
       ],
       usage: { input: 20, output: 6, total: 26, creditsUsed: 2 },
+      timing: {
+        wallMs: 2000,
+        totalElapsedMs: 900,
+        generationMs: 600,
+        toolExecutionMs: 300,
+        actionWaitMs: 500,
+        outputTokensPerSecond: 10,
+      },
       issueCount: 1,
       toolCallCount: 1,
       toolErrorCount: 1,
@@ -162,6 +195,14 @@ describe("loop aggregate helpers", () => {
       total: 41,
       cacheRead: 3,
       creditsUsed: 2,
+    });
+    expect(merged?.timing).toEqual({
+      wallMs: 3000,
+      totalElapsedMs: 1500,
+      generationMs: 1000,
+      toolExecutionMs: 500,
+      actionWaitMs: 800,
+      outputTokensPerSecond: 11,
     });
   });
 });

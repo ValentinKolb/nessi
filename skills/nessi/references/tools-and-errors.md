@@ -16,8 +16,8 @@ debug output:
 - `loop_end.aggregate` reports the complete logical loop after all internal turns.
 
 Use `loop_end.aggregate` when the app needs one user-visible response group,
-aggregate usage, loop-level tool counts, persisted tool execution errors, or
-malformed/cancelled tool-stream metadata:
+aggregate usage, loop timing, loop-level tool counts, persisted tool execution
+errors, or malformed/cancelled tool-stream metadata:
 
 ```ts
 const loop = nessi({
@@ -36,6 +36,7 @@ for await (const event of loop) {
       loopId: event.loopId,
       reason: event.reason,
       usage: aggregate.usage,
+      timing: aggregate.timing,
       turns: aggregate.turns,
       issueCount: aggregate.issueCount,
       issues: aggregate.issues,

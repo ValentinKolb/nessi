@@ -9,6 +9,7 @@ import type {
   DoneReason,
   InboundEvent,
   LoopIssueAggregate,
+  LoopTimingAggregate,
   LoopToolCallAggregate,
   LoopToolIssueAggregate,
   LoopTurnAggregate,
@@ -26,7 +27,7 @@ import type {
   Usage,
   UserMessage,
 } from "./types.js";
-import { aggregateFromTurns, cloneUsage } from "./aggregates.js";
+import { aggregateFromTurns, buildLoopTiming, cloneUsage } from "./aggregates.js";
 import { appendAssistantContentBlock, buildAssistantMessageFromContent } from "./ai/shared/messages.js";
 import { toolToSpec } from "./tools.js";
 import { createLoopId, estimateTokens, toErrorMessage, truncateToolResults, zeroUsage } from "./utils.js";
@@ -438,7 +439,35 @@ export const nessi = (options: NessiOptions): NessiLoop => {
   const loopTurns: LoopTurnAggregate[] = [];
   const loopIssues: LoopIssueAggregate[] = [];
   const loopId = requestedLoopId?.trim() ? requestedLoopId : createLoopId();
-  const snapshotAggregate = () => aggregateFromTurns(loopTurns, loopIssues);
+  const timing: LoopTimingAccumulator = {
+    generationMs: 0,
+    toolExecutionMs: 0,
+    actionWaitMs: 0,
+  };
+  const measureGeneration = async <T>(run: () => Promise<T>): Promise<T> => {
+    const startedAt = nowMs();
+    try {
+      return await run();
+    } finally {
+      timing.generationMs += elapsedSince(startedAt);
+    }
+  };
+  const waitForActionResponse = async <T>(startedAt: number | undefined, run: () => Promise<T>): Promise<T> => {
+    try {
+      return await run();
+    } finally {
+      if (startedAt !== undefined) timing.actionWaitMs += elapsedSince(startedAt);
+    }
+  };
+  const recordToolExecution = (startedAt: number, actionWaitMsAtStart: number) => {
+    const elapsedMs = elapsedSince(startedAt);
+    const nestedActionWaitMs = Math.max(0, timing.actionWaitMs - actionWaitMsAtStart);
+    timing.toolExecutionMs += Math.max(0, elapsedMs - nestedActionWaitMs);
+  };
+  const snapshotAggregate = () => {
+    const aggregate = aggregateFromTurns(loopTurns, loopIssues);
+    return { ...aggregate, timing: snapshotTiming(timing, aggregate.usage) };
+  };
 
   const loopEndEvent = (reason: DoneReason): Extract<OutboundEvent, { type: "loop_end" }> => ({
     type: "loop_end",
@@ -563,8 +592,30 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       name: tc.name,
       result,
       isError: true,
-    };
-  }
+  };
+}
+
+type LoopTimingAccumulator = {
+  loopStartedAt?: number;
+  generationMs: number;
+  toolExecutionMs: number;
+  actionWaitMs: number;
+};
+
+const nowMs = () => Date.now();
+
+const elapsedSince = (startedAt: number) => Math.max(0, nowMs() - startedAt);
+
+const snapshotTiming = (
+  timing: LoopTimingAccumulator,
+  usage: Usage | undefined,
+): LoopTimingAggregate =>
+  buildLoopTiming({
+    wallMs: timing.loopStartedAt === undefined ? 0 : elapsedSince(timing.loopStartedAt),
+    generationMs: timing.generationMs,
+    toolExecutionMs: timing.toolExecutionMs,
+    actionWaitMs: timing.actionWaitMs,
+  }, usage);
 
   async function* executeToolCall(
     tc: ToolCallBlock,
@@ -608,7 +659,9 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     if (tool.kind === "client") {
       const matchesToolResult = (event: InboundEvent): event is Extract<InboundEvent, { type: "tool_result" }> =>
         event.type === "tool_result" && event.callId === tc.id;
+      let actionWaitStartedAt: number | undefined;
       if (!hasBufferedInbound(matchesToolResult)) {
+        actionWaitStartedAt = nowMs();
         yield {
           type: "tool_action_request",
           ...eventFields,
@@ -619,7 +672,9 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         };
       }
 
-      const pulled = await withTimeout((signal) => pullMatching(matchesToolResult, signal), timeoutMs, () => {});
+      const pulled = await waitForActionResponse(actionWaitStartedAt, () =>
+        withTimeout((signal) => pullMatching(matchesToolResult, signal), timeoutMs, () => {}),
+      );
       if (!pulled.ok) {
         const issue = timeoutIssue();
         const result = issueToToolResult(issue);
@@ -659,7 +714,9 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     if (tool.def.needsApproval) {
       const matchesApproval = (event: InboundEvent): event is Extract<InboundEvent, { type: "approval_response" }> =>
         event.type === "approval_response" && event.callId === tc.id;
+      let actionWaitStartedAt: number | undefined;
       if (!hasBufferedInbound(matchesApproval)) {
+        actionWaitStartedAt = nowMs();
         yield {
           type: "tool_action_request",
           ...eventFields,
@@ -669,7 +726,9 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           args: validatedInput,
         };
       }
-      const pulled = await withTimeout((signal) => pullMatching(matchesApproval, signal), timeoutMs, () => {});
+      const pulled = await waitForActionResponse(actionWaitStartedAt, () =>
+        withTimeout((signal) => pullMatching(matchesApproval, signal), timeoutMs, () => {}),
+      );
       if (!pulled.ok) {
         const issue = timeoutIssue();
         const result = issueToToolResult(issue);
@@ -697,6 +756,14 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     if (signal.aborted) abortTool();
     else signal.addEventListener("abort", abortTool, { once: true });
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const toolStartedAt = nowMs();
+    const actionWaitMsAtToolStart = timing.actionWaitMs;
+    let toolExecutionRecorded = false;
+    const finishToolExecution = () => {
+      if (toolExecutionRecorded) return;
+      toolExecutionRecorded = true;
+      recordToolExecution(toolStartedAt, actionWaitMsAtToolStart);
+    };
 
     try {
       const approvalQueue: Array<{ id: string; message: string; resolve: (approved: boolean) => void }> = [];
@@ -766,6 +833,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           updateAggregateToolCall(tc.id, { result: timeoutResult, isError: true });
           recordIssue(issue, turnIssues);
           yield issueEvent(issue, turnCtx);
+          finishToolExecution();
           yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: timeoutResult, isError: true };
           return;
         }
@@ -780,7 +848,9 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           const req = approvalQueue.shift()!;
           const matchesCustomApproval = (event: InboundEvent): event is Extract<InboundEvent, { type: "approval_response" }> =>
             event.type === "approval_response" && event.callId === req.id;
+          let actionWaitStartedAt: number | undefined;
           if (!hasBufferedInbound(matchesCustomApproval)) {
+            actionWaitStartedAt = nowMs();
             yield {
               type: "tool_action_request",
               ...eventFields,
@@ -791,10 +861,12 @@ export const nessi = (options: NessiOptions): NessiLoop => {
               message: req.message,
             };
           }
-          const response = await withTimeout(
-            (signal) => pullMatching(matchesCustomApproval, signal),
-            timeoutMs,
-            () => toolAbort.abort(),
+          const response = await waitForActionResponse(actionWaitStartedAt, () =>
+            withTimeout(
+              (signal) => pullMatching(matchesCustomApproval, signal),
+              timeoutMs,
+              () => toolAbort.abort(),
+            ),
           );
           if (!response.ok) {
             const issue = timeoutIssue();
@@ -803,6 +875,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
             updateAggregateToolCall(tc.id, { result: timeoutResult, isError: true });
             recordIssue(issue, turnIssues);
             yield issueEvent(issue, turnCtx);
+            finishToolExecution();
             yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: timeoutResult, isError: true };
             return;
           }
@@ -836,7 +909,9 @@ export const nessi = (options: NessiOptions): NessiLoop => {
 
           const matchesClientResult = (event: InboundEvent): event is Extract<InboundEvent, { type: "tool_result" }> =>
             event.type === "tool_result" && event.callId === req.id;
+          let actionWaitStartedAt: number | undefined;
           if (!hasBufferedInbound(matchesClientResult)) {
+            actionWaitStartedAt = nowMs();
             yield {
               type: "tool_action_request",
               ...eventFields,
@@ -846,10 +921,12 @@ export const nessi = (options: NessiOptions): NessiLoop => {
               args: requestArgs,
             };
           }
-          const response = await withTimeout(
-            (signal) => pullMatching(matchesClientResult, signal),
-            timeoutMs,
-            () => toolAbort.abort(),
+          const response = await waitForActionResponse(actionWaitStartedAt, () =>
+            withTimeout(
+              (signal) => pullMatching(matchesClientResult, signal),
+              timeoutMs,
+              () => toolAbort.abort(),
+            ),
           );
           if (!response.ok) {
             const issue = timeoutIssue();
@@ -858,6 +935,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
             updateAggregateToolCall(tc.id, { result: timeoutResult, isError: true });
             recordIssue(issue, turnIssues);
             yield issueEvent(issue, turnCtx);
+            finishToolExecution();
             yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: timeoutResult, isError: true };
             return;
           }
@@ -892,6 +970,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
           updateAggregateToolCall(tc.id, { result: output, isError: true });
           recordIssue(issue, turnIssues);
           yield issueEvent(issue, turnCtx);
+          finishToolExecution();
           yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: output, isError: true };
           return;
         }
@@ -899,6 +978,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
 
       await appendToolResult(tc.id, tc.name, result);
       updateAggregateToolCall(tc.id, { result });
+      finishToolExecution();
       yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result };
     } catch (error) {
       if (error instanceof LoopAbortedError || signal.aborted) throw error;
@@ -910,8 +990,10 @@ export const nessi = (options: NessiOptions): NessiLoop => {
       updateAggregateToolCall(tc.id, { result, isError: true });
       recordIssue(issue, turnIssues);
       yield issueEvent(issue, turnCtx);
+      finishToolExecution();
       yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result, isError: true };
     } finally {
+      finishToolExecution();
       if (timeoutHandle) clearTimeout(timeoutHandle);
       signal.removeEventListener("abort", abortTool);
     }
@@ -989,6 +1071,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     let eventTurnIndex = 0;
     let compactionRetried = false;
 
+    timing.loopStartedAt = nowMs();
     yield { type: "loop_start", agentId, loopId };
 
     try {
@@ -1091,7 +1174,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
         };
 
         try {
-          streamLoop: for await (const event of provider.stream({
+          const providerIterator = provider.stream({
             systemPrompt,
             messages,
             tools: tools.map(toolToSpec),
@@ -1099,72 +1182,80 @@ export const nessi = (options: NessiOptions): NessiLoop => {
             maxOutputTokens,
             disableReasoning,
             signal,
-          })) {
-            if (signal.aborted) break;
+          })[Symbol.asyncIterator]();
+          try {
+            streamLoop: while (true) {
+              const next = await measureGeneration(() => providerIterator.next());
+              if (next.done) break;
+              const event = next.value;
+              if (signal.aborted) break;
 
-            switch (event.type) {
-              case "block_start":
-                if (event.kind === "text" || event.kind === "thinking") {
-                  openBlocks.set(event.blockId, { index: event.index, kind: event.kind, text: "" });
-                }
-                yield { ...event, ...eventFields };
-                break;
+              switch (event.type) {
+                case "block_start":
+                  if (event.kind === "text" || event.kind === "thinking") {
+                    openBlocks.set(event.blockId, { index: event.index, kind: event.kind, text: "" });
+                  }
+                  yield { ...event, ...eventFields };
+                  break;
 
-              case "block_delta": {
-                const open = openBlocks.get(event.blockId);
-                if (open) open.text += event.delta;
-                yield { ...event, ...eventFields };
-                break;
-              }
-
-              case "block_end":
-                openBlocks.delete(event.blockId);
-                appendAssistantContentBlock(assistantBlocks, event.block);
-                if (event.block.type === "tool_call") {
-                  toolCalls.push(event.block);
-                  stopReason = "tool_use";
-                }
-                yield { ...event, ...eventFields };
-                break;
-
-              case "usage":
-                turnUsage = event.usage;
-                turnUsageReported = true;
-                stopReason = event.finishReason ?? stopReason;
-                yield { ...event, ...eventFields };
-                break;
-
-              case "issue":
-                recordIssue(event.issue, turnIssues);
-                yield issueEvent(event.issue, turnCtx);
-                if (event.issue.kind === "provider_error" && event.issue.contextOverflow) {
-                  hadContextOverflow = true;
-                  overflowRatio = event.issue.overflowRatio;
+                case "block_delta": {
+                  const open = openBlocks.get(event.blockId);
+                  if (open) open.text += event.delta;
+                  yield { ...event, ...eventFields };
                   break;
                 }
-                if (
-                  event.issue.kind === "provider_error"
-                  || (event.issue.kind === "timeout" && event.issue.scope !== "tool")
-                  || event.issue.kind === "runtime_error"
-                ) {
-                  providerFailure = event.issue;
+
+                case "block_end":
+                  openBlocks.delete(event.blockId);
+                  appendAssistantContentBlock(assistantBlocks, event.block);
+                  if (event.block.type === "tool_call") {
+                    toolCalls.push(event.block);
+                    stopReason = "tool_use";
+                  }
+                  yield { ...event, ...eventFields };
+                  break;
+
+                case "usage":
+                  turnUsage = event.usage;
+                  turnUsageReported = true;
+                  stopReason = event.finishReason ?? stopReason;
+                  yield { ...event, ...eventFields };
+                  break;
+
+                case "issue":
+                  recordIssue(event.issue, turnIssues);
+                  yield issueEvent(event.issue, turnCtx);
+                  if (event.issue.kind === "provider_error" && event.issue.contextOverflow) {
+                    hadContextOverflow = true;
+                    overflowRatio = event.issue.overflowRatio;
+                    break;
+                  }
+                  if (
+                    event.issue.kind === "provider_error"
+                    || (event.issue.kind === "timeout" && event.issue.scope !== "tool")
+                    || event.issue.kind === "runtime_error"
+                  ) {
+                    providerFailure = event.issue;
+                    break streamLoop;
+                  }
+                  break;
+
+                default: {
+                  const unsupported = event as { type?: unknown };
+                  const issue: NessiIssue = {
+                    kind: "runtime_error",
+                    message: `Unsupported provider event type: ${String(unsupported.type)}`,
+                    retryable: false,
+                  };
+                  recordIssue(issue, turnIssues);
+                  yield issueEvent(issue, turnCtx);
+                  providerFailure = issue;
                   break streamLoop;
                 }
-                break;
-
-              default: {
-                const unsupported = event as { type?: unknown };
-                const issue: NessiIssue = {
-                  kind: "runtime_error",
-                  message: `Unsupported provider event type: ${String(unsupported.type)}`,
-                  retryable: false,
-                };
-                recordIssue(issue, turnIssues);
-                yield issueEvent(issue, turnCtx);
-                providerFailure = issue;
-                break streamLoop;
               }
             }
+          } finally {
+            await providerIterator.return?.();
           }
         } catch (error) {
           if (signal.aborted) {

@@ -139,6 +139,7 @@ for await (const event of loop) {
       break;
     case "loop_end":
       console.error(event.aggregate.usage);
+      console.error(event.aggregate.timing);
       break;
   }
 }
@@ -210,6 +211,23 @@ type Usage = {
 ```
 
 If the provider was configured with `creditsPerInputToken` and `creditsPerOutputToken`, `creditsUsed` is attached when usage is available.
+
+Loop aggregates also include timing:
+
+```ts
+type LoopTimingAggregate = {
+  wallMs: number;
+  totalElapsedMs: number; // generationMs + toolExecutionMs
+  generationMs: number;
+  toolExecutionMs: number;
+  actionWaitMs: number;
+  outputTokensPerSecond?: number;
+};
+```
+
+Use `generationMs` and `outputTokensPerSecond` for model throughput. Use
+`actionWaitMs` separately for approval/client-tool waits; those waits are not
+part of `totalElapsedMs`.
 
 ## Abort and output budget
 

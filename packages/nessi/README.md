@@ -51,13 +51,14 @@ for await (const event of loop) {
   if (event.type === "loop_end") {
     console.log(event.loopId);
     console.log(event.aggregate.usage);
+    console.log(event.aggregate.timing);
   }
 }
 ```
 
 Every outbound event from one `nessi()` run carries the same `loopId`. Pass your own `loopId` to align events with a persisted request or UI response group, or let Nessi generate one when omitted.
 
-`turn_end` reports each internal provider turn. The final `loop_end` event includes `aggregate`, which groups assistant turns, executable tool calls, tool results, validation/execution errors, malformed or cancelled tool streams, and summed usage for the complete logical loop. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are available from `@valentinkolb/nessi`.
+`turn_end` reports each internal provider turn. The final `loop_end` event includes `aggregate`, which groups assistant turns, executable tool calls, tool results, validation/execution errors, malformed or cancelled tool streams, summed usage, and timing for the complete logical loop. `aggregate.timing.totalElapsedMs` is model generation plus active tool execution; approval/client-tool waits are tracked separately as `aggregate.timing.actionWaitMs`. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are available from `@valentinkolb/nessi`.
 
 ## Structured output
 
@@ -154,6 +155,7 @@ import { openai } from "@valentinkolb/nessi/ai/providers/openai";
 - Turn-based agent loop with canonical block streaming events
 - Stable `loopId` correlation across all events from one agent loop
 - `loop_start`, `turn_start`, `turn_end`, and `loop_end.aggregate` for logical response grouping
+- Loop timing metadata for wall time, generation time, active tool time, action wait time, and output tokens/second
 - `nessi.structured()` for typed schema-valid task results
 - Server tools and client tools
 - Tool approval flow and explicit `tool_action_request` events

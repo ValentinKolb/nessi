@@ -118,6 +118,41 @@ describe("nessi.structured", () => {
     expect(result.aggregate.assistantMessageCount).toBe(2);
   });
 
+  it("adds timing metadata to direct structured aggregates", async () => {
+    const originalNow = Date.now;
+    let now = 100;
+    Date.now = () => now;
+
+    try {
+      const { provider } = completeProvider(["{\"title\":\"Launch\",\"count\":2}"], true);
+      const baseComplete = provider.complete;
+      provider.complete = async (request) => {
+        now += 250;
+        return baseComplete(request);
+      };
+
+      const result = await nessi.structured({
+        provider,
+        input: "Extract the card.",
+        output: z.object({
+          title: z.string(),
+          count: z.number(),
+        }),
+      });
+
+      expect(result.aggregate.timing).toEqual({
+        wallMs: 250,
+        totalElapsedMs: 250,
+        generationMs: 250,
+        toolExecutionMs: 0,
+        actionWaitMs: 0,
+        outputTokensPerSecond: 4,
+      });
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
   it("falls back when a native provider receives a schema outside strict native constraints", async () => {
     const { provider, requests } = completeProvider([
       "{\"title\":\"Launch\"}",

@@ -38,7 +38,8 @@ Read only the references needed for the task:
 - Stream by iterating events and switching on `event.type`.
 - For root `nessi()` loops, pass an application-level `loopId` when the app already has a request/response group id; otherwise use the generated `event.loopId` that appears on every outbound event.
 - For root `nessi()` loops, pass `temperature`, `maxOutputTokens`, and `disableReasoning` at the top level when the app has a default generation policy for the whole loop.
-- For root `nessi()` loops, use `event.type === "loop_end"` plus `event.aggregate` for one logical response group, aggregate usage, loop-level stats, assistant turn count, tool calls, tool results, validation/execution errors, and malformed/cancelled tool-stream issues across multi-turn tool loops.
+- For root `nessi()` loops, use `event.type === "loop_end"` plus `event.aggregate` for one logical response group, aggregate usage, timing, loop-level stats, assistant turn count, tool calls, tool results, validation/execution errors, and malformed/cancelled tool-stream issues across multi-turn tool loops.
+- Treat `event.aggregate.timing.totalElapsedMs` as generation plus active tool execution time; it intentionally excludes `actionWaitMs` for approval/client-tool waits. Use `timing.generationMs` for output-token throughput via `timing.outputTokensPerSecond`.
 - For `nessi.structured()`, require a Zod `output` schema and return `result.output`; use `result.structuredMeta` and `result.aggregate` for diagnostics.
 - For `nessi.structured()` with tools, only pass server tools that do not need approval. Use full `nessi()` for client tools, approvals, or custom interactive tool bridges.
 - For provider-only structured output, pass `responseFormat` to `provider.complete()` only when the user explicitly needs the low-level provider request. Prefer `nessi.structured()` for consumer code that needs validated typed output.
@@ -158,6 +159,7 @@ for await (const event of loop) {
     console.log(event.loopId);
     console.log(event.reason);
     console.log(event.aggregate.usage);
+    console.log(event.aggregate.timing);
     console.log(event.aggregate.toolErrorCount);
     console.log(event.aggregate.toolMalformedCount);
   }

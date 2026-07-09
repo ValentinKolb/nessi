@@ -91,6 +91,7 @@ for await (const event of loop) {
     console.error("loop id", event.loopId);
     console.error("finish", event.reason);
     console.error("loop usage", event.aggregate.usage);
+    console.error("loop timing", event.aggregate.timing);
   }
 }
 ```
@@ -101,7 +102,7 @@ generated `event.loopId` if omitted.
 
 `turn_end` is emitted for each internal provider turn. A single user request
 with tools can have multiple internal turns. Use the final `loop_end.aggregate`
-for one logical response group, aggregate usage, assistant-turn count,
+for one logical response group, aggregate usage, timing, assistant-turn count,
 tool-call count, tool-error count, and structured issues:
 
 ```ts
@@ -113,8 +114,13 @@ if (event.type === "loop_end") {
   console.log(aggregate.toolIssues);
   console.log(aggregate.issues);
   console.log(aggregate.usage);
+  console.log(aggregate.timing);
 }
 ```
+
+`aggregate.timing.totalElapsedMs` is `generationMs + toolExecutionMs`; it
+excludes `actionWaitMs` for approval/client-tool waits. `outputTokensPerSecond`
+is based on output tokens divided by `generationMs`, not wall time.
 
 If your app persists chat UI state, persist the `loop_end.aggregate` payload with
 `event.loopId` on your response group. Nessi owns the generic loop semantics;
