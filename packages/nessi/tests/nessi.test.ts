@@ -1998,6 +1998,84 @@ describe("nessi core loop", () => {
     expect(done.reason).toBe("stop");
   });
 
+  it("estimates compaction pressure after historical projection and tool-result truncation", async () => {
+    const store = memoryStore();
+    await store.append({
+      role: "assistant",
+      content: [{ type: "tool_call", id: "large-1", name: "large", args: {} }],
+    });
+    await store.append({
+      role: "tool_result",
+      callId: "large-1",
+      name: "large",
+      result: `FULL:${"f".repeat(10_000)}`,
+      historicalResult: { originLoopId: "old-loop", value: `HISTORY:${"h".repeat(100)}` },
+    });
+    let compactCtx: { force: boolean; fillRatio?: number } | null = null;
+
+    await collectEvents(nessi({
+      loopId: "new-loop",
+      provider: mockProvider(
+        [
+          { type: "text", delta: "OK" },
+          { type: "usage", usage: { input: 100, output: 5, total: 105 } },
+        ],
+        { contextWindow: 1_000 },
+      ),
+      systemPrompt: "test",
+      store,
+      maxToolResultChars: 80,
+      compact(ctx) {
+        compactCtx = { force: ctx.force, fillRatio: ctx.fillRatio };
+        return null;
+      },
+      input: "Continue",
+    }));
+
+    expect(compactCtx).not.toBeNull();
+    expect(compactCtx!.force).toBe(false);
+    expect(compactCtx!.fillRatio).toBeLessThan(0.5);
+  });
+
+  it("does not treat prior output tokens as input context pressure", async () => {
+    const compactCalls: Array<{ force: boolean; fillRatio?: number }> = [];
+    const tool = defineTool({
+      name: "small_tool",
+      description: "Return a small result",
+      inputSchema: z.object({}),
+      outputSchema: z.object({ ok: z.boolean() }),
+    }).server(async () => ({ ok: true }));
+    const provider = mockProviderMultiTurn(
+      (_request, callIndex) => callIndex === 0
+        ? [
+            { type: "tool_start", callId: "small-1", name: "small_tool" },
+            { type: "tool_call", callId: "small-1", name: "small_tool", args: {} },
+            { type: "usage", usage: { input: 20, output: 900, total: 920 } },
+          ]
+        : [
+            { type: "text", delta: "Done" },
+            { type: "usage", usage: { input: 80, output: 5, total: 85 } },
+          ],
+      { contextWindow: 1_000 },
+    );
+
+    await collectEvents(nessi({
+      provider,
+      systemPrompt: "test",
+      store: memoryStore(),
+      tools: [tool],
+      compact(ctx) {
+        compactCalls.push({ force: ctx.force, fillRatio: ctx.fillRatio });
+        return null;
+      },
+      input: "Run it",
+    }));
+
+    expect(compactCalls).toHaveLength(2);
+    expect(compactCalls[1]?.force).toBe(false);
+    expect(compactCalls[1]?.fillRatio).toBeLessThan(0.85);
+  });
+
   it("context overflow error includes overflowRatio from provider", async () => {
     const events = await collectEvents(
       nessi({

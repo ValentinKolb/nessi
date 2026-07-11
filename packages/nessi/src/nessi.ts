@@ -1137,6 +1137,14 @@ const snapshotTiming = (
     let providerTurn = 0;
     let eventTurnIndex = 0;
     let compactionRetried = false;
+    const providerTools = tools.map(toolToSpec);
+    const prepareProviderMessages = (sourceEntries: StoreEntry[]): Message[] => {
+      const rawMessages = sourceEntries.map((entry) => entry.message);
+      const projectedMessages = projectHistoricalToolResults(rawMessages, loopId);
+      return typeof maxToolResultChars === "number"
+        ? truncateToolResults(projectedMessages, maxToolResultChars)
+        : projectedMessages;
+    };
 
     timing.loopStartedAt = nowMs();
     yield { type: "loop_start", agentId, loopId };
@@ -1184,15 +1192,17 @@ const snapshotTiming = (
         }
 
         let entries = await store.load();
+        let messages = prepareProviderMessages(entries);
         const contextWindow = provider.contextWindow;
-        const computeFillRatio = (messages: Message[]) => {
+        const computeFillRatio = (providerMessages: Message[]) => {
           if (typeof contextWindow !== "number" || contextWindow <= 0) return undefined;
-          const tokens = lastUsage.total > 0 ? lastUsage.total : estimateTokens(messages);
+          const estimatedTokens = Math.ceil(JSON.stringify({ systemPrompt, messages: providerMessages, tools: providerTools }).length / 4);
+          const tokens = lastUsage.input > 0 ? Math.max(lastUsage.input, estimatedTokens) : estimatedTokens;
           return tokens / contextWindow;
         };
 
         if (compact && !compactionRetried) {
-          const fillRatio = computeFillRatio(entries.map((entry) => entry.message));
+          const fillRatio = computeFillRatio(messages);
           const shouldForce = typeof fillRatio === "number" && fillRatio >= 0.85;
           const compaction = compact({
             entries,
@@ -1205,14 +1215,9 @@ const snapshotTiming = (
           if (compaction) {
             yield* runCompaction(compaction);
             entries = await store.load();
+            messages = prepareProviderMessages(entries);
           }
         }
-
-        const rawMessages = entries.map((entry) => entry.message);
-        const projectedMessages = projectHistoricalToolResults(rawMessages, loopId);
-        const messages: Message[] = typeof maxToolResultChars === "number"
-          ? truncateToolResults(projectedMessages, maxToolResultChars)
-          : projectedMessages;
 
         const turnCtx = { turnId: createTurnId(loopId, eventTurnIndex), turnIndex: eventTurnIndex };
         eventTurnIndex++;
@@ -1247,7 +1252,7 @@ const snapshotTiming = (
           const providerIterator = provider.stream({
             systemPrompt,
             messages,
-            tools: tools.map(toolToSpec),
+            tools: providerTools,
             temperature,
             maxOutputTokens,
             disableReasoning,
@@ -1353,7 +1358,10 @@ const snapshotTiming = (
 
         if (hadContextOverflow) {
           if (compact && !compactionRetried) {
-            const fillRatio = computeFillRatio(messages) ?? overflowRatio;
+            const estimatedFillRatio = computeFillRatio(messages);
+            const fillRatio = typeof overflowRatio === "number"
+              ? Math.max(estimatedFillRatio ?? 0, overflowRatio)
+              : estimatedFillRatio;
             const compaction = compact({
               entries,
               store,
