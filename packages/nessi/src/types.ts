@@ -214,6 +214,8 @@ export type NessiOptions = {
   store: SessionStore;
   creditStore?: CreditStore;
   compact?: CompactFn;
+  /** Supplies pending steering messages at safe loop boundaries. */
+  steering?: SteeringFn;
   maxTurns?: number;
   temperature?: number;
   maxOutputTokens?: number;
@@ -223,6 +225,16 @@ export type NessiOptions = {
   maxToolResultChars?: number;
   signal?: AbortSignal;
 }
+
+export type SteeringContext = {
+  agentId: string;
+  loopId: string;
+  signal: AbortSignal;
+}
+
+export type SteeringFn = (
+  context: SteeringContext,
+) => string | readonly string[] | undefined | Promise<string | readonly string[] | undefined>;
 
 export type CoalesceOptions = {
   ms?: number;

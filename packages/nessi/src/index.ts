@@ -17,6 +17,8 @@ export type {
   // Core
   NessiOptions,
   NessiLoop,
+  SteeringContext,
+  SteeringFn,
   StructuredInput,
   StructuredMeta,
   StructuredMode,

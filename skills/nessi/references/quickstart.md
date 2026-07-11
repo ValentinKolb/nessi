@@ -126,6 +126,38 @@ If your app persists chat UI state, persist the `loop_end.aggregate` payload wit
 `event.loopId` on your response group. Nessi owns the generic loop semantics;
 your app still owns database IDs and storage schema.
 
+## Steer a running loop
+
+Call `loop.steer()` when the current process owns the loop. If user input can
+arrive through another request, process, or worker, provide a callback that
+reads pending messages from your application-owned storage:
+
+```ts
+const loop = nessi({
+  loopId: requestId,
+  provider,
+  systemPrompt,
+  store,
+  input,
+  tools,
+  steering: ({ loopId, signal }) => steeringQueue.takePending(loopId, { signal }),
+});
+
+loop.steer("Also check the rollback plan.");
+
+for await (const event of loop) {
+  if (event.type === "steer_applied") {
+    console.log("Applied steering:", event.message);
+  }
+}
+```
+
+The callback may return a string, an ordered array of strings, or `undefined`.
+Nessi checks for steering before provider calls and once more before normal
+completion, so input arriving during the final response can continue the loop.
+It does not poll while generation or tools are running. The application owns
+how pending messages are persisted and consumed.
+
 ## Structured output task
 
 Use `nessi.structured()` when the app needs a typed object validated by Zod:

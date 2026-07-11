@@ -166,6 +166,7 @@ content block. Tool runtime events are separate:
 - `tool_execution_start`: Nessi started handling a final tool call. It is paired with `tool_execution_end`, including validation failures.
 - `tool_action_request`: the app must answer an approval or client-side tool request with `loop.push()`.
 - `tool_execution_end`: Nessi produced a tool result or an error result.
+- `steer_applied`: Nessi persisted a local or callback-supplied steering message and will include it in the next provider call.
 
 Malformed/cancelled provider tool streams are reported in `issue` events and in
 `loop_end.aggregate.toolIssues`.

@@ -1757,6 +1757,103 @@ describe("nessi core loop", () => {
     expect(steerMsg).toBeTruthy();
   });
 
+  it("applies supplied steering messages in order before a provider call", async () => {
+    const requests: import("../src/types.js").ProviderRequest[] = [];
+    const store = memoryStore();
+    let steeringCalls = 0;
+    const provider = mockProviderMultiTurn((request) => {
+      requests.push(request);
+      return [
+        { type: "text", delta: "Done." },
+        { type: "usage", usage: { input: 20, output: 10, total: 30 } },
+      ];
+    });
+
+    const events = await collectEvents(nessi({
+      provider,
+      systemPrompt: "test",
+      store,
+      input: "Start",
+      steering: ({ agentId, loopId, signal }) => {
+        steeringCalls++;
+        expect(agentId).toBe("main");
+        expect(loopId).toBeTruthy();
+        expect(signal.aborted).toBe(false);
+        return steeringCalls === 1 ? ["First", "Second"] : undefined;
+      },
+    }));
+
+    expect(requests).toHaveLength(1);
+    const userTexts = requests[0]!.messages
+      .filter((message) => message.role === "user")
+      .flatMap((message) => message.content)
+      .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
+      .map((part) => part.text);
+    expect(userTexts).toEqual(["Start", "First", "Second"]);
+    expect(events.filter((event) => event.type === "steer_applied").map((event) => event.message)).toEqual([
+      "First",
+      "Second",
+    ]);
+  });
+
+  it("checks supplied steering before a normal loop end", async () => {
+    const requests: import("../src/types.js").ProviderRequest[] = [];
+    let steeringCalls = 0;
+    const provider = mockProviderMultiTurn((request, callIndex) => {
+      requests.push(request);
+      return [
+        { type: "text", delta: callIndex === 0 ? "Initial answer." : "Revised answer." },
+        { type: "usage", usage: { input: 20, output: 10, total: 30 } },
+      ];
+    });
+
+    const events = await collectEvents(nessi({
+      provider,
+      systemPrompt: "test",
+      store: memoryStore(),
+      input: "Start",
+      steering: () => {
+        steeringCalls++;
+        return steeringCalls === 2 ? "Revise the answer" : undefined;
+      },
+    }));
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.messages.some(
+      (message) => message.role === "user"
+        && message.content.some((part) => part.type === "text" && part.text === "Revise the answer"),
+    )).toBe(true);
+    expect(events.filter((event) => event.type === "turn_end")).toHaveLength(2);
+    expect(events.filter((event) => event.type === "steer_applied")).toHaveLength(1);
+    expect(events.at(-1)?.type).toBe("loop_end");
+  });
+
+  it("applies local steer() before a normal loop end", async () => {
+    const requests: import("../src/types.js").ProviderRequest[] = [];
+    const provider = mockProviderMultiTurn((request, callIndex) => {
+      requests.push(request);
+      return [
+        { type: "text", delta: callIndex === 0 ? "Initial answer." : "Revised answer." },
+        { type: "usage", usage: { input: 20, output: 10, total: 30 } },
+      ];
+    });
+    const loop = nessi({
+      provider,
+      systemPrompt: "test",
+      store: memoryStore(),
+      input: "Start",
+    });
+
+    const events: OutboundEvent[] = [];
+    for await (const event of loop) {
+      events.push(event);
+      if (event.type === "turn_end" && requests.length === 1) loop.steer("Revise the answer");
+    }
+
+    expect(requests).toHaveLength(2);
+    expect(events.filter((event) => event.type === "steer_applied")).toHaveLength(1);
+  });
+
   it("steer() resets turn counter", async () => {
     let callCount = 0;
     const provider = mockProviderMultiTurn((request, callIndex) => {

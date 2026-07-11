@@ -60,6 +60,34 @@ Every outbound event from one `nessi()` run carries the same `loopId`. Pass your
 
 `turn_end` reports each internal provider turn. The final `loop_end` event includes `aggregate`, which groups assistant turns, executable tool calls, tool results, validation/execution errors, malformed or cancelled tool streams, summed usage, and timing for the complete logical loop. `aggregate.timing.totalElapsedMs` is model generation plus active tool execution; approval/client-tool waits are tracked separately as `aggregate.timing.actionWaitMs`. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are available from `@valentinkolb/nessi`.
 
+## Steering
+
+Use `loop.steer()` when the process handling new input owns the running loop:
+
+```ts
+loop.steer("Skip deployment and only prepare the migration.");
+```
+
+For loops running in another worker or process, provide a `steering` callback
+that reads pending messages from application-owned persistence:
+
+```ts
+const loop = nessi({
+  provider,
+  systemPrompt,
+  store,
+  input,
+  tools,
+  steering: ({ loopId, signal }) => steeringQueue.takePending(loopId, { signal }),
+});
+```
+
+The callback may return one message, an ordered array, or `undefined`. Nessi
+checks it before provider calls and before a normal loop completion. Applied
+messages are persisted as user messages and emit the same `steer_applied`
+event as `loop.steer()`. The application owns persistence, claiming, and
+delivery semantics; Nessi only controls when steering can affect the loop.
+
 ## Structured output
 
 Use `nessi.structured()` when an app wants a schema-valid typed result instead
@@ -155,6 +183,7 @@ import { openai } from "@valentinkolb/nessi/ai/providers/openai";
 - Turn-based agent loop with canonical block streaming events
 - Stable `loopId` correlation across all events from one agent loop
 - `loop_start`, `turn_start`, `turn_end`, and `loop_end.aggregate` for logical response grouping
+- Local `loop.steer()` and optional `steering` callbacks for steering at safe loop boundaries
 - Loop timing metadata for wall time, generation time, active tool time, action wait time, and output tokens/second
 - `nessi.structured()` for typed schema-valid task results
 - Server tools and client tools

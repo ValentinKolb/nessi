@@ -421,6 +421,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     store,
     creditStore,
     compact,
+    steering,
     maxTurns = Infinity,
     temperature,
     maxOutputTokens,
@@ -553,6 +554,24 @@ export const nessi = (options: NessiOptions): NessiLoop => {
   }
 
   const signal = abortController.signal;
+
+  async function* applyPendingSteering(): AsyncGenerator<OutboundEvent, boolean> {
+    const pending = steerQueue.splice(0);
+    const supplied = await steering?.({ agentId, loopId, signal });
+    if (typeof supplied === "string") pending.push(supplied);
+    else if (supplied) pending.push(...supplied);
+    pending.push(...steerQueue.splice(0));
+
+    let applied = false;
+    for (const text of pending) {
+      if (!text.trim()) continue;
+      const steerMessage: UserMessage = { role: "user", content: [{ type: "text", text }] };
+      await store.append(steerMessage);
+      applied = true;
+      yield { type: "steer_applied", agentId, loopId, message: text };
+    }
+    return applied;
+  }
 
   const names = tools.map((tool) => tool.def.name);
   if (new Set(names).size !== names.length) {
@@ -1091,7 +1110,7 @@ const snapshotTiming = (
         }
       }
 
-      while (providerTurn < maxTurns) {
+      while (true) {
         if (signal.aborted) {
           yield loopEndEvent("aborted");
           return;
@@ -1105,13 +1124,15 @@ const snapshotTiming = (
           }
         }
 
-        while (steerQueue.length > 0) {
-          const text = steerQueue.shift()!;
-          const steerMessage: UserMessage = { role: "user", content: [{ type: "text", text }] };
-          await store.append(steerMessage);
+        const steeringApplied = yield* applyPendingSteering();
+        if (steeringApplied) {
           providerTurn = 0;
           compactionRetried = false;
-          yield { type: "steer_applied", agentId, loopId, message: text };
+        }
+
+        if (providerTurn >= maxTurns) {
+          yield loopEndEvent("max_turns");
+          return;
         }
 
         let entries = await store.load();
@@ -1347,6 +1368,12 @@ const snapshotTiming = (
 
         if (toolCalls.length === 0) {
           yield { type: "turn_end", agentId, loopId, ...turnCtx, message: assistantMessage };
+          const lateSteeringApplied = yield* applyPendingSteering();
+          if (lateSteeringApplied) {
+            providerTurn = 0;
+            compactionRetried = false;
+            continue;
+          }
           yield loopEndEvent("stop");
           return;
         }
@@ -1375,6 +1402,12 @@ const snapshotTiming = (
 
         yield { type: "turn_end", agentId, loopId, ...turnCtx, message: assistantMessage };
         if (terminalToolCompleted) {
+          const lateSteeringApplied = yield* applyPendingSteering();
+          if (lateSteeringApplied) {
+            providerTurn = 0;
+            compactionRetried = false;
+            continue;
+          }
           yield loopEndEvent("stop");
           return;
         }
@@ -1382,7 +1415,6 @@ const snapshotTiming = (
         compactionRetried = false;
       }
 
-      yield loopEndEvent("max_turns");
     } catch (error) {
       if (signal.aborted) {
         yield loopEndEvent("aborted");

@@ -30,6 +30,12 @@
       "prompt": "I need a typed task extractor with @valentinkolb/nessi. It should return a validated Zod object, accept an image input, and may call one server-side lookup tool before returning.",
       "expected_output": "A root nessi.structured() example importing nessi and defineTool from @valentinkolb/nessi, importing a provider from @valentinkolb/nessi/ai, defining a Zod output schema, passing string or multimodal content parts as input, optionally passing only server tools, and reading result.output plus result.structuredMeta/result.aggregate. It should not use provider.complete() for the high-level typed task unless explicitly discussing low-level responseFormat.",
       "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "My Nessi loop runs in a background worker, but steering instructions arrive through separate HTTP requests and are stored in my database. Show how the worker can pick them up without continuously polling while the provider or tools are running. I also need local loop.steer() to keep working and want to show applied steering in the UI.",
+      "expected_output": "A root nessi() example using the optional steering callback to return one pending message, an ordered array, or undefined from application-owned persistence, while retaining loop.steer(). It should handle steer_applied as the shared UI confirmation, explain that Nessi checks only at safe loop boundaries including before provider calls and normal completion, and leave claiming, persistence, and delivery guarantees to the application.",
+      "files": []
     }
   ]
 }
