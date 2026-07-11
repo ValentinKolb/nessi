@@ -5,7 +5,15 @@ import { nessi } from "../src/nessi.js";
 import { defineTool } from "../src/tools.js";
 import { memoryStore } from "../src/stores.js";
 import { mockProvider, mockProviderMultiTurn } from "./mock-provider.js";
-import type { OutboundEvent, Provider, ProviderEvent, CreditStore, SessionStore, Usage } from "../src/types.js";
+import type {
+  CreditStore,
+  OutboundEvent,
+  Provider,
+  ProviderEvent,
+  ProviderRequest,
+  SessionStore,
+  Usage,
+} from "../src/types.js";
 
 // Helper: collect all events from a loop
 async function collectEvents(loop: ReturnType<typeof nessi>): Promise<OutboundEvent[]> {
@@ -2068,5 +2076,210 @@ describe("nessi core loop", () => {
     expect(retryFillRatio).toBeDefined();
     const done = events.find((e) => e.type === "loop_end") as any;
     expect(done.reason).toBe("stop");
+  });
+
+  it("persists historical tool results once and selects them only for later loops", async () => {
+    const store = memoryStore();
+    let projectionCalls = 0;
+    const fullResult = { stdout: "full output", exitCode: 0 };
+    const historicalResult = { summary: "exit 0" };
+    const shellTool = defineTool({
+      name: "shell",
+      description: "Run a command",
+      inputSchema: z.object({ command: z.string() }),
+      outputSchema: z.object({ stdout: z.string(), exitCode: z.number() }),
+      async toHistoricalResult({ input, output, callId }) {
+        projectionCalls++;
+        expect(input).toEqual({ command: "pwd" });
+        expect(output).toEqual(fullResult);
+        expect(callId).toBe("shell-1");
+        return historicalResult;
+      },
+    }).server(async () => fullResult);
+
+    const originRequests: ProviderRequest[] = [];
+    const originProvider = mockProviderMultiTurn((request, callIndex) => {
+      originRequests.push(request);
+      if (callIndex === 0) {
+        return [
+          { type: "tool_start", callId: "shell-1", name: "shell" },
+          { type: "tool_call", callId: "shell-1", name: "shell", args: { command: "pwd" } },
+        ];
+      }
+      return [{ type: "text", delta: "done" }];
+    });
+
+    const originEvents = await collectEvents(nessi({
+      loopId: "origin-loop",
+      provider: originProvider,
+      systemPrompt: "test",
+      store,
+      tools: [shellTool],
+      input: "run pwd",
+    }));
+
+    expect(projectionCalls).toBe(1);
+    const storedToolResult = (await store.load()).find((entry) => entry.message.role === "tool_result")?.message;
+    expect(storedToolResult).toEqual({
+      role: "tool_result",
+      callId: "shell-1",
+      name: "shell",
+      result: fullResult,
+      historicalResult: { originLoopId: "origin-loop", value: historicalResult },
+      isError: false,
+    });
+    const originToolResult = originRequests[1]?.messages.find((message) => message.role === "tool_result");
+    expect(originToolResult?.role === "tool_result" ? originToolResult.result : undefined).toEqual(fullResult);
+    const originMessages = originRequests[1]?.messages ?? [];
+    const toolCallIndex = originMessages.findIndex((message) =>
+      message.role === "assistant"
+      && message.content.some((block) => block.type === "tool_call" && block.id === "shell-1")
+    );
+    const toolResultIndex = originMessages.findIndex((message) =>
+      message.role === "tool_result" && message.callId === "shell-1"
+    );
+    expect(toolResultIndex).toBe(toolCallIndex + 1);
+    const originDone = originEvents.find((event) => event.type === "loop_end");
+    expect(originDone?.type === "loop_end" ? originDone.aggregate.turns[0]?.toolCalls[0]?.result : undefined).toEqual(fullResult);
+
+    let resumedRequest: ProviderRequest | undefined;
+    await collectEvents(nessi({
+      loopId: "origin-loop",
+      provider: mockProvider([{ type: "text", delta: "resumed" }], { onRequest: (request) => { resumedRequest = request; } }),
+      systemPrompt: "test",
+      store,
+      input: "continue the same loop",
+    }));
+    const resumedToolResult = resumedRequest?.messages.find((message) => message.role === "tool_result");
+    expect(resumedToolResult?.role === "tool_result" ? resumedToolResult.result : undefined).toEqual(fullResult);
+
+    let laterRequest: ProviderRequest | undefined;
+    await collectEvents(nessi({
+      loopId: "later-loop",
+      provider: mockProvider([{ type: "text", delta: "later" }], { onRequest: (request) => { laterRequest = request; } }),
+      systemPrompt: "test",
+      store,
+      input: "new request",
+    }));
+    const laterToolResult = laterRequest?.messages.find((message) => message.role === "tool_result");
+    expect(laterToolResult?.role === "tool_result" ? laterToolResult.result : undefined).toEqual(historicalResult);
+    expect(projectionCalls).toBe(1);
+  });
+
+  it("keeps successful tool execution when historical result derivation fails", async () => {
+    const store = memoryStore();
+    const tool = defineTool({
+      name: "fragile_projection",
+      description: "Returns a full result",
+      inputSchema: z.object({}),
+      toHistoricalResult() {
+        throw new Error("cannot summarize");
+      },
+    }).server(async () => ({ full: true }));
+    const provider = mockProviderMultiTurn((_request, callIndex) => callIndex === 0
+      ? [
+          { type: "tool_start", callId: "fragile-1", name: "fragile_projection" },
+          { type: "tool_call", callId: "fragile-1", name: "fragile_projection", args: {} },
+        ]
+      : [{ type: "text", delta: "continued" }]);
+
+    const events = await collectEvents(nessi({
+      loopId: "projection-error-loop",
+      provider,
+      systemPrompt: "test",
+      store,
+      tools: [tool],
+      input: "run it",
+    }));
+
+    const issue = events.find((event) => event.type === "issue");
+    expect(issue?.type === "issue" ? issue.issue : undefined).toMatchObject({
+      kind: "tool_historical_result_error",
+      callId: "fragile-1",
+      name: "fragile_projection",
+      retryable: false,
+    });
+    const toolEnd = events.find((event) => event.type === "tool_execution_end");
+    expect(toolEnd?.type === "tool_execution_end" ? toolEnd.result : undefined).toEqual({ full: true });
+    expect(toolEnd?.type === "tool_execution_end" ? toolEnd.isError : undefined).toBeUndefined();
+    const done = events.find((event) => event.type === "loop_end");
+    expect(done?.type === "loop_end" ? done.reason : undefined).toBe("stop");
+    expect(done?.type === "loop_end" ? done.aggregate.issueCount : undefined).toBe(1);
+    const stored = (await store.load()).find((entry) => entry.message.role === "tool_result")?.message;
+    expect(stored).toEqual({
+      role: "tool_result",
+      callId: "fragile-1",
+      name: "fragile_projection",
+      result: { full: true },
+      isError: false,
+    });
+  });
+
+  it("derives historical results for top-level client tools", async () => {
+    const store = memoryStore();
+    const clientTool = defineTool({
+      name: "client_report",
+      description: "Collect a report in the client",
+      inputSchema: z.object({ reportId: z.string() }),
+      outputSchema: z.object({ rows: z.array(z.string()) }),
+      toHistoricalResult: ({ input, output }) => ({ reportId: input.reportId, rowCount: output.rows.length }),
+    }).client(async () => ({ rows: [] }));
+    const provider = mockProviderMultiTurn((_request, callIndex) => callIndex === 0
+      ? [
+          { type: "tool_start", callId: "client-report-1", name: "client_report" },
+          { type: "tool_call", callId: "client-report-1", name: "client_report", args: { reportId: "r1" } },
+        ]
+      : [{ type: "text", delta: "done" }]);
+    const loop = nessi({
+      loopId: "client-origin",
+      provider,
+      systemPrompt: "test",
+      store,
+      tools: [clientTool],
+      input: "collect report",
+    });
+
+    for await (const event of loop) {
+      if (event.type === "tool_action_request" && event.kind === "client_tool") {
+        loop.push({ type: "tool_result", callId: event.callId, result: { rows: ["a", "b"] } });
+      }
+    }
+
+    const stored = (await store.load()).find((entry) => entry.message.role === "tool_result")?.message;
+    expect(stored?.role === "tool_result" ? stored.historicalResult : undefined).toEqual({
+      originLoopId: "client-origin",
+      value: { reportId: "r1", rowCount: 2 },
+    });
+  });
+
+  it("applies maxToolResultChars after selecting a historical result", async () => {
+    const store = memoryStore();
+    await store.append({
+      role: "assistant",
+      content: [{ type: "tool_call", id: "large-1", name: "large", args: {} }],
+    });
+    await store.append({
+      role: "tool_result",
+      callId: "large-1",
+      name: "large",
+      result: `FULL:${"f".repeat(500)}`,
+      historicalResult: { originLoopId: "old-loop", value: `HISTORY:${"h".repeat(100)}` },
+    });
+    let request: ProviderRequest | undefined;
+
+    await collectEvents(nessi({
+      loopId: "new-loop",
+      provider: mockProvider([{ type: "text", delta: "ok" }], { onRequest: (value) => { request = value; } }),
+      systemPrompt: "test",
+      store,
+      maxToolResultChars: 40,
+      input: "continue",
+    }));
+
+    const result = request?.messages.find((message) => message.role === "tool_result");
+    const projected = result?.role === "tool_result" ? result.result : undefined;
+    expect(projected).toContain("HISTORY:");
+    expect(projected).toContain("characters omitted");
+    expect(projected).not.toContain("FULL:");
   });
 });

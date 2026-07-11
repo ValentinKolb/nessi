@@ -37,11 +37,17 @@ export type AssistantMessage = {
   stopReason?: AssistantStopReason;
 };
 
+export type HistoricalToolResult = {
+  originLoopId: string;
+  value: unknown;
+};
+
 export type ToolResultMessage = {
   role: "tool_result";
   callId: string;
   name: string;
   result: unknown;
+  historicalResult?: HistoricalToolResult;
   isError?: boolean;
 };
 
@@ -115,13 +121,27 @@ export type ToolExecutionIssue = {
   name: string;
 };
 
+export type ToolHistoricalResultIssue = {
+  kind: "tool_historical_result_error";
+  message: string;
+  retryable: false;
+  callId: string;
+  name: string;
+};
+
 export type RuntimeIssue = {
   kind: "runtime_error";
   message: string;
   retryable: boolean;
 };
 
-export type NessiIssue = ToolStreamIssue | ProviderIssue | TimeoutIssue | ToolExecutionIssue | RuntimeIssue;
+export type NessiIssue =
+  | ToolStreamIssue
+  | ProviderIssue
+  | TimeoutIssue
+  | ToolExecutionIssue
+  | ToolHistoricalResultIssue
+  | RuntimeIssue;
 
 export type ToolSpec = {
   name: string;

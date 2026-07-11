@@ -48,6 +48,26 @@ const toolResult = {
 };
 ```
 
+Root `nessi()` loops may persist an additional representation derived by the
+tool for later loops:
+
+```ts
+const storedToolResult = {
+  role: "tool_result" as const,
+  callId: "call-1",
+  name: "search",
+  result: fullSearchResult,
+  historicalResult: {
+    originLoopId: "loop-123",
+    value: compactSearchResult,
+  },
+};
+```
+
+This metadata is persisted, not manually supplied to provider-only calls.
+Nessi substitutes `result` only in the provider-facing message list of a later
+loop; the stored full result remains authoritative.
+
 ## Completion response
 
 `complete()` returns a final assistant message, usage, finish reason, and provider metadata.

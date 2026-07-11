@@ -16,6 +16,11 @@ export const defineTool = <TInput extends z.ZodType, TOutput extends z.ZodType =
   outputSchema?: TOutput;
   needsApproval?: boolean;
   timeoutMs?: number | false;
+  toHistoricalResult?: (context: {
+    input: z.infer<TInput>;
+    output: z.infer<TOutput>;
+    callId: string;
+  }) => unknown | Promise<unknown>;
 }): ToolDefinition<TInput, TOutput> => {
   const def: ToolDefinition<TInput, TOutput> = {
     ...config,

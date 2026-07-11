@@ -12,11 +12,13 @@ import type {
   ContentPart,
   GenerateRequest,
   GenerateResult,
+  HistoricalToolResult,
   Message,
   NessiIssue,
   Provider,
   StreamEvent,
   ToolExecutionIssue,
+  ToolHistoricalResultIssue,
   ToolResultMessage,
   ToolStreamIssue,
   Usage,
@@ -32,6 +34,7 @@ export type {
   BlockStartEvent,
   ContentPart,
   JsonSchemaObject,
+  HistoricalToolResult,
   Message,
   NessiIssue,
   Provider,
@@ -42,6 +45,7 @@ export type {
   ThinkingBlock,
   ToolCallBlock,
   ToolExecutionIssue,
+  ToolHistoricalResultIssue,
   ToolResultMessage,
   ToolStreamIssue,
   ToolStreamIssueKind,
@@ -155,6 +159,15 @@ export type LoopAggregate = {
 // 3. Tools
 // ----------------------------------------------------------------------------
 
+export type HistoricalToolResultContext<
+  TInput extends z.ZodType = z.ZodType,
+  TOutput extends z.ZodType = z.ZodType,
+> = {
+  input: z.infer<TInput>;
+  output: z.infer<TOutput>;
+  callId: string;
+};
+
 export type ToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> = {
   name: string;
   description: string;
@@ -162,6 +175,8 @@ export type ToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput extends
   outputSchema?: TOutput;
   needsApproval?: boolean;
   timeoutMs?: number | false;
+  /** Derive a smaller representation that later loops send to the provider instead of the full result. */
+  toHistoricalResult?: (context: HistoricalToolResultContext<TInput, TOutput>) => unknown | Promise<unknown>;
 
   server(execute: (input: z.infer<TInput>, ctx: ToolContext) => Promise<z.infer<TOutput>>): ServerTool<TInput, TOutput>;
 

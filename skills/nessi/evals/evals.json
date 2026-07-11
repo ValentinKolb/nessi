@@ -36,6 +36,12 @@
       "prompt": "My Nessi loop runs in a background worker, but steering instructions arrive through separate HTTP requests and are stored in my database. Show how the worker can pick them up without continuously polling while the provider or tools are running. I also need local loop.steer() to keep working and want to show applied steering in the UI.",
       "expected_output": "A root nessi() example using the optional steering callback to return one pending message, an ordered array, or undefined from application-owned persistence, while retaining loop.steer(). It should handle steer_applied as the shared UI confirmation, explain that Nessi checks only at safe loop boundaries including before provider calls and normal completion, and leave claiming, persistence, and delivery guarantees to the application.",
       "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "My shell tool returns very large output. I need the full output during the current Nessi loop and in storage/UI, but later user requests should send only exit code, changed files, and a short excerpt to the model. Show the supported API and explain resume behavior.",
+      "expected_output": "A root defineTool() example using optional toHistoricalResult({ input, output, callId }). It should explain that Nessi derives and persists the historical value once, same-loop provider calls and resumes with the same loopId use the full result, later loop IDs use the historical value, storage/events/aggregates retain the full result, failures emit non-fatal tool_historical_result_error, and maxToolResultChars applies afterward.",
+      "files": []
     }
   ]
 }

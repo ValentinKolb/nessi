@@ -146,6 +146,37 @@ Top-level client tools validate pushed results against their `outputSchema`.
 Nested `ctx.requestClientTool()` calls also validate args and output when the
 requested client tool name is registered in `tools`.
 
+## Historical tool results
+
+Use `toHistoricalResult` for tools whose raw output is useful during execution
+but unnecessarily large in future loops:
+
+```ts
+const inspectFile = defineTool({
+  name: "inspect_file",
+  description: "Inspect a source file.",
+  inputSchema: z.object({ path: z.string() }),
+  outputSchema: z.object({ content: z.string(), language: z.string() }),
+  toHistoricalResult: ({ input, output, callId }) => ({
+    path: input.path,
+    language: output.language,
+    excerpt: output.content.slice(0, 800),
+    callId,
+  }),
+}).server(inspectFile);
+```
+
+Nessi computes this value once after output validation and stores it alongside
+the full result. The originating `loopId` always sends the full result to the
+provider, including a resumed loop. A later loop ID sends the historical value
+without changing the stored message, emitted events, or loop aggregate.
+
+Return `undefined` to omit the historical value for a particular result. If the
+callback throws, Nessi emits `tool_historical_result_error`, persists the full
+successful output, and continues. Tools without the callback and legacy stored
+messages are unchanged. If configured, `maxToolResultChars` truncates the
+selected full or historical value afterward.
+
 ## Error handling
 
 Stream problems are normalized `issue` events:

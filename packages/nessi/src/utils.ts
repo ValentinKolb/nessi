@@ -41,3 +41,12 @@ export const truncateToolResults = (messages: Message[], maxChars: number): Mess
     if (text.length <= maxChars) return msg;
     return { ...msg, result: truncateMiddle(text, maxChars) };
   })
+
+/** Select persisted historical tool results for provider calls outside their originating loop. */
+export const projectHistoricalToolResults = (messages: Message[], loopId: string): Message[] =>
+  messages.map((message) => {
+    if (message.role !== "tool_result" || !message.historicalResult) return message;
+    const { historicalResult, ...providerMessage } = message;
+    if (historicalResult.originLoopId === loopId) return providerMessage;
+    return { ...providerMessage, result: historicalResult.value };
+  })

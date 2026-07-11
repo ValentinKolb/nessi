@@ -1,6 +1,6 @@
 ---
 name: nessi
-description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, structured-output task, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about root nessi(), nessi.structured(), @valentinkolb/nessi/ai complete(), stream(), provider setup, responseFormat, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, multimodal input, canonical block streaming events, issue events for malformed tool streams, loopId correlation, loop_end.aggregate metadata, loop-level stats, local or durable steering, tool execution events, usage accounting, generation options, provider timeouts, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root APIs."
+description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, structured-output task, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about root nessi(), nessi.structured(), @valentinkolb/nessi/ai complete(), stream(), provider setup, responseFormat, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, multimodal input, canonical block streaming events, issue events for malformed tool streams, loopId correlation, loop_end.aggregate metadata, loop-level stats, local or durable steering, historical tool results, context growth, tool execution events, usage accounting, generation options, provider timeouts, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root APIs."
 ---
 
 # @valentinkolb/nessi Consumer Skill
@@ -49,6 +49,9 @@ Read only the references needed for the task:
 - For standalone `compact()` loops, use the same `loopId` grouping pattern and handle `loop_start`, `compaction_start`, `compaction_end`, `issue`, and `loop_end`.
 - Treat `issue.kind === "malformed_tool_call"` and `issue.kind === "cancelled_tool_call"` as pre-execution stream issues. They mean no executable tool call exists for that pending provider start.
 - Treat `tool_execution_start` / `tool_execution_end` as Nessi's tool-runtime attempt boundary. `tool_action_request` is the event that asks the app for approval or client-side tool output.
+- Use a tool's optional `toHistoricalResult({ input, output, callId })` when full output is needed in the current loop but a smaller tool-specific representation is sufficient in later loops. Nessi persists both values and derives the historical value only once.
+- Keep the same `loopId` when resuming an originating loop so provider calls continue receiving full tool results. Different loop IDs receive persisted historical values; legacy results without one remain full.
+- Treat `tool_historical_result_error` as non-fatal: the full successful result remains persisted and the loop continues. `maxToolResultChars` is applied after historical selection as a final safety boundary.
 - Treat tool calls as data the application must handle; `@valentinkolb/nessi/ai` does not execute tools.
 - Surface unsupported file input and provider error behavior instead of hiding it.
 - If the user asks for browser code, keep API keys server-side and expose a backend route.

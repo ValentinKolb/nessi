@@ -30,7 +30,14 @@ import type {
 import { aggregateFromTurns, buildLoopTiming, cloneUsage } from "./aggregates.js";
 import { appendAssistantContentBlock, buildAssistantMessageFromContent } from "./ai/shared/messages.js";
 import { toolToSpec } from "./tools.js";
-import { createLoopId, estimateTokens, toErrorMessage, truncateToolResults, zeroUsage } from "./utils.js";
+import {
+  createLoopId,
+  estimateTokens,
+  projectHistoricalToolResults,
+  toErrorMessage,
+  truncateToolResults,
+  zeroUsage,
+} from "./utils.js";
 
 // ----------------------------------------------------------------------------
 // Inbound event channel
@@ -587,6 +594,39 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     return msg;
   };
 
+  const appendSuccessfulToolResult = async (
+    tool: Tool,
+    call: ToolCallBlock,
+    input: unknown,
+    output: unknown,
+  ): Promise<NessiIssue | undefined> => {
+    let historicalResult: ToolResultMessage["historicalResult"];
+    try {
+      const value = await tool.def.toHistoricalResult?.({ input, output, callId: call.id });
+      if (value !== undefined) historicalResult = { originLoopId: loopId, value };
+    } catch (error) {
+      const issue: NessiIssue = {
+        kind: "tool_historical_result_error",
+        message: `Historical result projection failed for tool "${call.name}": ${toErrorMessage(error)}`,
+        retryable: false,
+        callId: call.id,
+        name: call.name,
+      };
+      await store.append({ role: "tool_result", callId: call.id, name: call.name, result: output, isError: false });
+      return issue;
+    }
+
+    await store.append({
+      role: "tool_result",
+      callId: call.id,
+      name: call.name,
+      result: output,
+      ...(historicalResult ? { historicalResult } : {}),
+      isError: false,
+    });
+    return undefined;
+  };
+
   type TurnContext = { turnId: string; turnIndex: number };
   type UpdateAggregateToolCall = (callId: string, patch: Partial<LoopToolCallAggregate>) => void;
 
@@ -724,8 +764,12 @@ const snapshotTiming = (
         }
       }
 
-      await appendToolResult(tc.id, tc.name, output);
+      const historicalIssue = await appendSuccessfulToolResult(tool, tc, validatedInput, output);
       updateAggregateToolCall(tc.id, { result: output });
+      if (historicalIssue) {
+        recordIssue(historicalIssue, turnIssues);
+        yield issueEvent(historicalIssue, turnCtx);
+      }
       yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result: output };
       return;
     }
@@ -995,8 +1039,12 @@ const snapshotTiming = (
         }
       }
 
-      await appendToolResult(tc.id, tc.name, result);
+      const historicalIssue = await appendSuccessfulToolResult(tool, tc, validatedInput, result);
       updateAggregateToolCall(tc.id, { result });
+      if (historicalIssue) {
+        recordIssue(historicalIssue, turnIssues);
+        yield issueEvent(historicalIssue, turnCtx);
+      }
       finishToolExecution();
       yield { type: "tool_execution_end", ...eventFields, callId: tc.id, name: tc.name, result };
     } catch (error) {
@@ -1161,9 +1209,10 @@ const snapshotTiming = (
         }
 
         const rawMessages = entries.map((entry) => entry.message);
+        const projectedMessages = projectHistoricalToolResults(rawMessages, loopId);
         const messages: Message[] = typeof maxToolResultChars === "number"
-          ? truncateToolResults(rawMessages, maxToolResultChars)
-          : rawMessages;
+          ? truncateToolResults(projectedMessages, maxToolResultChars)
+          : projectedMessages;
 
         const turnCtx = { turnId: createTurnId(loopId, eventTurnIndex), turnIndex: eventTurnIndex };
         eventTurnIndex++;

@@ -1,5 +1,12 @@
 import { describe, it, expect } from "bun:test";
-import { estimateTokens, zeroUsage, toErrorMessage, truncateMiddle, truncateToolResults } from "../src/utils.js";
+import {
+  estimateTokens,
+  projectHistoricalToolResults,
+  zeroUsage,
+  toErrorMessage,
+  truncateMiddle,
+  truncateToolResults,
+} from "../src/utils.js";
 import type { Message } from "../src/types.js";
 
 describe("estimateTokens", () => {
@@ -106,6 +113,38 @@ describe("truncateToolResults", () => {
       expect(result[0].content).toHaveLength(2);
       expect(result[0].content[1].type).toBe("thinking");
     }
+  });
+});
+
+describe("projectHistoricalToolResults", () => {
+  const fullResult = { output: "full" };
+  const historicalResult = { output: "historical" };
+  const messages: Message[] = [{
+    role: "tool_result",
+    callId: "c1",
+    name: "shell",
+    result: fullResult,
+    historicalResult: { originLoopId: "origin", value: historicalResult },
+  }];
+
+  it("keeps full results in their originating loop", () => {
+    const projected = projectHistoricalToolResults(messages, "origin");
+    expect(projected[0]).not.toBe(messages[0]);
+    expect(projected[0]?.role === "tool_result" ? projected[0].result : undefined).toBe(fullResult);
+    expect(projected[0]?.role === "tool_result" ? projected[0].historicalResult : undefined).toBeUndefined();
+  });
+
+  it("projects historical results in later loops without mutating stored messages", () => {
+    const projected = projectHistoricalToolResults(messages, "later");
+    expect(projected[0]).not.toBe(messages[0]);
+    expect(projected[0]?.role === "tool_result" ? projected[0].result : undefined).toEqual(historicalResult);
+    expect(projected[0]?.role === "tool_result" ? projected[0].historicalResult : undefined).toBeUndefined();
+    expect(messages[0]?.role === "tool_result" ? messages[0].result : undefined).toBe(fullResult);
+  });
+
+  it("keeps legacy tool results without a historical representation", () => {
+    const legacy: Message[] = [{ role: "tool_result", callId: "c1", name: "shell", result: fullResult }];
+    expect(projectHistoricalToolResults(legacy, "later")[0]).toBe(legacy[0]);
   });
 });
 

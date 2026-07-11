@@ -60,6 +60,41 @@ Every outbound event from one `nessi()` run carries the same `loopId`. Pass your
 
 `turn_end` reports each internal provider turn. The final `loop_end` event includes `aggregate`, which groups assistant turns, executable tool calls, tool results, validation/execution errors, malformed or cancelled tool streams, summed usage, and timing for the complete logical loop. `aggregate.timing.totalElapsedMs` is model generation plus active tool execution; approval/client-tool waits are tracked separately as `aggregate.timing.actionWaitMs`. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are available from `@valentinkolb/nessi`.
 
+## Historical tool results
+
+Verbose tool output can remain fully persisted without being sent to the model
+in every later loop. A tool may derive a compact historical representation once
+after its output passes validation:
+
+```ts
+const shell = defineTool({
+  name: "shell",
+  description: "Run a shell command.",
+  inputSchema: z.object({ command: z.string() }),
+  outputSchema: z.object({
+    exitCode: z.number(),
+    stdout: z.string(),
+    changedFiles: z.array(z.string()),
+  }),
+  toHistoricalResult: ({ output }) => ({
+    exitCode: output.exitCode,
+    changedFiles: output.changedFiles,
+    excerpt: output.stdout.slice(0, 500),
+  }),
+}).server(runShell);
+```
+
+Nessi persists the full `result` and the optional `historicalResult` together.
+Provider calls in the originating loop, including resumes with the same
+`loopId`, receive the full result. Calls from a different loop receive the
+historical value instead. Stored messages, events, and loop aggregates remain
+full and inspectable. Returning `undefined` skips the historical representation.
+
+If derivation throws, Nessi stores the full successful result, emits a non-fatal
+`tool_historical_result_error` issue, and continues the loop. Legacy messages
+without `historicalResult` remain unchanged. `maxToolResultChars`, when set,
+runs after this selection as the final context-size boundary.
+
 ## Steering
 
 Use `loop.steer()` when the process handling new input owns the running loop:
@@ -189,6 +224,7 @@ import { openai } from "@valentinkolb/nessi/ai/providers/openai";
 - Server tools and client tools
 - Tool approval flow and explicit `tool_action_request` events
 - Tool execution start/end events with per-tool `timeoutMs`
+- Optional per-tool historical result representations for bounded future context
 - Structured `issue` events for provider errors, timeouts, malformed tool streams, and tool execution failures
 - Pluggable session store
 - Optional history compaction
