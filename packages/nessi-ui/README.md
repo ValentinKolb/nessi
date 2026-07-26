@@ -6,7 +6,7 @@
 
 Browser-first reference UI for `nessi`.
 
-`nessi-ui` is a local, single-user chat client built on top of `@valentinkolb/nessi`. It runs fully in the browser, stores state in `localStorage`, and ships as a static Vite build.
+`nessi-ui` is a local, single-user chat client built on top of `@k2b/nessi`. It runs fully in the browser, stores state in `localStorage`, and ships as a static Vite build.
 
 ## Features
 

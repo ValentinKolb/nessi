@@ -1,5 +1,5 @@
 import { humanId } from "human-id";
-import type { Message } from "@valentinkolb/nessi";
+import type { Message } from "@k2b/nessi";
 import { db } from "./db.js";
 import { localStorageJson } from "../storage/local-storage.js";
 

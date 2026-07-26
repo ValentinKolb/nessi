@@ -8,18 +8,22 @@ Minimal agent stack for provider adapters, an event-driven loop, and a browser U
 
 The monorepo is intentionally split into two focused packages:
 
-- `@valentinkolb/nessi` for the published agent loop and provider API
+- `@k2b/nessi` for the published agent loop and provider API
 - `nessi-ui` for the browser client
+
+`@k2b/nessi` replaces the deprecated `@valentinkolb/nessi` package. The public
+API and subpaths are unchanged; migrate dependencies and imports by replacing
+the scope. Future UI container releases use `ghcr.io/k2b-dev/nessi-ui`.
 
 ## Packages
 
-### `@valentinkolb/nessi`
+### `@k2b/nessi`
 
 Agent loop at the package root, provider layer under `/ai`.
 
 ```ts
-import { nessi, memoryStore } from "@valentinkolb/nessi";
-import { openrouter } from "@valentinkolb/nessi/ai";
+import { nessi, memoryStore } from "@k2b/nessi";
+import { openrouter } from "@k2b/nessi/ai";
 
 const provider = openrouter("openai/gpt-4.1-mini", {
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -43,7 +47,7 @@ for await (const event of loop) {
 
 ### `nessi-ui`
 
-Browser-first reference client built on `@valentinkolb/nessi`.
+Browser-first reference client built on `@k2b/nessi`.
 
 ```bash
 bun install
@@ -80,11 +84,11 @@ packages/
 This repo also ships standalone AI coding skills (e.g. structured workflows, prompting strategies) that work with any Claude Code project.
 
 ```bash
-bunx skills add https://github.com/ValentinKolb/nessi
+bunx skills add https://github.com/k2b-dev/nessi
 ```
 
 ## Notes
 
-- `@valentinkolb/nessi` is the reusable library package.
+- `@k2b/nessi` is the reusable library package.
 - `nessi-ui` is the reference application.
 - The UI Docker build lives at [`packages/nessi-ui/Dockerfile`](./packages/nessi-ui/Dockerfile).

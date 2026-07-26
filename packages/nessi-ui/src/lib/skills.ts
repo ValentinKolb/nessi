@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { defineTool } from "@valentinkolb/nessi";
-import type { Tool } from "@valentinkolb/nessi";
+import { defineTool } from "@k2b/nessi";
+import type { Tool } from "@k2b/nessi";
 import { Bash, defineCommand } from "just-bash";
 import type { IFileSystem } from "just-bash";
 import type { ExecResult, Command, InitialFiles } from "just-bash";
@@ -435,7 +435,7 @@ export const createMainBashRuntime = (options?: {
   initialFiles?: InitialFiles;
   afterExec?: (bash: Bash) => Promise<void> | void;
   fileService?: ChatFileService;
-  chatProvider?: import("@valentinkolb/nessi").Provider | null;
+  chatProvider?: import("@k2b/nessi").Provider | null;
 }) => {
   const helpers = createCommandHelpers();
   if (options?.fileService) {

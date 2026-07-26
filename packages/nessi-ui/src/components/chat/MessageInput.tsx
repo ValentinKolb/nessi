@@ -8,7 +8,7 @@ import { getProviderIconUrl, type ProviderEntry } from "../../lib/provider.js";
 import { pprintBytes } from "@valentinkolb/stdlib";
 import { haptics } from "../../shared/browser/haptics.js";
 import { PopoverMenu } from "../PopoverMenu.js";
-import type { Usage } from "@valentinkolb/nessi/ai";
+import type { Usage } from "@k2b/nessi/ai";
 
 /** Keep the textarea compact while allowing multiline input. */
 const autoResize = (el: HTMLTextAreaElement) => {

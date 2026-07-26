@@ -1,4 +1,4 @@
-import type { DoneReason, LoopAggregate, StoreEntry } from "@valentinkolb/nessi";
+import type { DoneReason, LoopAggregate, StoreEntry } from "@k2b/nessi";
 
 export type ChatMeta = {
   id: string;

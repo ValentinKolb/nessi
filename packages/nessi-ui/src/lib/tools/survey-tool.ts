@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineTool } from "@valentinkolb/nessi";
+import { defineTool } from "@k2b/nessi";
 
 export const surveyToolDef = defineTool({
   name: "survey",

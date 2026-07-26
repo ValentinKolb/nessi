@@ -1,23 +1,27 @@
 ---
 name: nessi
-description: "Build applications with the @valentinkolb/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, structured-output task, agent loop, or AI integration using @valentinkolb/nessi. Trigger for questions about root nessi(), nessi.structured(), @valentinkolb/nessi/ai complete(), stream(), provider setup, responseFormat, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, multimodal input, canonical block streaming events, issue events for malformed tool streams, loopId correlation, loop_end.aggregate metadata, loop-level stats, local or durable steering, historical tool results, context growth, tool execution events, usage accounting, generation options, provider timeouts, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root APIs."
+description: "Build applications with the @k2b/nessi TypeScript library. Use this skill whenever the user wants to create or modify a CLI, backend endpoint, service, prototype, provider switcher, streaming UI adapter, tool-calling workflow, structured-output task, agent loop, or AI integration using @k2b/nessi. Trigger for questions about root nessi(), nessi.structured(), @k2b/nessi/ai complete(), stream(), provider setup, responseFormat, OpenAI/OpenRouter/vLLM/Ollama/Anthropic/Mistral/Gemini, message formats, multimodal input, canonical block streaming events, issue events for malformed tool streams, loopId correlation, loop_end.aggregate metadata, loop-level stats, local or durable steering, historical tool results, context growth, tool execution events, usage accounting, generation options, provider timeouts, API keys, local models, context-overflow handling, or when choosing whether the provider-only /ai layer is enough versus the root APIs."
 ---
 
-# @valentinkolb/nessi Consumer Skill
+# @k2b/nessi Consumer Skill
 
-Use this skill to help someone build software on top of `@valentinkolb/nessi`. Keep the focus on the public consumer API. Do not drift into repository-maintainer work unless the user explicitly asks to change nessi itself.
+Use this skill to help someone build software on top of `@k2b/nessi`. Keep the focus on the public consumer API. Do not drift into repository-maintainer work unless the user explicitly asks to change nessi itself.
+
+`@k2b/nessi` replaces the deprecated `@valentinkolb/nessi` package. The API and
+subpaths are unchanged; migrate dependencies and imports by replacing the
+scope.
 
 ## First move
 
 1. Identify the application shape: CLI, backend route, browser adapter, service job, test fixture, or agent prototype.
 2. Identify the provider family: hosted API, OpenRouter aggregation, local Ollama/vLLM, or a custom OpenAI-compatible endpoint.
 3. Decide whether the user needs only the provider layer or the full agent loop:
-   - Use `@valentinkolb/nessi/ai` for provider calls, streaming, message normalization, tool-call extraction, and usage data.
+   - Use `@k2b/nessi/ai` for provider calls, streaming, message normalization, tool-call extraction, and usage data.
    - Use `nessi.structured()` from the package root when the user wants a schema-valid typed task result, optionally with bounded server tools.
-   - Use the `@valentinkolb/nessi` root exports when the user wants an agent loop that executes tools, stores conversation history, handles approvals, or compacts context.
+   - Use the `@k2b/nessi` root exports when the user wants an agent loop that executes tools, stores conversation history, handles approvals, or compacts context.
 4. Produce working TypeScript that matches the current public API:
-   - Root agent APIs come from `@valentinkolb/nessi`.
-   - Provider constructors come from `@valentinkolb/nessi/ai`, take `(model, options?)`, then expose `complete(request)` and `stream(request)`.
+   - Root agent APIs come from `@k2b/nessi`.
+   - Provider constructors come from `@k2b/nessi/ai`, take `(model, options?)`, then expose `complete(request)` and `stream(request)`.
 
 ## Reference routing
 
@@ -52,7 +56,7 @@ Read only the references needed for the task:
 - Use a tool's optional `toHistoricalResult({ input, output, callId })` when full output is needed in the current loop but a smaller tool-specific representation is sufficient in later loops. Nessi persists both values and derives the historical value only once.
 - Keep the same `loopId` when resuming an originating loop so provider calls continue receiving full tool results. Different loop IDs receive persisted historical values; legacy results without one remain full.
 - Treat `tool_historical_result_error` as non-fatal: the full successful result remains persisted and the loop continues. `maxToolResultChars` is applied after historical selection as a final safety boundary.
-- Treat tool calls as data the application must handle; `@valentinkolb/nessi/ai` does not execute tools.
+- Treat tool calls as data the application must handle; `@k2b/nessi/ai` does not execute tools.
 - Surface unsupported file input and provider error behavior instead of hiding it.
 - If the user asks for browser code, keep API keys server-side and expose a backend route.
 
@@ -61,13 +65,13 @@ Read only the references needed for the task:
 Root agent APIs:
 
 ```ts
-import { nessi, defineTool, memoryStore } from "@valentinkolb/nessi";
+import { nessi, defineTool, memoryStore } from "@k2b/nessi";
 ```
 
 Loop aggregate helpers:
 
 ```ts
-import { mergeUsage, cloneLoopAggregate, mergeLoopAggregates } from "@valentinkolb/nessi";
+import { mergeUsage, cloneLoopAggregate, mergeLoopAggregates } from "@k2b/nessi";
 ```
 
 Provider constructors:
@@ -82,13 +86,13 @@ import {
   openAICompatible,
   openrouter,
   vllm,
-} from "@valentinkolb/nessi/ai";
+} from "@k2b/nessi/ai";
 ```
 
 Focused provider imports are also available:
 
 ```ts
-import { openrouter } from "@valentinkolb/nessi/ai/providers/openrouter";
+import { openrouter } from "@k2b/nessi/ai/providers/openrouter";
 ```
 
 Common request shape:
@@ -107,8 +111,8 @@ const result = await provider.complete({
 Common structured-output shape:
 
 ```ts
-import { nessi } from "@valentinkolb/nessi";
-import { openrouter } from "@valentinkolb/nessi/ai";
+import { nessi } from "@k2b/nessi";
+import { openrouter } from "@k2b/nessi/ai";
 import { z } from "zod";
 
 const result = await nessi.structured({

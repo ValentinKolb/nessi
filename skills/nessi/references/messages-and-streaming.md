@@ -1,6 +1,6 @@
 # Messages and Streaming
 
-`@valentinkolb/nessi/ai` uses one message model across providers. Adapters translate this model to each provider's native wire format.
+`@k2b/nessi/ai` uses one message model across providers. Adapters translate this model to each provider's native wire format.
 
 ## Message model
 
@@ -32,7 +32,7 @@ const assistantMessage = {
   content: [
     { type: "text" as const, text: "I can help with that." },
     { type: "thinking" as const, thinking: "Reasoning if the provider exposes it." },
-    { type: "tool_call" as const, id: "call-1", name: "search", args: { q: "@valentinkolb/nessi/ai" } },
+    { type: "tool_call" as const, id: "call-1", name: "search", args: { q: "@k2b/nessi/ai" } },
   ],
 };
 ```

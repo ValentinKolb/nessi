@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineTool } from "@valentinkolb/nessi";
+import { defineTool } from "@k2b/nessi";
 import { memoryService } from "../../domains/memory/index.js";
 
 export const memoryTool = defineTool({

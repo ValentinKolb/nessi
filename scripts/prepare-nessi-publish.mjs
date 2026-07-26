@@ -67,7 +67,7 @@ const packageJson = {
   license: "MIT",
   repository: {
     type: "git",
-    url: "git+https://github.com/ValentinKolb/nessi.git",
+    url: "git+https://github.com/k2b-dev/nessi.git",
   },
   publishConfig: sourcePackage.publishConfig ?? {
     access: "public",

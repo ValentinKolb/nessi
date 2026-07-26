@@ -1,5 +1,5 @@
-import type { AssistantStopReason, DoneReason, LoopAggregate } from "@valentinkolb/nessi";
-import type { Usage } from "@valentinkolb/nessi/ai";
+import type { AssistantStopReason, DoneReason, LoopAggregate } from "@k2b/nessi";
+import type { Usage } from "@k2b/nessi/ai";
 import type { UIUserContentPart } from "../../lib/chat-content.js";
 import type { PresentResult } from "./blocks/PresentContent.js";
 

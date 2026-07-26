@@ -1,8 +1,8 @@
 # Tools and Errors
 
-`@valentinkolb/nessi/ai` normalizes tool-call data, but it does not execute tools. The application owns the tool registry, validation, execution, and follow-up call.
+`@k2b/nessi/ai` normalizes tool-call data, but it does not execute tools. The application owns the tool registry, validation, execution, and follow-up call.
 
-Use `@valentinkolb/nessi` if the user wants a ready-made agent loop with tool execution, approvals, store handling, and compaction.
+Use `@k2b/nessi` if the user wants a ready-made agent loop with tool execution, approvals, store handling, and compaction.
 
 For the root `nessi()` agent loop, keep using streaming events for live UI and
 debug output:
@@ -75,7 +75,7 @@ const tools = [
 ## One-shot tool-call flow
 
 ```ts
-import type { Message } from "@valentinkolb/nessi/ai";
+import type { Message } from "@k2b/nessi/ai";
 
 const messages: Message[] = [
   {
@@ -221,11 +221,11 @@ Recommended application behavior:
 1. Keep recent user-visible messages.
 2. Drop or summarize large tool results.
 3. Retry once after reducing context.
-4. If the app needs automatic compaction, use `@valentinkolb/nessi`.
+4. If the app needs automatic compaction, use `@k2b/nessi`.
 
 ## Browser safety
 
-Do not call hosted providers directly from browser code with secret API keys. Put `@valentinkolb/nessi/ai` behind a backend route:
+Do not call hosted providers directly from browser code with secret API keys. Put `@k2b/nessi/ai` behind a backend route:
 
 ```ts
 // server route

@@ -1,4 +1,4 @@
-import type { ContentPart, DoneReason, LoopAggregate, Message, StoreEntry, SessionStore } from "@valentinkolb/nessi";
+import type { ContentPart, DoneReason, LoopAggregate, Message, StoreEntry, SessionStore } from "@k2b/nessi";
 import { chatRepo, type ChatMeta, type PersistedStoreEntry } from "../domains/chat/index.js";
 
 export type { PersistedStoreEntry } from "../domains/chat/index.js";

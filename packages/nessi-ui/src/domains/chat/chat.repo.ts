@@ -1,4 +1,4 @@
-import type { DoneReason, LoopAggregate, Message, SessionStore } from "@valentinkolb/nessi";
+import type { DoneReason, LoopAggregate, Message, SessionStore } from "@k2b/nessi";
 import { db } from "../../shared/db/db.js";
 import { dbEvents } from "../../shared/db/db-events.js";
 import { newId } from "../../lib/utils.js";

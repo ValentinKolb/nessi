@@ -9,7 +9,7 @@ import {
   vllm,
   type Provider,
   type ProviderCapabilities,
-} from "@valentinkolb/nessi/ai";
+} from "@k2b/nessi/ai";
 import { createSignal } from "solid-js";
 import { localStorageJson } from "../shared/storage/local-storage.js";
 import { newId } from "./utils.js";

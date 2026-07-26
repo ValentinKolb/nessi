@@ -14,9 +14,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --registry=https://registry.npmjs.org
       - name: Typecheck
-        run: bun run --filter @valentinkolb/nessi typecheck
+        run: bun run --filter @k2b/nessi typecheck
       - name: Test
-        run: bun run --filter @valentinkolb/nessi test
+        run: bun run --filter @k2b/nessi test
       - name: Build npm package
         run: bun run build:nessi
 
@@ -54,6 +54,6 @@ jobs:
       - name: Build npm package
         run: bun run build:nessi
 
-      - name: Publish @valentinkolb/nessi
+      - name: Publish @k2b/nessi
         run: npm publish --provenance --access public
         working-directory: ./packages/nessi/dist

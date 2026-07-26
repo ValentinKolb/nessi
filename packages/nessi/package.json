@@ -1,5 +1,5 @@
 {
-  "name": "@valentinkolb/nessi",
+  "name": "@k2b/nessi",
   "version": "0.6.0",
   "description": "Minimal agent loop and provider adapters for nessi.",
   "type": "module",

@@ -12,8 +12,8 @@ import type {
   LoopTurnAggregate,
   StoreEntry,
   Usage,
-} from "@valentinkolb/nessi";
-import type { NessiIssue } from "@valentinkolb/nessi/ai";
+} from "@k2b/nessi";
+import type { NessiIssue } from "@k2b/nessi/ai";
 import type { UIMessage, UIBlock, UIAssistantMessage } from "../components/chat/types.js";
 import { contentPartsToUIContent } from "./chat-content.js";
 import { fileMetasForMessage } from "./chat-files.js";

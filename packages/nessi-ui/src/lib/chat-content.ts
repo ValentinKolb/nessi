@@ -1,4 +1,4 @@
-import type { ContentPart } from "@valentinkolb/nessi";
+import type { ContentPart } from "@k2b/nessi";
 
 export type UIUserContentPart =
   | { type: "text"; text: string }

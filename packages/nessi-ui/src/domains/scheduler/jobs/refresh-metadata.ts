@@ -1,5 +1,5 @@
 import { job, type ScheduleCtx } from "@valentinkolb/sync/browser";
-import { nessi, type StoreEntry } from "@valentinkolb/nessi";
+import { nessi, type StoreEntry } from "@k2b/nessi";
 import { z } from "zod";
 import { chatRepo } from "../../chat/index.js";
 import { contentPartsToText } from "../../../lib/utils.js";

@@ -229,12 +229,12 @@ export const OnboardingDialog = (props: {
                   <span class="i ti ti-brand-github text-lg text-gh-fg-subtle" />
                   <span class="font-medium">Open source</span>
                 </div>
-                <Link href="https://github.com/ValentinKolb/nessi">
-                  <span class="text-[13px]">github.com/ValentinKolb/nessi</span>
+                <Link href="https://github.com/k2b-dev/nessi">
+                  <span class="text-[13px]">github.com/k2b-dev/nessi</span>
                 </Link>
               </div>
               <p class="text-[13px] text-gh-fg-muted leading-relaxed">
-                nessi is a showcase for <Link href="https://github.com/ValentinKolb/nessi">@valentinkolb/nessi</Link>, a minimal agent stack for building LLM-powered apps. If you like it, a <span class="i ti ti-star text-[12px]" /> on the repo would mean a lot!
+                nessi is a showcase for <Link href="https://github.com/k2b-dev/nessi">@k2b/nessi</Link>, a minimal agent stack for building LLM-powered apps. If you like it, a <span class="i ti ti-star text-[12px]" /> on the repo would mean a lot!
               </p>
             </div>
           </div>

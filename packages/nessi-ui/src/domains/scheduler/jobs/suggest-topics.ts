@@ -1,5 +1,5 @@
 import type { ScheduleCtx } from "@valentinkolb/sync/browser";
-import { nessi } from "@valentinkolb/nessi";
+import { nessi } from "@k2b/nessi";
 import { z } from "zod";
 import { createProvider, getActiveProviderEntry } from "../../../lib/provider.js";
 import { memoryService } from "../../memory/index.js";

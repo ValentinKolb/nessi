@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { DoneReason, LoopAggregate, Message } from "@valentinkolb/nessi";
+import type { DoneReason, LoopAggregate, Message } from "@k2b/nessi";
 
 export type DbPrompt = {
   id: string;

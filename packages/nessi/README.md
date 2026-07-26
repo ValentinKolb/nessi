@@ -1,18 +1,22 @@
-# @valentinkolb/nessi
+# @k2b/nessi
 
 Minimal agent loop and provider adapters for TypeScript.
 
-Use the package root for the managed `nessi()` loop with tools, storage, and loop metadata. Use `@valentinkolb/nessi/ai` when an app only needs provider calls through one normalized message and stream API.
+Use the package root for the managed `nessi()` loop with tools, storage, and loop metadata. Use `@k2b/nessi/ai` when an app only needs provider calls through one normalized message and stream API.
+
+`@k2b/nessi` replaces the deprecated `@valentinkolb/nessi` package. Existing
+APIs and subpaths are unchanged; replace the package scope in dependencies and
+imports.
 
 ## Quick start
 
 ```bash
-bun add @valentinkolb/nessi
+bun add @k2b/nessi
 ```
 
 ```ts
-import { nessi, defineTool, memoryStore } from "@valentinkolb/nessi";
-import { ollama } from "@valentinkolb/nessi/ai";
+import { nessi, defineTool, memoryStore } from "@k2b/nessi";
+import { ollama } from "@k2b/nessi/ai";
 import { z } from "zod";
 
 const weather = defineTool({
@@ -58,7 +62,7 @@ for await (const event of loop) {
 
 Every outbound event from one `nessi()` run carries the same `loopId`. Pass your own `loopId` to align events with a persisted request or UI response group, or let Nessi generate one when omitted.
 
-`turn_end` reports each internal provider turn. The final `loop_end` event includes `aggregate`, which groups assistant turns, executable tool calls, tool results, validation/execution errors, malformed or cancelled tool streams, summed usage, and timing for the complete logical loop. `aggregate.timing.totalElapsedMs` is model generation plus active tool execution; approval/client-tool waits are tracked separately as `aggregate.timing.actionWaitMs`. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are available from `@valentinkolb/nessi`.
+`turn_end` reports each internal provider turn. The final `loop_end` event includes `aggregate`, which groups assistant turns, executable tool calls, tool results, validation/execution errors, malformed or cancelled tool streams, summed usage, and timing for the complete logical loop. `aggregate.timing.totalElapsedMs` is model generation plus active tool execution; approval/client-tool waits are tracked separately as `aggregate.timing.actionWaitMs`. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are available from `@k2b/nessi`.
 
 ## Historical tool results
 
@@ -129,8 +133,8 @@ Use `nessi.structured()` when an app wants a schema-valid typed result instead
 of a streamed chat response:
 
 ```ts
-import { nessi } from "@valentinkolb/nessi";
-import { openrouter } from "@valentinkolb/nessi/ai";
+import { nessi } from "@k2b/nessi";
+import { openrouter } from "@k2b/nessi/ai";
 import { z } from "zod";
 
 const result = await nessi.structured({
@@ -166,7 +170,7 @@ the job of the full `nessi()` loop.
 ## Provider-only usage
 
 ```ts
-import { openrouter } from "@valentinkolb/nessi/ai";
+import { openrouter } from "@k2b/nessi/ai";
 
 const provider = openrouter("openai/gpt-4.1-mini", {
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -209,8 +213,8 @@ for await (const event of provider.stream({ messages })) {
 ## Focused provider imports
 
 ```ts
-import { anthropic } from "@valentinkolb/nessi/ai/providers/anthropic";
-import { openai } from "@valentinkolb/nessi/ai/providers/openai";
+import { anthropic } from "@k2b/nessi/ai/providers/anthropic";
+import { openai } from "@k2b/nessi/ai/providers/openai";
 ```
 
 ## Features
@@ -236,12 +240,12 @@ import { openai } from "@valentinkolb/nessi/ai/providers/openai";
 ## Package layout
 
 ```txt
-@valentinkolb/nessi
+@k2b/nessi
   Agent loop, structured task helper, tools, stores, compaction, shared types
 
-@valentinkolb/nessi/ai
+@k2b/nessi/ai
   Provider factories, provider types, complete(), stream(), responseFormat
 
-@valentinkolb/nessi/ai/providers/*
+@k2b/nessi/ai/providers/*
   Focused provider entrypoints
 ```
