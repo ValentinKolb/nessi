@@ -98,6 +98,183 @@ describe("nessi core loop", () => {
     ).toThrow("Duplicate tool name: dup");
   });
 
+  it("keeps static tools available across provider turns", async () => {
+    const requestedToolNames: string[][] = [];
+    let executions = 0;
+    const tool = defineTool({
+      name: "static_tool",
+      description: "A static tool",
+      inputSchema: z.object({}),
+    }).server(async () => {
+      executions++;
+      return { ok: true };
+    });
+    const provider = mockProviderMultiTurn((request, callIndex) => {
+      requestedToolNames.push(request.tools?.map((item) => item.name) ?? []);
+      return callIndex === 0
+        ? [
+            { type: "tool_start", callId: "static-1", name: "static_tool" },
+            { type: "tool_call", callId: "static-1", name: "static_tool", args: {} },
+          ]
+        : [{ type: "text", delta: "Done" }];
+    });
+
+    await collectEvents(nessi({
+      provider,
+      store: memoryStore(),
+      input: "Start",
+      tools: [tool],
+    }));
+
+    expect(requestedToolNames).toEqual([["static_tool"], ["static_tool"]]);
+    expect(executions).toBe(1);
+  });
+
+  it("uses one dynamic tool snapshot per provider turn", async () => {
+    let resolverCalls = 0;
+    let legacyExecutions = 0;
+    let addedExecutions = 0;
+    const requestedToolNames: string[][] = [];
+
+    const unlockTool = defineTool({
+      name: "unlock",
+      description: "Unlock the next toolset",
+      inputSchema: z.object({}),
+    }).server(async () => {
+      activeTools.splice(0, activeTools.length, unlockTool, addedTool);
+      return { unlocked: true };
+    });
+    const legacyTool = defineTool({
+      name: "legacy",
+      description: "Only available in the first snapshot",
+      inputSchema: z.object({}),
+    }).server(async () => {
+      legacyExecutions++;
+      return { legacy: true };
+    });
+    const addedTool = defineTool({
+      name: "added",
+      description: "Available after unlocking",
+      inputSchema: z.object({}),
+    }).server(async () => {
+      addedExecutions++;
+      return { added: true };
+    });
+    const activeTools = [unlockTool, legacyTool];
+
+    const provider = mockProviderMultiTurn((request, callIndex) => {
+      requestedToolNames.push(request.tools?.map((item) => item.name) ?? []);
+      if (callIndex === 0) {
+        return [
+          { type: "tool_start", callId: "unlock-1", name: "unlock" },
+          { type: "tool_call", callId: "unlock-1", name: "unlock", args: {} },
+          { type: "tool_start", callId: "legacy-1", name: "legacy" },
+          { type: "tool_call", callId: "legacy-1", name: "legacy", args: {} },
+        ];
+      }
+      if (callIndex === 1) {
+        return [
+          { type: "tool_start", callId: "added-1", name: "added" },
+          { type: "tool_call", callId: "added-1", name: "added", args: {} },
+        ];
+      }
+      return [{ type: "text", delta: "Done" }];
+    });
+
+    await collectEvents(nessi({
+      provider,
+      store: memoryStore(),
+      input: "Start",
+      tools: async () => {
+        resolverCalls++;
+        return activeTools;
+      },
+    }));
+
+    expect(requestedToolNames).toEqual([
+      ["unlock", "legacy"],
+      ["unlock", "added"],
+      ["unlock", "added"],
+    ]);
+    expect(resolverCalls).toBe(3);
+    expect(legacyExecutions).toBe(1);
+    expect(addedExecutions).toBe(1);
+  });
+
+  it("reports duplicate names from a dynamic tool snapshot", async () => {
+    const first = defineTool({
+      name: "dup",
+      description: "First",
+      inputSchema: z.object({}),
+    }).server(async () => ({ ok: true }));
+    const second = defineTool({
+      name: "dup",
+      description: "Second",
+      inputSchema: z.object({}),
+    }).server(async () => ({ ok: true }));
+    let providerCalled = false;
+
+    const events = await collectEvents(nessi({
+      provider: mockProvider([], { onRequest: () => { providerCalled = true; } }),
+      store: memoryStore(),
+      input: "Start",
+      tools: () => [first, second],
+    }));
+
+    expect(providerCalled).toBe(false);
+    expect(events.find((event) => event.type === "issue")).toMatchObject({
+      type: "issue",
+      issue: { kind: "runtime_error", message: "Duplicate tool name: dup" },
+    });
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "error" });
+  });
+
+  it("reports dynamic tool resolver failures without calling the provider", async () => {
+    let providerCalled = false;
+    const events = await collectEvents(nessi({
+      provider: mockProvider([], { onRequest: () => { providerCalled = true; } }),
+      store: memoryStore(),
+      input: "Start",
+      tools: async () => {
+        throw new Error("registry unavailable");
+      },
+    }));
+
+    expect(providerCalled).toBe(false);
+    expect(events.find((event) => event.type === "issue")).toMatchObject({
+      type: "issue",
+      issue: { kind: "runtime_error", message: "registry unavailable" },
+    });
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "error" });
+  });
+
+  it("passes the provider tool call ID to server tools", async () => {
+    let receivedCallId: string | undefined;
+    const tool = defineTool({
+      name: "inspect_call",
+      description: "Inspect the current call",
+      inputSchema: z.object({}),
+    }).server(async (_input, ctx) => {
+      receivedCallId = ctx.callId;
+      return { ok: true };
+    });
+    const provider = mockProviderMultiTurn((_request, callIndex) => callIndex === 0
+      ? [
+          { type: "tool_start", callId: "provider-call-42", name: "inspect_call" },
+          { type: "tool_call", callId: "provider-call-42", name: "inspect_call", args: {} },
+        ]
+      : [{ type: "text", delta: "Done" }]);
+
+    await collectEvents(nessi({
+      provider,
+      store: memoryStore(),
+      input: "Start",
+      tools: [tool],
+    }));
+
+    expect(receivedCallId).toBe("provider-call-42");
+  });
+
   it("emits issue and loop_end(error) when the store throws", async () => {
     const brokenStore: SessionStore = {
       async load() {

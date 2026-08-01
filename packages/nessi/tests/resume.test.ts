@@ -95,6 +95,47 @@ describe("nessi resume of unresolved tool calls", () => {
     },
   ];
 
+  it("resolves dynamic tools for pending calls and again for the following provider turn", async () => {
+    const store = await storeWithHistory([
+      { role: "user", content: [{ type: "text", text: "Echo this" }] },
+      {
+        role: "assistant",
+        content: [{ type: "tool_call", id: "resume-call-1", name: "dynamic_echo", args: { text: "hello" } }],
+        stopReason: "tool_use",
+      },
+    ]);
+    let resolverCalls = 0;
+    let receivedCallId: string | undefined;
+    const dynamicEcho = defineTool({
+      name: "dynamic_echo",
+      description: "Echoes input",
+      inputSchema: z.object({ text: z.string() }),
+    }).server(async (input, ctx) => {
+      receivedCallId = ctx.callId;
+      return { echoed: input.text };
+    });
+    const provider = mockProvider([{ type: "text", delta: "Done" }], {
+      onRequest: (request) => {
+        expect(request.tools?.map((tool) => tool.name)).toEqual(["dynamic_echo"]);
+      },
+    });
+
+    const events = await collectEvents(nessi({
+      provider,
+      store,
+      systemPrompt: "sys",
+      tools: () => {
+        resolverCalls++;
+        return [dynamicEcho];
+      },
+    }));
+
+    expect(resolverCalls).toBe(2);
+    expect(receivedCallId).toBe("resume-call-1");
+    expect(events.find((event) => event.type === "turn_start" && event.resumed)).toBeTruthy();
+    expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
+  });
+
   it("executes a pending approval tool call with a seeded approval", async () => {
     const store = await storeWithHistory(historyWithPendingCall());
     const provider = mockProvider([

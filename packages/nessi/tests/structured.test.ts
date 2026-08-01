@@ -65,6 +65,7 @@ describe("nessi.structured", () => {
         title: z.string(),
         count: z.number(),
       }),
+      tools: [],
       maxOutputTokens: 64,
       temperature: 0,
     });
@@ -226,6 +227,129 @@ describe("nessi.structured", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]?.responseFormat).toBeUndefined();
     expect(requests[0]?.tools?.map((tool) => tool.name)).toEqual(["lookup", "submit_result"]);
+  });
+
+  it("uses dynamic structured tool snapshots across provider turns", async () => {
+    const requestedToolNames: string[][] = [];
+    let resolverCalls = 0;
+    let lookupCallId: string | undefined;
+
+    const unlock = defineTool({
+      name: "unlock",
+      description: "Unlock lookup",
+      inputSchema: z.object({}),
+    }).server(async () => {
+      activeTools.splice(0, activeTools.length, unlock, lookup);
+      return { unlocked: true };
+    });
+    const lookup = defineTool({
+      name: "lookup",
+      description: "Look up the final value",
+      inputSchema: z.object({}),
+    }).server(async (_input, ctx) => {
+      lookupCallId = ctx.callId;
+      activeTools.splice(0, activeTools.length, unlock);
+      return { value: "resolved" };
+    });
+    const activeTools = [unlock];
+
+    const provider = mockProviderMultiTurn((request, callIndex) => {
+      requestedToolNames.push(request.tools?.map((tool) => tool.name) ?? []);
+      if (callIndex === 0) return [
+        { type: "tool_call", callId: "unlock-1", name: "unlock", args: {} },
+        { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" },
+      ];
+      if (callIndex === 1) return [
+        { type: "tool_call", callId: "lookup-1", name: "lookup", args: {} },
+        { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" },
+      ];
+      return [
+        { type: "tool_call", callId: "submit-1", name: "submit_result", args: { value: "resolved" } },
+        { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" },
+      ];
+    });
+
+    const result = await nessi.structured({
+      provider,
+      input: "Resolve the value.",
+      output: z.object({ value: z.string() }),
+      tools: async () => {
+        resolverCalls++;
+        return activeTools;
+      },
+    });
+
+    expect(result.output).toEqual({ value: "resolved" });
+    expect(result.structuredMeta.mode).toBe("tool_loop");
+    expect(requestedToolNames).toEqual([
+      ["unlock", "submit_result"],
+      ["unlock", "lookup", "submit_result"],
+      ["unlock", "submit_result"],
+    ]);
+    expect(resolverCalls).toBe(3);
+    expect(lookupCallId).toBe("lookup-1");
+  });
+
+  it("uses tool_loop mode when a structured tool resolver returns an empty snapshot", async () => {
+    const provider = mockProvider([
+      { type: "tool_call", callId: "submit-1", name: "submit_result", args: { ok: true } },
+      { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" },
+    ], {
+      onRequest: (request) => {
+        expect(request.tools?.map((tool) => tool.name)).toEqual(["submit_result"]);
+      },
+    });
+
+    const result = await nessi.structured({
+      provider,
+      input: "Return ok.",
+      output: z.object({ ok: z.boolean() }),
+      tools: () => [],
+    });
+
+    expect(result.output).toEqual({ ok: true });
+    expect(result.structuredMeta.mode).toBe("tool_loop");
+  });
+
+  it("reports structured tool resolver failures without calling the provider", async () => {
+    let providerCalled = false;
+    let caught: unknown;
+    try {
+      await nessi.structured({
+        provider: mockProvider([], { onRequest: () => { providerCalled = true; } }),
+        input: "Return ok.",
+        output: z.object({ ok: z.boolean() }),
+        tools: async () => {
+          throw new Error("tool registry unavailable");
+        },
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(providerCalled).toBe(false);
+    expect(caught).toBeInstanceOf(StructuredOutputError);
+    expect((caught as StructuredOutputError).code).toBe("loop_failed");
+    expect((caught as StructuredOutputError).details).toMatchObject({
+      aggregate: {
+        issues: [{ kind: "runtime_error", message: "tool registry unavailable" }],
+      },
+    });
+  });
+
+  it("validates reserved names in every dynamic structured tool snapshot", async () => {
+    const reserved = defineTool({
+      name: "submit_result",
+      description: "Conflicts with nessi.structured()",
+      inputSchema: z.object({}),
+    }).server(async () => ({ ok: true }));
+
+    await expect(nessi.structured({
+      provider: mockProvider([]),
+      input: "Return ok.",
+      output: z.object({ ok: z.boolean() }),
+      tools: () => [reserved],
+    })).rejects.toThrow('Tool name "submit_result" is reserved by nessi.structured().');
   });
 
   it("keeps the tool loop open after invalid submit_result args and aggregates the validation error", async () => {

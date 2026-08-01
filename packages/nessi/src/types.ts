@@ -199,7 +199,11 @@ export type ClientTool<TInput extends z.ZodType = z.ZodType, TOutput extends z.Z
 
 export type Tool = ServerTool | ClientTool;
 
+export type ToolResolver = () => Tool[] | Promise<Tool[]>;
+
 export type ToolContext = {
+  /** Provider-assigned ID of the tool call currently being executed. */
+  callId?: string;
   signal: AbortSignal;
   /** Request user approval mid-execution. Returns true if approved, false if denied. */
   requestApproval(message: string): Promise<boolean>;
@@ -225,7 +229,8 @@ export type NessiOptions = {
   input?: Input;
   provider: Provider;
   systemPrompt: string;
-  tools?: Tool[];
+  /** Static tools or a resolver evaluated once before every provider turn. */
+  tools?: Tool[] | ToolResolver;
   store: SessionStore;
   creditStore?: CreditStore;
   compact?: CompactFn;
@@ -275,6 +280,8 @@ export type StructuredMeta = {
   usedResponseFormat: boolean;
 };
 
+export type StructuredToolResolver = () => ServerTool[] | Promise<ServerTool[]>;
+
 export type StructuredOptions<TOutput extends z.ZodType = z.ZodType> = {
   agentId?: string;
   /** Correlates the internal structured task. Generated when omitted. */
@@ -284,7 +291,8 @@ export type StructuredOptions<TOutput extends z.ZodType = z.ZodType> = {
   input: StructuredInput;
   output: TOutput;
   outputName?: string;
-  tools?: ServerTool[];
+  /** Static server tools or a resolver evaluated once before every provider turn. */
+  tools?: ServerTool[] | StructuredToolResolver;
   maxTurns?: number;
   temperature?: number;
   maxOutputTokens?: number;

@@ -64,6 +64,61 @@ Every outbound event from one `nessi()` run carries the same `loopId`. Pass your
 
 `turn_end` reports each internal provider turn. The final `loop_end` event includes `aggregate`, which groups assistant turns, executable tool calls, tool results, validation/execution errors, malformed or cancelled tool streams, summed usage, and timing for the complete logical loop. `aggregate.timing.totalElapsedMs` is model generation plus active tool execution; approval/client-tool waits are tracked separately as `aggregate.timing.actionWaitMs`. Helper exports such as `mergeUsage()`, `cloneLoopAggregate()`, and `mergeLoopAggregates()` are available from `@k2b/nessi`.
 
+## Dynamic tools
+
+Pass a resolver when the active tools depend on application state:
+
+```ts
+const loop = nessi({
+  provider,
+  systemPrompt,
+  input,
+  store,
+  tools: async () => toolRegistry.activeFor(userId),
+});
+```
+
+Nessi resolves dynamic tools before every provider turn. One copied and
+validated snapshot supplies both the provider schemas and all tool execution
+for that turn. Changes made during tool execution therefore become visible on
+the following provider turn, while calls already emitted by the provider remain
+executable from their original snapshot. Duplicate names and resolver failures
+end the loop with a `runtime_error` issue.
+
+Pending tool calls restored from history resolve one fresh snapshot before
+execution because an in-memory snapshot cannot survive a restart. Keep the
+resolver side-effect free; persistence, discovery, authorization, and cleanup
+remain application-owned.
+
+Server tools receive the provider tool call ID through `ctx.callId`:
+
+```ts
+const inspect = defineTool({
+  name: "inspect",
+  description: "Inspect an item",
+  inputSchema: z.object({ id: z.string() }),
+}).server(async ({ id }, ctx) => {
+  return inspectItem(id, { callId: ctx.callId, signal: ctx.signal });
+});
+```
+
+`nessi.structured()` accepts the same pattern for server tools:
+
+```ts
+const result = await nessi.structured({
+  provider,
+  input: "Resolve the current task.",
+  output: taskSchema,
+  tools: () => toolRegistry.activeServerTools(),
+});
+```
+
+A structured tool resolver always selects `tool_loop` mode, even when a
+snapshot is empty, because later turns may add tools. Nessi appends its internal
+`submit_result` tool to every snapshot. Client tools, approval tools, and a
+user-defined `submit_result` remain unsupported. A static empty array keeps the
+direct native/fallback structured-output path.
+
 ## Historical tool results
 
 Verbose tool output can remain fully persisted without being sent to the model

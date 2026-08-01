@@ -24,6 +24,7 @@ export type {
   StructuredMode,
   StructuredOptions,
   StructuredResult,
+  StructuredToolResolver,
   // Content
   ContentPart,
   JsonSchemaObject,
@@ -59,6 +60,7 @@ export type {
   ServerTool,
   ClientTool,
   Tool,
+  ToolResolver,
   ToolContext,
   // Provider
   Provider,

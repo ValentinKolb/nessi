@@ -49,6 +49,27 @@ type Channel<T> = {
   drain(): T[];
 }
 
+type ToolSnapshot = {
+  providerTools: ReturnType<typeof toolToSpec>[];
+  toolMap: ReadonlyMap<string, Tool>;
+}
+
+const createToolSnapshot = (value: unknown): ToolSnapshot => {
+  if (!Array.isArray(value)) throw new Error("Tool resolver must return an array");
+
+  const tools = [...value] as Tool[];
+  const names = tools.map((tool) => tool.def.name);
+  if (new Set(names).size !== names.length) {
+    const duplicate = names.find((name, index) => names.indexOf(name) !== index);
+    throw new Error(`Duplicate tool name: ${duplicate}`);
+  }
+
+  return {
+    providerTools: tools.map(toolToSpec),
+    toolMap: new Map(tools.map((tool) => [tool.def.name, tool])),
+  };
+}
+
 class PullCancelledError extends Error {
   constructor() {
     super("channel pull cancelled");
@@ -424,7 +445,7 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     input,
     provider,
     systemPrompt,
-    tools = [],
+    tools: toolSource = [],
     store,
     creditStore,
     compact,
@@ -562,6 +583,11 @@ export const nessi = (options: NessiOptions): NessiLoop => {
 
   const signal = abortController.signal;
 
+  const toolResolver = typeof toolSource === "function" ? toolSource : undefined;
+  const staticToolSnapshot = toolResolver ? undefined : createToolSnapshot(toolSource);
+  const resolveToolSnapshot = async (): Promise<ToolSnapshot> =>
+    staticToolSnapshot ?? createToolSnapshot(await toolResolver!());
+
   async function* applyPendingSteering(): AsyncGenerator<OutboundEvent, boolean> {
     const pending = steerQueue.splice(0);
     const supplied = await steering?.({ agentId, loopId, signal });
@@ -579,14 +605,6 @@ export const nessi = (options: NessiOptions): NessiLoop => {
     }
     return applied;
   }
-
-  const names = tools.map((tool) => tool.def.name);
-  if (new Set(names).size !== names.length) {
-    const dup = names.find((name, index) => names.indexOf(name) !== index);
-    throw new Error(`Duplicate tool name: ${dup}`);
-  }
-  const toolMap = new Map(tools.map((tool) => [tool.def.name, tool]));
-  const isTerminalTool = (name: string) => Boolean((toolMap.get(name)?.def as { terminal?: boolean } | undefined)?.terminal);
 
   const appendToolResult = async (callId: string, name: string, result: unknown, isError = false) => {
     const msg: ToolResultMessage = { role: "tool_result", callId, name, result, isError };
@@ -678,6 +696,7 @@ const snapshotTiming = (
 
   async function* executeToolCall(
     tc: ToolCallBlock,
+    toolSnapshot: ToolSnapshot,
     turnCtx: TurnContext,
     updateAggregateToolCall: UpdateAggregateToolCall,
     turnIssues?: { issues: LoopIssueAggregate[]; toolIssues: LoopToolIssueAggregate[] },
@@ -685,7 +704,7 @@ const snapshotTiming = (
     const eventFields = { agentId, loopId, ...turnCtx };
     yield { type: "tool_execution_start", ...eventFields, callId: tc.id, name: tc.name, args: tc.args };
 
-    const tool = toolMap.get(tc.name);
+    const tool = toolSnapshot.toolMap.get(tc.name);
     if (!tool) {
       yield* failToolCall(
         tc,
@@ -842,6 +861,7 @@ const snapshotTiming = (
       let clientToolCounter = 0;
 
       const ctx: ToolContext = {
+        callId: tc.id,
         signal: toolAbort.signal,
         requestApproval(message: string) {
           return new Promise((resolve) => {
@@ -947,7 +967,7 @@ const snapshotTiming = (
 
         while (clientToolQueue.length > 0) {
           const req = clientToolQueue.shift()!;
-          const bridgeTool = toolMap.get(req.name);
+          const bridgeTool = toolSnapshot.toolMap.get(req.name);
           let requestArgs = req.args;
           if (bridgeTool) {
             if (bridgeTool.kind !== "client") {
@@ -1108,6 +1128,8 @@ const snapshotTiming = (
     const pending = toolCallBlocks.filter((block) => !resolvedCallIds.has(block.id));
     if (pending.length === 0) return;
 
+    const toolSnapshot = await resolveToolSnapshot();
+
     const aggregateTurn = loopTurns.findLast((turn) => turn.message === assistantMessage);
     const aggregateToolCallMap = new Map((aggregateTurn?.toolCalls ?? []).map((toolCall) => [toolCall.callId, toolCall]));
     const updateAggregateToolCall = aggregateTurn
@@ -1121,7 +1143,7 @@ const snapshotTiming = (
     yield { type: "turn_start", agentId, loopId, ...turnCtx, resumed: true };
     for (const tc of pending) {
       if (signal.aborted) return;
-      yield* executeToolCall(tc, turnCtx, updateAggregateToolCall, turnIssues);
+      yield* executeToolCall(tc, toolSnapshot, turnCtx, updateAggregateToolCall, turnIssues);
     }
     if (aggregateTurn && turnIssues.issues.length > 0) {
       aggregateTurn.issues = [...(aggregateTurn.issues ?? []), ...turnIssues.issues.map((issue) => ({ ...issue }))];
@@ -1137,7 +1159,6 @@ const snapshotTiming = (
     let providerTurn = 0;
     let eventTurnIndex = 0;
     let compactionRetried = false;
-    const providerTools = tools.map(toolToSpec);
     const prepareProviderMessages = (sourceEntries: StoreEntry[]): Message[] => {
       const rawMessages = sourceEntries.map((entry) => entry.message);
       const projectedMessages = projectHistoricalToolResults(rawMessages, loopId);
@@ -1190,6 +1211,9 @@ const snapshotTiming = (
           yield loopEndEvent("max_turns");
           return;
         }
+
+        const toolSnapshot = await resolveToolSnapshot();
+        const providerTools = toolSnapshot.providerTools;
 
         let entries = await store.load();
         let messages = prepareProviderMessages(entries);
@@ -1443,9 +1467,12 @@ const snapshotTiming = (
 
         let terminalToolCompleted = false;
         for (const tc of toolCalls) {
-          yield* executeToolCall(tc, turnCtx, updateAggregateToolCall, turnIssues);
+          yield* executeToolCall(tc, toolSnapshot, turnCtx, updateAggregateToolCall, turnIssues);
           const aggregateToolCall = aggregateToolCallMap.get(tc.id);
-          if (isTerminalTool(tc.name) && aggregateToolCall && !aggregateToolCall.isError) {
+          const isTerminalTool = Boolean(
+            (toolSnapshot.toolMap.get(tc.name)?.def as { terminal?: boolean } | undefined)?.terminal,
+          );
+          if (isTerminalTool && aggregateToolCall && !aggregateToolCall.isError) {
             terminalToolCompleted = true;
             break;
           }

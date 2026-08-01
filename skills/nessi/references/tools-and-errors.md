@@ -146,6 +146,62 @@ Top-level client tools validate pushed results against their `outputSchema`.
 Nested `ctx.requestClientTool()` calls also validate args and output when the
 requested client tool name is registered in `tools`.
 
+## Dynamic root-loop tools
+
+Use a resolver when the active root-loop tools depend on application state:
+
+```ts
+const loop = nessi({
+  provider,
+  systemPrompt,
+  input,
+  store,
+  tools: () => permissions.allowedToolsFor(userId),
+});
+```
+
+The resolver may be synchronous or asynchronous. Nessi evaluates it once per
+provider turn, rejects duplicate names, and uses one copied snapshot for both
+provider schemas and all execution from that response. If a tool enables or
+removes another tool, the change appears on the next provider turn. Pending
+calls restored from history resolve an additional current snapshot before
+execution.
+
+Resolvers should read application state without mutating it. The application
+continues to own persistence, discovery, authorization, and cleanup. A resolver
+failure becomes a `runtime_error` and ends the loop without calling the
+provider.
+
+Server tools can correlate their work with the provider call:
+
+```ts
+const audit = defineTool({
+  name: "audit",
+  description: "Write an audit entry",
+  inputSchema: z.object({ action: z.string() }),
+}).server(async ({ action }, ctx) => {
+  await writeAudit({ action, toolCallId: ctx.callId });
+  return { recorded: true };
+});
+```
+
+`nessi.structured()` accepts a resolver with the same per-turn snapshot
+semantics, limited to server tools without approval:
+
+```ts
+const result = await nessi.structured({
+  provider,
+  input: "Resolve the report.",
+  output: reportSchema,
+  tools: async () => registry.activeServerTools(),
+});
+```
+
+Providing a resolver always selects `tool_loop`, including when the current
+snapshot is empty. Nessi adds `submit_result` to every snapshot and rejects
+client tools, approval tools, and a user tool with that reserved name. A static
+empty tool array continues to use direct native/fallback structured output.
+
 ## Historical tool results
 
 Use `toHistoricalResult` for tools whose raw output is useful during execution

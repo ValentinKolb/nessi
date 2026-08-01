@@ -274,6 +274,7 @@ const wrapStructuredTool = (tool: ServerTool): ServerTool => ({
   def: tool.def,
   execute(input: unknown, ctx: ToolContext) {
     return tool.execute(input, {
+      callId: ctx.callId,
       signal: ctx.signal,
       async requestApproval() {
         throw new Error("nessi.structured() does not support tool approvals. Use nessi() for interactive tools.");
@@ -393,8 +394,7 @@ const toolLoopStructured = async <TOutput extends z.ZodType>(
   jsonSchema: JsonSchemaObject,
   loopId: string,
 ): Promise<StructuredResult<z.infer<TOutput>>> => {
-  const tools = options.tools ?? [];
-  validateStructuredTools(tools);
+  const toolSource = options.tools ?? [];
 
   let submitted: z.infer<TOutput> | undefined;
   const submitDef = defineTool({
@@ -408,6 +408,22 @@ const toolLoopStructured = async <TOutput extends z.ZodType>(
     return { accepted: true };
   });
   (submitTool.def as { terminal?: boolean }).terminal = true;
+
+  let structuredToolError: StructuredOutputError | undefined;
+  const prepareTools = (value: unknown): ServerTool[] => {
+    if (!Array.isArray(value)) throw new Error("Structured tool resolver must return an array");
+    const tools = [...value] as ServerTool[];
+    try {
+      validateStructuredTools(tools);
+    } catch (error) {
+      if (error instanceof StructuredOutputError) structuredToolError = error;
+      throw error;
+    }
+    return [...tools.map(wrapStructuredTool), submitTool];
+  };
+  const tools = typeof toolSource === "function"
+    ? async () => prepareTools(await toolSource())
+    : prepareTools(toolSource);
 
   const store = memoryStore();
   await store.append(inputMessage);
@@ -424,7 +440,7 @@ const toolLoopStructured = async <TOutput extends z.ZodType>(
       "Do not return the final structured result as normal assistant text.",
       schemaInstruction(jsonSchema, options.outputName),
     ].join("\n\n"),
-    tools: [...tools.map(wrapStructuredTool), submitTool],
+    tools,
     maxTurns: options.maxTurns ?? 8,
     temperature: options.temperature,
     maxOutputTokens: options.maxOutputTokens,
@@ -445,6 +461,11 @@ const toolLoopStructured = async <TOutput extends z.ZodType>(
     throw new StructuredOutputError("Structured tool loop ended without loop_end.", "loop_failed");
   }
   if (loopEnd.reason !== "stop") {
+    if (structuredToolError) {
+      throw new StructuredOutputError(structuredToolError.message, structuredToolError.code, {
+        aggregate: loopEnd.aggregate,
+      });
+    }
     throw new StructuredOutputError(`Structured tool loop ended with reason: ${loopEnd.reason}`, loopErrorCode(loopEnd.reason), {
       aggregate: loopEnd.aggregate,
     });
@@ -484,7 +505,7 @@ export const structured = async <TOutput extends z.ZodType>(
   const loopId = options.loopId?.trim() ? options.loopId : createLoopId();
   const inputMessage = normalizeStructuredInput(options.input);
   const jsonSchema = schemaFor(options.output);
-  const hasTools = (options.tools?.length ?? 0) > 0;
+  const hasTools = typeof options.tools === "function" || (options.tools?.length ?? 0) > 0;
   if (hasTools) return toolLoopStructured(options, inputMessage, jsonSchema, loopId);
   return directStructured(options, inputMessage, jsonSchema, loopId);
 };
